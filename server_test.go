@@ -235,8 +235,8 @@ func TestControllerMountAndGrouping(t *testing.T) {
 }
 
 var (
-	ErrUserEmailBusy    = sein.DefineError(409, "EMAIL_ALREADY_EXISTS", "Email address is already in use")
-	ErrAccountSuspended = sein.DefineError(403, "ACCOUNT_SUSPENDED", "Account has been suspended")
+	ErrUserEmailBusy    = sein.Conflict("EMAIL_ALREADY_EXISTS", "Email address is already in use")
+	ErrAccountSuspended = sein.Forbidden("ACCOUNT_SUSPENDED", "Account has been suspended")
 )
 
 func TestDomainErrors(t *testing.T) {

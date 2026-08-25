@@ -27,13 +27,20 @@ type DefinedError struct {
 	cause   error
 }
 
-// DefineError creates a reusable, machine-readable domain error sentinel.
+// DefineError creates a reusable, machine-readable domain error sentinel with a custom status code.
 func DefineError(status int, code, message string) DefinedError {
 	return DefinedError{
 		status:  status,
 		code:    code,
 		message: message,
 	}
+}
+
+func resolveMessage(code string, message ...string) string {
+	if len(message) > 0 && message[0] != "" {
+		return message[0]
+	}
+	return code
 }
 
 func (d DefinedError) Error() string {
@@ -136,37 +143,37 @@ func NewError(status int, message string, cause ...error) HTTPError {
 	}
 }
 
-// ErrBadRequest creates a 400 Bad Request error.
+// ErrBadRequest creates a 400 Bad Request ad-hoc error.
 func ErrBadRequest(message string, cause ...error) HTTPError {
 	return NewError(http.StatusBadRequest, message, cause...)
 }
 
-// ErrUnauthorized creates a 401 Unauthorized error.
+// ErrUnauthorized creates a 401 Unauthorized ad-hoc error.
 func ErrUnauthorized(message string, cause ...error) HTTPError {
 	return NewError(http.StatusUnauthorized, message, cause...)
 }
 
-// ErrForbidden creates a 403 Forbidden error.
+// ErrForbidden creates a 403 Forbidden ad-hoc error.
 func ErrForbidden(message string, cause ...error) HTTPError {
 	return NewError(http.StatusForbidden, message, cause...)
 }
 
-// ErrNotFound creates a 404 Not Found error.
+// ErrNotFound creates a 404 Not Found ad-hoc error.
 func ErrNotFound(message string, cause ...error) HTTPError {
 	return NewError(http.StatusNotFound, message, cause...)
 }
 
-// ErrConflict creates a 409 Conflict error.
+// ErrConflict creates a 409 Conflict ad-hoc error.
 func ErrConflict(message string, cause ...error) HTTPError {
 	return NewError(http.StatusConflict, message, cause...)
 }
 
-// ErrUnprocessable creates a 422 Unprocessable Entity error.
+// ErrUnprocessable creates a 422 Unprocessable Entity ad-hoc error.
 func ErrUnprocessable(message string, cause ...error) HTTPError {
 	return NewError(http.StatusUnprocessableEntity, message, cause...)
 }
 
-// ErrInternal creates a 500 Internal Server Error.
+// ErrInternal creates a 500 Internal Server Error ad-hoc error.
 func ErrInternal(message string, cause ...error) HTTPError {
 	return NewError(http.StatusInternalServerError, message, cause...)
 }
