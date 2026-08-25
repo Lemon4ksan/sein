@@ -94,15 +94,52 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = OK(result).WriteResponse(w)
 }
 
+type errorResponse struct {
+	Status  int            `json:"status"`
+	Code    string         `json:"code"`
+	Message string         `json:"message"`
+	Details map[string]any `json:"details,omitempty"`
+}
+
 func (s *Server) writeError(w http.ResponseWriter, err error) {
+	var resp errorResponse
+
+	var definedErr DefinedError
+	var domainErr DomainError
 	var httpErr HTTPError
-	if !errors.As(err, &httpErr) {
-		httpErr = ErrInternal(err.Error())
+
+	switch {
+	case errors.As(err, &definedErr):
+		resp = errorResponse{
+			Status:  definedErr.HTTPStatus(),
+			Code:    definedErr.ErrorCode(),
+			Message: definedErr.Message(),
+			Details: definedErr.Details(),
+		}
+	case errors.As(err, &domainErr):
+		resp = errorResponse{
+			Status:  domainErr.HTTPStatus(),
+			Code:    domainErr.ErrorCode(),
+			Message: domainErr.Error(),
+		}
+	case errors.As(err, &httpErr):
+		resp = errorResponse{
+			Status:  httpErr.HTTPStatus(),
+			Code:    httpErr.ErrorCode(),
+			Message: httpErr.Message,
+			Details: httpErr.Details,
+		}
+	default:
+		resp = errorResponse{
+			Status:  http.StatusInternalServerError,
+			Code:    "INTERNAL_SERVER_ERROR",
+			Message: err.Error(),
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(httpErr.StatusCode())
-	_ = json.NewEncoder(w).Encode(httpErr)
+	w.WriteHeader(resp.Status)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // ListenAndServe starts the HTTP server listening on the configured address.

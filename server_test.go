@@ -234,3 +234,67 @@ func TestControllerMountAndGrouping(t *testing.T) {
 	}
 }
 
+var (
+	ErrUserEmailBusy    = sein.DefineError(409, "EMAIL_ALREADY_EXISTS", "Email address is already in use")
+	ErrAccountSuspended = sein.DefineError(403, "ACCOUNT_SUSPENDED", "Account has been suspended")
+)
+
+func TestDomainErrors(t *testing.T) {
+	app := sein.New()
+
+	sein.POST(app, "/api/v1/register", func(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
+		if req.Email == "taken@example.com" {
+			// Zero manual strings, zero manual status codes
+			return UserResponse{}, ErrUserEmailBusy
+		}
+		if req.Email == "banned@example.com" {
+			return UserResponse{}, ErrAccountSuspended.WithDetail("ban_reason", "rule violation")
+		}
+		return UserResponse{ID: 1, Name: req.Name, Email: req.Email}, nil
+	})
+
+	// 1. Test Conflict error (409)
+	body, _ := json.Marshal(CreateUserDTO{Name: "Evil", Email: "taken@example.com"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/register", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict, got %d", rec.Code)
+	}
+
+	var errPayload struct {
+		Status  int    `json:"status"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &errPayload)
+
+	if errPayload.Status != 409 || errPayload.Code != "EMAIL_ALREADY_EXISTS" {
+		t.Fatalf("unexpected error payload: %+v", errPayload)
+	}
+
+	// 2. Test Forbidden error with details (403)
+	bodyBanned, _ := json.Marshal(CreateUserDTO{Name: "Banned", Email: "banned@example.com"})
+	reqBanned := httptest.NewRequest(http.MethodPost, "/api/v1/register", bytes.NewReader(bodyBanned))
+	recBanned := httptest.NewRecorder()
+	app.ServeHTTP(recBanned, reqBanned)
+
+	if recBanned.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden, got %d", recBanned.Code)
+	}
+
+	var bannedPayload struct {
+		Status  int            `json:"status"`
+		Code    string         `json:"code"`
+		Message string         `json:"message"`
+		Details map[string]any `json:"details"`
+	}
+	_ = json.Unmarshal(recBanned.Body.Bytes(), &bannedPayload)
+
+	if bannedPayload.Code != "ACCOUNT_SUSPENDED" || bannedPayload.Details["ban_reason"] != "rule violation" {
+		t.Fatalf("unexpected banned payload: %+v", bannedPayload)
+	}
+}
+
+

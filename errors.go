@@ -10,26 +10,112 @@ import (
 	"net/http"
 )
 
-// HTTPError is a semantic error with an associated HTTP status code and machine-readable message.
+// DomainError is the standard interface for typed business domain errors.
+// Any error implementing this interface automatically dictates its HTTP status code and machine-readable error code.
+type DomainError interface {
+	error
+	HTTPStatus() int
+	ErrorCode() string
+}
+
+// DefinedError is an immutable, zero-allocation domain error sentinel.
+type DefinedError struct {
+	status  int
+	code    string
+	message string
+	details map[string]any
+	cause   error
+}
+
+// DefineError creates a reusable, machine-readable domain error sentinel.
+func DefineError(status int, code, message string) DefinedError {
+	return DefinedError{
+		status:  status,
+		code:    code,
+		message: message,
+	}
+}
+
+func (d DefinedError) Error() string {
+	if d.cause != nil {
+		return fmt.Sprintf("[%s] %s (cause: %v)", d.code, d.message, d.cause)
+	}
+	return fmt.Sprintf("[%s] %s", d.code, d.message)
+}
+
+func (d DefinedError) HTTPStatus() int {
+	if d.status == 0 {
+		return http.StatusInternalServerError
+	}
+	return d.status
+}
+
+func (d DefinedError) ErrorCode() string {
+	return d.code
+}
+
+func (d DefinedError) Message() string {
+	return d.message
+}
+
+func (d DefinedError) Details() map[string]any {
+	return d.details
+}
+
+func (d DefinedError) Unwrap() error {
+	return d.cause
+}
+
+// WithCause wraps an underlying root-cause error.
+func (d DefinedError) WithCause(err error) DefinedError {
+	d.cause = err
+	return d
+}
+
+// WithDetail adds a key-value detail field to the error payload.
+func (d DefinedError) WithDetail(key string, val any) DefinedError {
+	if d.details == nil {
+		d.details = make(map[string]any)
+	}
+	d.details[key] = val
+	return d
+}
+
+// WithMessage overrides the human-readable error message.
+func (d DefinedError) WithMessage(msg string) DefinedError {
+	d.message = msg
+	return d
+}
+
+// HTTPError is a generic semantic error structure for ad-hoc runtime errors.
 type HTTPError struct {
-	Status  int    `json:"status"`
-	Message string `json:"message"`
-	Code    string `json:"code,omitempty"`
-	Cause   error  `json:"-"`
+	Status  int            `json:"status"`
+	Code    string         `json:"code,omitempty"`
+	Message string         `json:"message"`
+	Details map[string]any `json:"details,omitempty"`
+	Cause   error          `json:"-"`
 }
 
 func (e HTTPError) Error() string {
 	if e.Cause != nil {
-		return fmt.Sprintf("HTTP %d: %s (cause: %v)", e.Status, e.Message, e.Cause)
+		return fmt.Sprintf("HTTP %d [%s]: %s (cause: %v)", e.Status, e.Code, e.Message, e.Cause)
 	}
-	return fmt.Sprintf("HTTP %d: %s", e.Status, e.Message)
+	return fmt.Sprintf("HTTP %d [%s]: %s", e.Status, e.Code, e.Message)
 }
 
-func (e HTTPError) StatusCode() int {
+func (e HTTPError) HTTPStatus() int {
 	if e.Status == 0 {
 		return http.StatusInternalServerError
 	}
 	return e.Status
+}
+
+func (e HTTPError) StatusCode() int {
+	return e.HTTPStatus()
+}
+
+func (e HTTPError) ErrorCode() string {
+	return e.Code
 }
 
 func (e HTTPError) Unwrap() error {
@@ -44,6 +130,7 @@ func NewError(status int, message string, cause ...error) HTTPError {
 	}
 	return HTTPError{
 		Status:  status,
+		Code:    http.StatusText(status),
 		Message: message,
 		Cause:   c,
 	}
