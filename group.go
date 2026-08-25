@@ -5,6 +5,7 @@
 package sein
 
 import (
+	"context"
 	"slices"
 	"strings"
 )
@@ -50,6 +51,56 @@ func (g *Group) registerRoute(method, path string, handler RawHandler, mw ...Mid
 	fullPath := joinPaths(g.prefix, path)
 	combinedMW := append(slices.Clone(g.middlewares), mw...)
 	g.parent.registerRoute(method, fullPath, handler, combinedMW...)
+}
+
+// POST registers a pure POST handler on this group: (ctx, Req) -> (Res, error)
+func (g *Group) POST[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	POST(g, path, fn, mw...)
+}
+
+// POSTReq registers a POST handler with Request metadata on this group: (req, Req) -> (Res, error)
+func (g *Group) POSTReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
+	POSTReq(g, path, fn, mw...)
+}
+
+// GET registers a pure GET handler on this group: (ctx) -> (Res, error)
+func (g *Group) GET[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
+	GET(g, path, fn, mw...)
+}
+
+// GETReq registers a GET handler with Request metadata on this group: (req) -> (Res, error)
+func (g *Group) GETReq[Res any](path string, fn func(*Request) (Res, error), mw ...Middleware) {
+	GETReq(g, path, fn, mw...)
+}
+
+// PUT registers a pure PUT handler on this group: (ctx, Req) -> (Res, error)
+func (g *Group) PUT[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	PUT(g, path, fn, mw...)
+}
+
+// PUTReq registers a PUT handler with Request metadata on this group: (req, Req) -> (Res, error)
+func (g *Group) PUTReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
+	PUTReq(g, path, fn, mw...)
+}
+
+// PATCH registers a pure PATCH handler on this group: (ctx, Req) -> (Res, error)
+func (g *Group) PATCH[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	PATCH(g, path, fn, mw...)
+}
+
+// PATCHReq registers a PATCH handler with Request metadata on this group: (req, Req) -> (Res, error)
+func (g *Group) PATCHReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
+	PATCHReq(g, path, fn, mw...)
+}
+
+// DELETE registers a pure DELETE handler on this group: (ctx) -> (Res, error)
+func (g *Group) DELETE[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
+	DELETE(g, path, fn, mw...)
+}
+
+// DELETEReq registers a DELETE handler with Request metadata on this group: (req) -> (Res, error)
+func (g *Group) DELETEReq[Res any](path string, fn func(*Request) (Res, error), mw ...Middleware) {
+	DELETEReq(g, path, fn, mw...)
 }
 
 func cleanPrefix(prefix string) string {

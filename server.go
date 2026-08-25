@@ -5,6 +5,7 @@
 package sein
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -57,6 +58,56 @@ func (s *Server) Group(prefix string, mw ...Middleware) *Group {
 
 func (s *Server) registerRoute(method, path string, handler RawHandler, mw ...Middleware) {
 	Handle(s, method, path, handler, mw...)
+}
+
+// POST registers a pure POST handler on the server: (ctx, Req) -> (Res, error)
+func (s *Server) POST[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	POST(s, path, fn, mw...)
+}
+
+// POSTReq registers a POST handler with Request metadata on the server: (req, Req) -> (Res, error)
+func (s *Server) POSTReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
+	POSTReq(s, path, fn, mw...)
+}
+
+// GET registers a pure GET handler on the server: (ctx) -> (Res, error)
+func (s *Server) GET[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
+	GET(s, path, fn, mw...)
+}
+
+// GETReq registers a GET handler with Request metadata on the server: (req) -> (Res, error)
+func (s *Server) GETReq[Res any](path string, fn func(*Request) (Res, error), mw ...Middleware) {
+	GETReq(s, path, fn, mw...)
+}
+
+// PUT registers a pure PUT handler on the server: (ctx, Req) -> (Res, error)
+func (s *Server) PUT[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	PUT(s, path, fn, mw...)
+}
+
+// PUTReq registers a PUT handler with Request metadata on the server: (req, Req) -> (Res, error)
+func (s *Server) PUTReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
+	PUTReq(s, path, fn, mw...)
+}
+
+// PATCH registers a pure PATCH handler on the server: (ctx, Req) -> (Res, error)
+func (s *Server) PATCH[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	PATCH(s, path, fn, mw...)
+}
+
+// PATCHReq registers a PATCH handler with Request metadata on the server: (req, Req) -> (Res, error)
+func (s *Server) PATCHReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
+	PATCHReq(s, path, fn, mw...)
+}
+
+// DELETE registers a pure DELETE handler on the server: (ctx) -> (Res, error)
+func (s *Server) DELETE[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
+	DELETE(s, path, fn, mw...)
+}
+
+// DELETEReq registers a DELETE handler with Request metadata on the server: (req) -> (Res, error)
+func (s *Server) DELETEReq[Res any](path string, fn func(*Request) (Res, error), mw ...Middleware) {
+	DELETEReq(s, path, fn, mw...)
 }
 
 // ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib.

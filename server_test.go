@@ -176,8 +176,8 @@ type mockUserController struct {
 }
 
 func (c *mockUserController) Mount(g *sein.Group) {
-	sein.GETReq(g, "/:id", c.get)
-	sein.POST(g, "", c.create)
+	g.GETReq("/:id", c.get)
+	g.POST("", c.create)
 }
 
 func (c *mockUserController) get(req *sein.Request) (UserResponse, error) {
@@ -242,7 +242,7 @@ var (
 func TestDomainErrors(t *testing.T) {
 	app := sein.New()
 
-	sein.POST(app, "/api/v1/register", func(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
+	app.POST("/api/v1/register", func(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
 		if req.Email == "taken@example.com" {
 			// Zero manual strings, zero manual status codes
 			return UserResponse{}, ErrUserEmailBusy
