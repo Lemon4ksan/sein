@@ -50,6 +50,15 @@ func (s *Server) Use(mw ...Middleware) {
 	s.middlewares = append(s.middlewares, mw...)
 }
 
+// Group creates a new scoped router group anchored to this server.
+func (s *Server) Group(prefix string, mw ...Middleware) *Group {
+	return NewGroup(s, prefix, mw...)
+}
+
+func (s *Server) registerRoute(method, path string, handler RawHandler, mw ...Middleware) {
+	Handle(s, method, path, handler, mw...)
+}
+
 // ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	handler, params, found := s.router.Match(r.Method, r.URL.Path)
@@ -59,6 +68,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := NewRequest(r, params)
+	defer req.Release()
 
 	// Wrap in global middlewares
 	finalHandler := handler

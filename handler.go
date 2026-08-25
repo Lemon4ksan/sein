@@ -9,19 +9,22 @@ import (
 	"net/http"
 )
 
-// Handle registers a raw handler function on the server.
-func Handle(srv *Server, method, path string, fn RawHandler, mw ...Middleware) {
-	handler := fn
-	// Apply route-level middleware in reverse order
-	for i := len(mw) - 1; i >= 0; i-- {
-		handler = mw[i](handler)
+// Handle registers a raw handler function on any RouteBuilder (Server or Group).
+func Handle(r RouteBuilder, method, path string, fn RawHandler, mw ...Middleware) {
+	if srv, ok := r.(*Server); ok {
+		handler := fn
+		for i := len(mw) - 1; i >= 0; i-- {
+			handler = mw[i](handler)
+		}
+		srv.router.Add(method, path, handler)
+		return
 	}
-	srv.router.Add(method, path, handler)
+	r.registerRoute(method, path, fn, mw...)
 }
 
 // GET registers a pure GET handler: (context.Context) -> (Res, error)
-func GET[Res any](srv *Server, path string, fn func(ctx context.Context) (Res, error), mw ...Middleware) {
-	Handle(srv, http.MethodGet, path, func(req *Request) (any, error) {
+func GET[Res any](r RouteBuilder, path string, fn func(ctx context.Context) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodGet, path, func(req *Request) (any, error) {
 		res, err := fn(req.Context())
 		if err != nil {
 			return nil, err
@@ -31,8 +34,8 @@ func GET[Res any](srv *Server, path string, fn func(ctx context.Context) (Res, e
 }
 
 // GETReq registers a GET handler with Request metadata: (*Request) -> (Res, error)
-func GETReq[Res any](srv *Server, path string, fn func(req *Request) (Res, error), mw ...Middleware) {
-	Handle(srv, http.MethodGet, path, func(req *Request) (any, error) {
+func GETReq[Res any](r RouteBuilder, path string, fn func(req *Request) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodGet, path, func(req *Request) (any, error) {
 		res, err := fn(req)
 		if err != nil {
 			return nil, err
@@ -43,8 +46,8 @@ func GETReq[Res any](srv *Server, path string, fn func(req *Request) (Res, error
 
 // POST registers a pure POST handler: (context.Context, Req) -> (Res, error)
 // The request body is automatically decoded into Req before calling fn.
-func POST[Req, Res any](srv *Server, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
-	Handle(srv, http.MethodPost, path, func(req *Request) (any, error) {
+func POST[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodPost, path, func(req *Request) (any, error) {
 		var body Req
 		if err := req.BindJSON(&body); err != nil {
 			return nil, err
@@ -58,8 +61,8 @@ func POST[Req, Res any](srv *Server, path string, fn func(ctx context.Context, b
 }
 
 // POSTReq registers a POST handler with Request metadata: (*Request, Req) -> (Res, error)
-func POSTReq[Req, Res any](srv *Server, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
-	Handle(srv, http.MethodPost, path, func(req *Request) (any, error) {
+func POSTReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodPost, path, func(req *Request) (any, error) {
 		var body Req
 		if err := req.BindJSON(&body); err != nil {
 			return nil, err
@@ -73,8 +76,8 @@ func POSTReq[Req, Res any](srv *Server, path string, fn func(req *Request, body 
 }
 
 // PUT registers a pure PUT handler: (context.Context, Req) -> (Res, error)
-func PUT[Req, Res any](srv *Server, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
-	Handle(srv, http.MethodPut, path, func(req *Request) (any, error) {
+func PUT[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodPut, path, func(req *Request) (any, error) {
 		var body Req
 		if err := req.BindJSON(&body); err != nil {
 			return nil, err
@@ -88,8 +91,8 @@ func PUT[Req, Res any](srv *Server, path string, fn func(ctx context.Context, bo
 }
 
 // PUTReq registers a PUT handler with Request metadata: (*Request, Req) -> (Res, error)
-func PUTReq[Req, Res any](srv *Server, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
-	Handle(srv, http.MethodPut, path, func(req *Request) (any, error) {
+func PUTReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodPut, path, func(req *Request) (any, error) {
 		var body Req
 		if err := req.BindJSON(&body); err != nil {
 			return nil, err
@@ -103,8 +106,8 @@ func PUTReq[Req, Res any](srv *Server, path string, fn func(req *Request, body R
 }
 
 // PATCH registers a pure PATCH handler: (context.Context, Req) -> (Res, error)
-func PATCH[Req, Res any](srv *Server, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
-	Handle(srv, http.MethodPatch, path, func(req *Request) (any, error) {
+func PATCH[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodPatch, path, func(req *Request) (any, error) {
 		var body Req
 		if err := req.BindJSON(&body); err != nil {
 			return nil, err
@@ -118,8 +121,8 @@ func PATCH[Req, Res any](srv *Server, path string, fn func(ctx context.Context, 
 }
 
 // PATCHReq registers a PATCH handler with Request metadata: (*Request, Req) -> (Res, error)
-func PATCHReq[Req, Res any](srv *Server, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
-	Handle(srv, http.MethodPatch, path, func(req *Request) (any, error) {
+func PATCHReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodPatch, path, func(req *Request) (any, error) {
 		var body Req
 		if err := req.BindJSON(&body); err != nil {
 			return nil, err
@@ -133,8 +136,8 @@ func PATCHReq[Req, Res any](srv *Server, path string, fn func(req *Request, body
 }
 
 // DELETE registers a pure DELETE handler: (context.Context) -> (Res, error)
-func DELETE[Res any](srv *Server, path string, fn func(ctx context.Context) (Res, error), mw ...Middleware) {
-	Handle(srv, http.MethodDelete, path, func(req *Request) (any, error) {
+func DELETE[Res any](r RouteBuilder, path string, fn func(ctx context.Context) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodDelete, path, func(req *Request) (any, error) {
 		res, err := fn(req.Context())
 		if err != nil {
 			return nil, err
@@ -144,8 +147,8 @@ func DELETE[Res any](srv *Server, path string, fn func(ctx context.Context) (Res
 }
 
 // DELETEReq registers a DELETE handler with Request metadata: (*Request) -> (Res, error)
-func DELETEReq[Res any](srv *Server, path string, fn func(req *Request) (Res, error), mw ...Middleware) {
-	Handle(srv, http.MethodDelete, path, func(req *Request) (any, error) {
+func DELETEReq[Res any](r RouteBuilder, path string, fn func(req *Request) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodDelete, path, func(req *Request) (any, error) {
 		res, err := fn(req)
 		if err != nil {
 			return nil, err

@@ -170,3 +170,67 @@ func TestPanicRecovery(t *testing.T) {
 		t.Fatalf("expected 500 on panic, got %d", rec.Code)
 	}
 }
+
+type mockUserController struct {
+	db map[uint64]string
+}
+
+func (c *mockUserController) Mount(g *sein.Group) {
+	sein.GETReq(g, "/:id", c.get)
+	sein.POST(g, "", c.create)
+}
+
+func (c *mockUserController) get(req *sein.Request) (UserResponse, error) {
+	id := req.Param("id").AsUint64()
+	name, ok := c.db[id]
+	if !ok {
+		return UserResponse{}, sein.ErrNotFound("user not found")
+	}
+	return UserResponse{ID: id, Name: name}, nil
+}
+
+func (c *mockUserController) create(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
+	c.db[77] = req.Name
+	return UserResponse{ID: 77, Name: req.Name, Email: req.Email}, nil
+}
+
+func TestControllerMountAndGrouping(t *testing.T) {
+	app := sein.New()
+
+	ctrl := &mockUserController{
+		db: map[uint64]string{10: "Charlie"},
+	}
+
+	api := app.Group("/api/v1")
+	ctrl.Mount(api.Group("/users"))
+
+	// 1. Test GET /api/v1/users/10
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/v1/users/10", nil)
+	recGet := httptest.NewRecorder()
+	app.ServeHTTP(recGet, reqGet)
+
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recGet.Code)
+	}
+
+	var u UserResponse
+	_ = json.Unmarshal(recGet.Body.Bytes(), &u)
+	if u.ID != 10 || u.Name != "Charlie" {
+		t.Fatalf("unexpected user: %+v", u)
+	}
+
+	// 2. Test POST /api/v1/users
+	body, _ := json.Marshal(CreateUserDTO{Name: "David", Email: "david@test.com"})
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(body))
+	recPost := httptest.NewRecorder()
+	app.ServeHTTP(recPost, reqPost)
+
+	if recPost.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recPost.Code)
+	}
+
+	if ctrl.db[77] != "David" {
+		t.Fatalf("expected user 77 to be David in db, got %s", ctrl.db[77])
+	}
+}
+
