@@ -297,4 +297,52 @@ func TestDomainErrors(t *testing.T) {
 	}
 }
 
+type TestSnowflake uint64
+
+var (
+	ParamTestID   = sein.PathParam[TestSnowflake]("id")
+	QueryTestPage = sein.QueryParam[int]("page")
+	HeaderTestKey = sein.HeaderParam[string]("X-Api-Key")
+)
+
+func TestTypedParamDescriptors(t *testing.T) {
+	app := sein.New()
+
+	app.GETReq("/items/:id", func(req *sein.Request) (map[string]any, error) {
+		id, err := ParamTestID.Get(req)
+		if err != nil {
+			return nil, err
+		}
+
+		page := QueryTestPage.GetOr(req, 1)
+		apiKey, err := HeaderTestKey.Get(req)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]any{
+			"id":      id,
+			"page":    page,
+			"api_key": apiKey,
+		}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/items/8888?page=5", nil)
+	req.Header.Set("X-Api-Key", "secret-token")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &res)
+
+	if res["id"].(float64) != 8888 || res["page"].(float64) != 5 || res["api_key"] != "secret-token" {
+		t.Fatalf("unexpected response: %+v", res)
+	}
+}
+
+
 
