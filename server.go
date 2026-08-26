@@ -5,6 +5,7 @@
 package sein
 
 import (
+	"slices"
 	"context"
 	"encoding/json"
 	"errors"
@@ -123,8 +124,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Wrap in global middlewares
 	finalHandler := handler
-	for i := len(s.middlewares) - 1; i >= 0; i-- {
-		finalHandler = s.middlewares[i](finalHandler)
+	for _, v := range slices.Backward(s.middlewares) {
+		finalHandler = v(finalHandler)
 	}
 
 	// Execute handler

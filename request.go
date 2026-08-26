@@ -7,6 +7,7 @@ package sein
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"reflect"
@@ -14,7 +15,14 @@ import (
 	"sync"
 
 	"github.com/lemon4ksan/foundation/borrow"
+	"github.com/lemon4ksan/foundation/generic"
 )
+
+// Validatable is an interface for request DTOs that validate their own invariants.
+// Any DTO implementing Validatable is automatically validated upon decoding.
+type Validatable interface {
+	Validate() error
+}
 
 type contextSlot struct {
 	typ reflect.Type
@@ -149,14 +157,23 @@ func (r *Request) Body() []byte {
 	return data
 }
 
-// BindJSON decodes the JSON request body into dest.
+// BindJSON decodes the JSON request body into dest and executes automatic validation if dest implements Validatable.
 func (r *Request) BindJSON(dest any) error {
 	body := r.Body()
 	if len(body) == 0 {
-		return ErrBadRequest("empty request body")
+		return BadRequest("EMPTY_REQUEST_BODY", "Request body cannot be empty")
 	}
 	if err := json.Unmarshal(body, dest); err != nil {
-		return ErrBadRequest("invalid JSON payload", err)
+		return BadRequest("INVALID_JSON_PAYLOAD", "Invalid JSON payload structure").WithCause(err)
+	}
+
+	if v, ok := dest.(Validatable); ok {
+		if err := v.Validate(); err != nil {
+			if domainErr, ok := errors.AsType[DomainError](err); ok {
+				return domainErr
+			}
+			return BadRequest("VALIDATION_FAILED", err.Error())
+		}
 	}
 	return nil
 }
@@ -165,22 +182,19 @@ func (r *Request) BindJSON(dest any) error {
 func Set[T any](r *Request, val T) {
 	typ := reflect.TypeFor[T]()
 
-	// 1. Check existing inline slots
-	for i := 0; i < r.slotCount; i++ {
+	for i := range r.slotCount {
 		if r.slots[i].typ == typ {
 			r.slots[i].val = val
 			return
 		}
 	}
 
-	// 2. Insert into next available inline slot
 	if r.slotCount < len(r.slots) {
 		r.slots[r.slotCount] = contextSlot{typ: typ, val: val}
 		r.slotCount++
 		return
 	}
 
-	// 3. Fallback to overflow map only if > 8 slots are used
 	if r.overflow == nil {
 		r.overflow = make(map[reflect.Type]any)
 	}
@@ -191,15 +205,13 @@ func Set[T any](r *Request, val T) {
 func Get[T any](r *Request) (T, bool) {
 	typ := reflect.TypeFor[T]()
 
-	// 1. Fast linear scan over inline slots (0 ns, 0 allocs in L1 cache)
-	for i := 0; i < r.slotCount; i++ {
+	for i := range r.slotCount {
 		if r.slots[i].typ == typ {
 			typed, ok := r.slots[i].val.(T)
 			return typed, ok
 		}
 	}
 
-	// 2. Check overflow if present
 	if r.overflow != nil {
 		if v, ok := r.overflow[typ]; ok {
 			typed, ok := v.(T)
@@ -207,8 +219,7 @@ func Get[T any](r *Request) (T, bool) {
 		}
 	}
 
-	var zero T
-	return zero, false
+	return generic.Zero[T](), false
 }
 
 // MustGet retrieves a typed value or panics if not present.

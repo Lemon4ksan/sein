@@ -5,6 +5,8 @@
 package sein
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -31,6 +33,32 @@ func Recovery() Middleware {
 					err = ErrInternal(fmt.Sprintf("internal server panic: %v", r))
 				}
 			}()
+			return next(req)
+		}
+	}
+}
+
+// BearerAuth returns a middleware that extracts the Bearer token, validates it using validator,
+// and injects the returned session of type T into the request's L1-cache inline storage (0 B/op).
+// If the token is missing or invalid, it immediately halts the pipeline with a 401 Unauthorized error.
+func BearerAuth[T any](validator func(ctx context.Context, token string) (T, error)) Middleware {
+	return func(next RawHandler) RawHandler {
+		return func(req *Request) (any, error) {
+			token, ok := req.BearerToken()
+			if !ok || token == "" {
+				return nil, Unauthorized("MISSING_BEARER_TOKEN", "Authorization Bearer token is required")
+			}
+
+			session, err := validator(req.Context(), token)
+			if err != nil {
+				var domainErr DomainError
+				if errors.As(err, &domainErr) {
+					return nil, domainErr
+				}
+				return nil, Unauthorized("INVALID_BEARER_TOKEN", "Provided Bearer token is invalid or expired").WithCause(err)
+			}
+
+			Set(req, session)
 			return next(req)
 		}
 	}

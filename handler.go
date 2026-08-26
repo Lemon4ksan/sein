@@ -6,6 +6,7 @@ package sein
 
 import (
 	"context"
+	"errors"
 	"net/http"
 )
 
@@ -20,6 +21,23 @@ func Handle(r RouteBuilder, method, path string, fn RawHandler, mw ...Middleware
 		return
 	}
 	r.registerRoute(method, path, fn, mw...)
+}
+
+func bindAndValidate[Req any](req *Request) (Req, error) {
+	var body Req
+	if err := req.BindJSON(&body); err != nil {
+		return body, err
+	}
+	if v, ok := any(&body).(Validatable); ok {
+		if err := v.Validate(); err != nil {
+			var domainErr DomainError
+			if errors.As(err, &domainErr) {
+				return body, domainErr
+			}
+			return body, BadRequest("VALIDATION_FAILED", err.Error())
+		}
+	}
+	return body, nil
 }
 
 // GET registers a pure GET handler: (context.Context) -> (Res, error)
@@ -45,11 +63,11 @@ func GETReq[Res any](r RouteBuilder, path string, fn func(req *Request) (Res, er
 }
 
 // POST registers a pure POST handler: (context.Context, Req) -> (Res, error)
-// The request body is automatically decoded into Req before calling fn.
+// The request body is automatically decoded into Req and validated before calling fn.
 func POST[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
 	Handle(r, http.MethodPost, path, func(req *Request) (any, error) {
-		var body Req
-		if err := req.BindJSON(&body); err != nil {
+		body, err := bindAndValidate[Req](req)
+		if err != nil {
 			return nil, err
 		}
 		res, err := fn(req.Context(), body)
@@ -63,8 +81,8 @@ func POST[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context
 // POSTReq registers a POST handler with Request metadata: (*Request, Req) -> (Res, error)
 func POSTReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
 	Handle(r, http.MethodPost, path, func(req *Request) (any, error) {
-		var body Req
-		if err := req.BindJSON(&body); err != nil {
+		body, err := bindAndValidate[Req](req)
+		if err != nil {
 			return nil, err
 		}
 		res, err := fn(req, body)
@@ -78,8 +96,8 @@ func POSTReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, bo
 // PUT registers a pure PUT handler: (context.Context, Req) -> (Res, error)
 func PUT[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
 	Handle(r, http.MethodPut, path, func(req *Request) (any, error) {
-		var body Req
-		if err := req.BindJSON(&body); err != nil {
+		body, err := bindAndValidate[Req](req)
+		if err != nil {
 			return nil, err
 		}
 		res, err := fn(req.Context(), body)
@@ -93,8 +111,8 @@ func PUT[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context,
 // PUTReq registers a PUT handler with Request metadata: (*Request, Req) -> (Res, error)
 func PUTReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
 	Handle(r, http.MethodPut, path, func(req *Request) (any, error) {
-		var body Req
-		if err := req.BindJSON(&body); err != nil {
+		body, err := bindAndValidate[Req](req)
+		if err != nil {
 			return nil, err
 		}
 		res, err := fn(req, body)
@@ -108,8 +126,8 @@ func PUTReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, bod
 // PATCH registers a pure PATCH handler: (context.Context, Req) -> (Res, error)
 func PATCH[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
 	Handle(r, http.MethodPatch, path, func(req *Request) (any, error) {
-		var body Req
-		if err := req.BindJSON(&body); err != nil {
+		body, err := bindAndValidate[Req](req)
+		if err != nil {
 			return nil, err
 		}
 		res, err := fn(req.Context(), body)
@@ -123,8 +141,8 @@ func PATCH[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Contex
 // PATCHReq registers a PATCH handler with Request metadata: (*Request, Req) -> (Res, error)
 func PATCHReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
 	Handle(r, http.MethodPatch, path, func(req *Request) (any, error) {
-		var body Req
-		if err := req.BindJSON(&body); err != nil {
+		body, err := bindAndValidate[Req](req)
+		if err != nil {
 			return nil, err
 		}
 		res, err := fn(req, body)

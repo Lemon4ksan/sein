@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -343,6 +344,106 @@ func TestTypedParamDescriptors(t *testing.T) {
 		t.Fatalf("unexpected response: %+v", res)
 	}
 }
+
+type ValidatedUserDTO struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+func (v ValidatedUserDTO) Validate() error {
+	if v.Name == "" {
+		return errors.New("name is required")
+	}
+	if v.Email == "" {
+		return errors.New("email is required")
+	}
+	return nil
+}
+
+func TestValidatableDTO(t *testing.T) {
+	app := sein.New()
+
+	app.POST("/validate", func(ctx context.Context, req ValidatedUserDTO) (string, error) {
+		return "OK: " + req.Name, nil
+	})
+
+	// 1. Invalid payload (missing name)
+	bodyInvalid, _ := json.Marshal(ValidatedUserDTO{Name: "", Email: "test@example.com"})
+	reqInvalid := httptest.NewRequest(http.MethodPost, "/validate", bytes.NewReader(bodyInvalid))
+	recInvalid := httptest.NewRecorder()
+	app.ServeHTTP(recInvalid, reqInvalid)
+
+	if recInvalid.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", recInvalid.Code)
+	}
+
+	var errResp struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(recInvalid.Body.Bytes(), &errResp)
+
+	if errResp.Code != "VALIDATION_FAILED" || errResp.Message != "name is required" {
+		t.Fatalf("unexpected error response: %+v", errResp)
+	}
+
+	// 2. Valid payload
+	bodyValid, _ := json.Marshal(ValidatedUserDTO{Name: "Alice", Email: "alice@example.com"})
+	reqValid := httptest.NewRequest(http.MethodPost, "/validate", bytes.NewReader(bodyValid))
+	recValid := httptest.NewRecorder()
+	app.ServeHTTP(recValid, reqValid)
+
+	if recValid.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", recValid.Code)
+	}
+}
+
+func TestBearerAuthMiddleware(t *testing.T) {
+	app := sein.New()
+
+	authMW := sein.BearerAuth(func(ctx context.Context, token string) (UserSession, error) {
+		if token == "valid-admin-token" {
+			return UserSession{UserID: 42, Role: "admin"}, nil
+		}
+		return UserSession{}, sein.Unauthorized("INVALID_TOKEN", "Token is expired")
+	})
+
+	protected := app.Group("/admin", authMW)
+	protected.GETReq("/dashboard", func(req *sein.Request) (UserSession, error) {
+		session, ok := sein.Get[UserSession](req)
+		if !ok {
+			return UserSession{}, sein.Internal("SESSION_MISSING")
+		}
+		return session, nil
+	})
+
+	// 1. Missing header -> 401
+	reqNoAuth := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
+	recNoAuth := httptest.NewRecorder()
+	app.ServeHTTP(recNoAuth, reqNoAuth)
+
+	if recNoAuth.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d", recNoAuth.Code)
+	}
+
+	// 2. Valid header -> 200 + typed session
+	reqAuth := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
+	reqAuth.Header.Set("Authorization", "Bearer valid-admin-token")
+	recAuth := httptest.NewRecorder()
+	app.ServeHTTP(recAuth, reqAuth)
+
+	if recAuth.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", recAuth.Code)
+	}
+
+	var session UserSession
+	_ = json.Unmarshal(recAuth.Body.Bytes(), &session)
+
+	if session.UserID != 42 || session.Role != "admin" {
+		t.Fatalf("unexpected session: %+v", session)
+	}
+}
+
 
 
 
