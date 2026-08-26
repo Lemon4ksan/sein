@@ -66,6 +66,11 @@ func (s *Server) POST[Req, Res any](path string, fn func(context.Context, Req) (
 	POST(s, path, fn, mw...)
 }
 
+// POSTDTO registers a pure POST handler with explicit DTO naming on the server: (ctx, Req) -> (Res, error)
+func (s *Server) POSTDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	POSTDTO(s, path, fn, mw...)
+}
+
 // POSTReq registers a POST handler with Request metadata on the server: (req, Req) -> (Res, error)
 func (s *Server) POSTReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
 	POSTReq(s, path, fn, mw...)
@@ -74,6 +79,11 @@ func (s *Server) POSTReq[Req, Res any](path string, fn func(*Request, Req) (Res,
 // GET registers a pure GET handler on the server: (ctx) -> (Res, error)
 func (s *Server) GET[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
 	GET(s, path, fn, mw...)
+}
+
+// GETDTO registers a pure GET handler with Path/Query/Header DTO on the server: (ctx, Req) -> (Res, error)
+func (s *Server) GETDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	GETDTO(s, path, fn, mw...)
 }
 
 // GETReq registers a GET handler with Request metadata on the server: (req) -> (Res, error)
@@ -86,6 +96,11 @@ func (s *Server) PUT[Req, Res any](path string, fn func(context.Context, Req) (R
 	PUT(s, path, fn, mw...)
 }
 
+// PUTDTO registers a pure PUT handler with explicit DTO naming on the server: (ctx, Req) -> (Res, error)
+func (s *Server) PUTDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	PUTDTO(s, path, fn, mw...)
+}
+
 // PUTReq registers a PUT handler with Request metadata on the server: (req, Req) -> (Res, error)
 func (s *Server) PUTReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
 	PUTReq(s, path, fn, mw...)
@@ -96,6 +111,11 @@ func (s *Server) PATCH[Req, Res any](path string, fn func(context.Context, Req) 
 	PATCH(s, path, fn, mw...)
 }
 
+// PATCHDTO registers a pure PATCH handler with explicit DTO naming on the server: (ctx, Req) -> (Res, error)
+func (s *Server) PATCHDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	PATCHDTO(s, path, fn, mw...)
+}
+
 // PATCHReq registers a PATCH handler with Request metadata on the server: (req, Req) -> (Res, error)
 func (s *Server) PATCHReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
 	PATCHReq(s, path, fn, mw...)
@@ -104,6 +124,11 @@ func (s *Server) PATCHReq[Req, Res any](path string, fn func(*Request, Req) (Res
 // DELETE registers a pure DELETE handler on the server: (ctx) -> (Res, error)
 func (s *Server) DELETE[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
 	DELETE(s, path, fn, mw...)
+}
+
+// DELETEDTO registers a pure DELETE handler with Path/Query DTO on the server: (ctx, Req) -> (Res, error)
+func (s *Server) DELETEDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	DELETEDTO(s, path, fn, mw...)
 }
 
 // DELETEReq registers a DELETE handler with Request metadata on the server: (req) -> (Res, error)

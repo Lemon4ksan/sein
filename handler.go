@@ -6,7 +6,6 @@ package sein
 
 import (
 	"context"
-	"errors"
 	"net/http"
 )
 
@@ -25,25 +24,31 @@ func Handle(r RouteBuilder, method, path string, fn RawHandler, mw ...Middleware
 
 func bindAndValidate[Req any](req *Request) (Req, error) {
 	var body Req
-	if err := req.BindJSON(&body); err != nil {
+	if err := IngestDTO(req, &body); err != nil {
 		return body, err
-	}
-	if v, ok := any(&body).(Validatable); ok {
-		if err := v.Validate(); err != nil {
-			var domainErr DomainError
-			if errors.As(err, &domainErr) {
-				return body, domainErr
-			}
-			return body, ErrValidationFailed.WithMessage(err.Error())
-		}
 	}
 	return body, nil
 }
 
-// GET registers a pure GET handler: (context.Context) -> (Res, error)
+// GET registers a pure GET handler without parameters: (context.Context) -> (Res, error)
 func GET[Res any](r RouteBuilder, path string, fn func(ctx context.Context) (Res, error), mw ...Middleware) {
 	Handle(r, http.MethodGet, path, func(req *Request) (any, error) {
 		res, err := fn(req.Context())
+		if err != nil {
+			return nil, err
+		}
+		return toResponder(res), nil
+	}, mw...)
+}
+
+// GETDTO registers a pure GET handler with Path/Query/Header DTO: (context.Context, Req) -> (Res, error)
+func GETDTO[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, req Req) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodGet, path, func(req *Request) (any, error) {
+		body, err := bindAndValidate[Req](req)
+		if err != nil {
+			return nil, err
+		}
+		res, err := fn(req.Context(), body)
 		if err != nil {
 			return nil, err
 		}
@@ -78,6 +83,11 @@ func POST[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context
 	}, mw...)
 }
 
+// POSTDTO is an alias for POST with explicit DTO naming: (ctx, Req) -> (Res, error)
+func POSTDTO[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, req Req) (Res, error), mw ...Middleware) {
+	POST(r, path, fn, mw...)
+}
+
 // POSTReq registers a POST handler with Request metadata: (*Request, Req) -> (Res, error)
 func POSTReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
 	Handle(r, http.MethodPost, path, func(req *Request) (any, error) {
@@ -106,6 +116,11 @@ func PUT[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context,
 		}
 		return toResponder(res), nil
 	}, mw...)
+}
+
+// PUTDTO is an alias for PUT with explicit DTO naming: (ctx, Req) -> (Res, error)
+func PUTDTO[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, req Req) (Res, error), mw ...Middleware) {
+	PUT(r, path, fn, mw...)
 }
 
 // PUTReq registers a PUT handler with Request metadata: (*Request, Req) -> (Res, error)
@@ -138,6 +153,11 @@ func PATCH[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Contex
 	}, mw...)
 }
 
+// PATCHDTO is an alias for PATCH with explicit DTO naming: (ctx, Req) -> (Res, error)
+func PATCHDTO[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, req Req) (Res, error), mw ...Middleware) {
+	PATCH(r, path, fn, mw...)
+}
+
 // PATCHReq registers a PATCH handler with Request metadata: (*Request, Req) -> (Res, error)
 func PATCHReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
 	Handle(r, http.MethodPatch, path, func(req *Request) (any, error) {
@@ -153,10 +173,25 @@ func PATCHReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, b
 	}, mw...)
 }
 
-// DELETE registers a pure DELETE handler: (context.Context) -> (Res, error)
+// DELETE registers a pure DELETE handler without parameters: (context.Context) -> (Res, error)
 func DELETE[Res any](r RouteBuilder, path string, fn func(ctx context.Context) (Res, error), mw ...Middleware) {
 	Handle(r, http.MethodDelete, path, func(req *Request) (any, error) {
 		res, err := fn(req.Context())
+		if err != nil {
+			return nil, err
+		}
+		return toResponder(res), nil
+	}, mw...)
+}
+
+// DELETEDTO registers a pure DELETE handler with Path/Query DTO: (context.Context, Req) -> (Res, error)
+func DELETEDTO[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, req Req) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodDelete, path, func(req *Request) (any, error) {
+		body, err := bindAndValidate[Req](req)
+		if err != nil {
+			return nil, err
+		}
+		res, err := fn(req.Context(), body)
 		if err != nil {
 			return nil, err
 		}

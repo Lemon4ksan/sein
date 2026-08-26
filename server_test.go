@@ -444,6 +444,69 @@ func TestBearerAuthMiddleware(t *testing.T) {
 	}
 }
 
+type ComplexUserDTO struct {
+	ID        uint64 `path:"id"`
+	DryRun    bool   `query:"dry_run"`
+	AuthKey   string `header:"X-Api-Key"`
+	Name      string `json:"name"`
+	UserEmail string `json:"email"`
+}
+
+func (c ComplexUserDTO) Validate() error {
+	if c.Name == "" {
+		return errors.New("name cannot be empty")
+	}
+	return nil
+}
+
+func TestMultiSourceDTOIngestion(t *testing.T) {
+	app := sein.New()
+
+	app.POST("/users/:id/action", func(ctx context.Context, req ComplexUserDTO) (map[string]any, error) {
+		return map[string]any{
+			"id":      req.ID,
+			"dry_run": req.DryRun,
+			"api_key": req.AuthKey,
+			"name":    req.Name,
+			"email":   req.UserEmail,
+		}, nil
+	})
+
+	bodyJSON, _ := json.Marshal(map[string]string{
+		"name":  "Gordon Freeman",
+		"email": "gordon@blackmesa.gov",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/users/9999/action?dry_run=true", bytes.NewReader(bodyJSON))
+	req.Header.Set("X-Api-Key", "mesa-secret")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &res)
+
+	if res["id"].(float64) != 9999 {
+		t.Fatalf("expected id 9999, got %v", res["id"])
+	}
+	if res["dry_run"] != true {
+		t.Fatalf("expected dry_run true, got %v", res["dry_run"])
+	}
+	if res["api_key"] != "mesa-secret" {
+		t.Fatalf("expected api_key mesa-secret, got %v", res["api_key"])
+	}
+	if res["name"] != "Gordon Freeman" {
+		t.Fatalf("expected name Gordon Freeman, got %v", res["name"])
+	}
+	if res["email"] != "gordon@blackmesa.gov" {
+		t.Fatalf("expected email gordon@blackmesa.gov, got %v", res["email"])
+	}
+}
+
+
 
 
 

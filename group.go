@@ -58,6 +58,11 @@ func (g *Group) POST[Req, Res any](path string, fn func(context.Context, Req) (R
 	POST(g, path, fn, mw...)
 }
 
+// POSTDTO registers a pure POST handler with explicit DTO naming on this group: (ctx, Req) -> (Res, error)
+func (g *Group) POSTDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	POSTDTO(g, path, fn, mw...)
+}
+
 // POSTReq registers a POST handler with Request metadata on this group: (req, Req) -> (Res, error)
 func (g *Group) POSTReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
 	POSTReq(g, path, fn, mw...)
@@ -66,6 +71,11 @@ func (g *Group) POSTReq[Req, Res any](path string, fn func(*Request, Req) (Res, 
 // GET registers a pure GET handler on this group: (ctx) -> (Res, error)
 func (g *Group) GET[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
 	GET(g, path, fn, mw...)
+}
+
+// GETDTO registers a pure GET handler with Path/Query/Header DTO on this group: (ctx, Req) -> (Res, error)
+func (g *Group) GETDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	GETDTO(g, path, fn, mw...)
 }
 
 // GETReq registers a GET handler with Request metadata on this group: (req) -> (Res, error)
@@ -78,6 +88,11 @@ func (g *Group) PUT[Req, Res any](path string, fn func(context.Context, Req) (Re
 	PUT(g, path, fn, mw...)
 }
 
+// PUTDTO registers a pure PUT handler with explicit DTO naming on this group: (ctx, Req) -> (Res, error)
+func (g *Group) PUTDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	PUTDTO(g, path, fn, mw...)
+}
+
 // PUTReq registers a PUT handler with Request metadata on this group: (req, Req) -> (Res, error)
 func (g *Group) PUTReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
 	PUTReq(g, path, fn, mw...)
@@ -88,6 +103,11 @@ func (g *Group) PATCH[Req, Res any](path string, fn func(context.Context, Req) (
 	PATCH(g, path, fn, mw...)
 }
 
+// PATCHDTO registers a pure PATCH handler with explicit DTO naming on this group: (ctx, Req) -> (Res, error)
+func (g *Group) PATCHDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	PATCHDTO(g, path, fn, mw...)
+}
+
 // PATCHReq registers a PATCH handler with Request metadata on this group: (req, Req) -> (Res, error)
 func (g *Group) PATCHReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
 	PATCHReq(g, path, fn, mw...)
@@ -96,6 +116,11 @@ func (g *Group) PATCHReq[Req, Res any](path string, fn func(*Request, Req) (Res,
 // DELETE registers a pure DELETE handler on this group: (ctx) -> (Res, error)
 func (g *Group) DELETE[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
 	DELETE(g, path, fn, mw...)
+}
+
+// DELETEDTO registers a pure DELETE handler with Path/Query DTO on this group: (ctx, Req) -> (Res, error)
+func (g *Group) DELETEDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	DELETEDTO(g, path, fn, mw...)
 }
 
 // DELETEReq registers a DELETE handler with Request metadata on this group: (req) -> (Res, error)
