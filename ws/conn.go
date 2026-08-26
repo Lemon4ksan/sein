@@ -14,7 +14,52 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/lemon4ksan/foundation/silicon/simd"
 )
+
+// ApplyMask masks or unmasks payload in-place using the 4-octet masking key (RFC 6455 §5.3).
+func ApplyMask(payload []byte, mask [4]byte) {
+	if len(payload) == 0 {
+		return
+	}
+	maskKey := binary.LittleEndian.Uint32(mask[:])
+	simd.XORMask32(payload, maskKey)
+}
+
+// VectorApplyFastMask applies the 4-byte WebSocket XOR mask key to payload using hardware SIMD.
+func VectorApplyFastMask(payload []byte, mask [4]byte) {
+	ApplyMask(payload, mask)
+}
+
+// BuildFrameHeader serializes a WebSocket frame header (RFC 6455 §5.2).
+func BuildFrameHeader(dst []byte, opcode byte, length int, compress, isClient bool) int {
+	dst[0] = 0x80 | opcode
+	if compress {
+		dst[0] |= 0x40
+	}
+
+	dst[1] = 0
+	if isClient {
+		dst[1] = 0x80
+	}
+
+	switch {
+	case length < 126:
+		dst[1] |= byte(length)
+		return 2
+
+	case length <= 0xffff:
+		dst[1] |= 126
+		binary.BigEndian.PutUint16(dst[2:4], uint16(length))
+		return 4
+
+	default:
+		dst[1] |= 127
+		binary.BigEndian.PutUint64(dst[2:10], uint64(length))
+		return 10
+	}
+}
 
 // Conn represents an active, RFC 6455 compliant server-side WebSocket connection.
 type Conn struct {
@@ -165,7 +210,7 @@ func (c *Conn) ReadMessage() (int, []byte, error) {
 			}
 
 			// 5. Apply SIMD AVX2/NEON unmasking
-			vectorApplyFastMask(payload, maskKey)
+			ApplyMask(payload, maskKey)
 		}
 
 		// Handle Control Frames (Ping, Pong, Close)
@@ -245,7 +290,7 @@ func (c *Conn) WriteMessage(messageType int, data []byte) error {
 
 	var hdrBuf [10]byte
 
-	n := vectorBuildFrameHeader(hdrBuf[:], byte(messageType), len(data), false, false)
+	n := BuildFrameHeader(hdrBuf[:], byte(messageType), len(data), false, false)
 
 	if _, err := c.bw.Write(hdrBuf[:n]); err != nil {
 		return err
@@ -296,7 +341,7 @@ func (c *Conn) WritePing(data []byte) error {
 
 	var hdrBuf [10]byte
 
-	n := vectorBuildFrameHeader(hdrBuf[:], OpPing, len(data), false, false)
+	n := BuildFrameHeader(hdrBuf[:], OpPing, len(data), false, false)
 	if _, err := c.bw.Write(hdrBuf[:n]); err != nil {
 		return err
 	}
@@ -321,7 +366,7 @@ func (c *Conn) WritePong(data []byte) error {
 
 	var hdrBuf [10]byte
 
-	n := vectorBuildFrameHeader(hdrBuf[:], OpPong, len(data), false, false)
+	n := BuildFrameHeader(hdrBuf[:], OpPong, len(data), false, false)
 	if _, err := c.bw.Write(hdrBuf[:n]); err != nil {
 		return err
 	}
@@ -352,7 +397,7 @@ func (c *Conn) writeCloseFrame(code int, reason string) error {
 
 	var hdrBuf [10]byte
 
-	n := vectorBuildFrameHeader(hdrBuf[:], OpClose, payloadLen, false, false)
+	n := BuildFrameHeader(hdrBuf[:], OpClose, payloadLen, false, false)
 	_, _ = c.bw.Write(hdrBuf[:n])
 	_, _ = c.bw.Write(payload)
 
