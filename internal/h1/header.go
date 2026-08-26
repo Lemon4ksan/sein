@@ -61,6 +61,16 @@ func (h *Headers) Get(key string) string {
 	return ""
 }
 
+// Has reports whether key is present in headers (case-insensitive ASCII).
+func (h *Headers) Has(key string) bool {
+	for i := range h.entries {
+		if bytesconv.EqualFoldASCII(h.entries[i].Key, key) {
+			return true
+		}
+	}
+	return false
+}
+
 // Del deletes all entries matching key.
 func (h *Headers) Del(key string) {
 	n := 0

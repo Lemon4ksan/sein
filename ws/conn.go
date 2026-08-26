@@ -81,15 +81,32 @@ func (c *Conn) ReadMessage() (int, []byte, error) {
 
 		fin := (hdr[0] & 0x80) != 0
 		rsv := hdr[0] & 0x70
-		_ = rsv
 		opcode := int(hdr[0] & 0x0F)
 		masked := (hdr[1] & 0x80) != 0
 		payloadLen := int64(hdr[1] & 0x7F)
 
-		// RFC 6455 §5.1: Client-to-server frames MUST be masked
+		// RFC 6455 §5.2: RSV1-3 MUST be 0 unless extensions are negotiated
+		if rsv != 0 {
+			_ = c.CloseWithStatus(StatusProtocolError, "RSV bits must be 0")
+			return 0, nil, ErrReservedBits
+		}
+
+		// RFC 6455 §5.1 & RFC 9931 §6.2: Client-to-server frames MUST be masked
 		if !masked {
 			_ = c.CloseWithStatus(StatusProtocolError, "client frame must be masked")
 			return 0, nil, ErrMaskRequired
+		}
+
+		// RFC 6455 §5.5: Control frames MUST NOT be fragmented and MUST have payload <= 125 bytes
+		if opcode >= 0x8 {
+			if !fin {
+				_ = c.CloseWithStatus(StatusProtocolError, "control frame must not be fragmented")
+				return 0, nil, ErrFragmentedControl
+			}
+			if payloadLen > 125 {
+				_ = c.CloseWithStatus(StatusProtocolError, "control frame payload exceeds 125 octets")
+				return 0, nil, ErrControlFrameTooLarge
+			}
 		}
 
 		// 2. Read extended payload length
@@ -99,12 +116,27 @@ func (c *Conn) ReadMessage() (int, []byte, error) {
 				return 0, nil, err
 			}
 			payloadLen = int64(binary.BigEndian.Uint16(ext[:]))
+			// RFC 6455 §5.2: Minimal encoding rule
+			if payloadLen < 126 {
+				_ = c.CloseWithStatus(StatusProtocolError, "payload length not minimally encoded")
+				return 0, nil, ErrNonMinimalPayloadLength
+			}
 		} else if payloadLen == 127 {
 			var ext [8]byte
 			if _, err := io.ReadFull(c.br, ext[:]); err != nil {
 				return 0, nil, err
 			}
+			// RFC 6455 §5.2: Most significant bit MUST be 0
+			if (ext[0] & 0x80) != 0 {
+				_ = c.CloseWithStatus(StatusProtocolError, "invalid 64-bit payload length MSB")
+				return 0, nil, ErrNonMinimalPayloadLength
+			}
 			payloadLen = int64(binary.BigEndian.Uint64(ext[:]))
+			// RFC 6455 §5.2: Minimal encoding rule
+			if payloadLen <= 65535 {
+				_ = c.CloseWithStatus(StatusProtocolError, "payload length not minimally encoded")
+				return 0, nil, ErrNonMinimalPayloadLength
+			}
 		}
 
 		if payloadLen > c.maxMsgLen {
@@ -132,9 +164,6 @@ func (c *Conn) ReadMessage() (int, []byte, error) {
 		// Handle Control Frames (Ping, Pong, Close)
 		switch opcode {
 		case OpPing:
-			if payloadLen > 125 {
-				return 0, nil, ErrControlFrameTooLarge
-			}
 			_ = c.WritePong(payload)
 			continue
 
@@ -283,6 +312,11 @@ func (c *Conn) WritePong(data []byte) error {
 func (c *Conn) writeCloseFrame(code int, reason string) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+
+	// RFC 6455 §7.4.1: Reserved status codes MUST NOT be set on the wire
+	if code == StatusNoStatusRcvd || code == StatusAbnormalClosure || code == StatusTLSHandshake || code < 1000 || code > 4999 {
+		code = StatusNormalClosure
+	}
 
 	payloadLen := 2 + len(reason)
 	payload := make([]byte, payloadLen)

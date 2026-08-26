@@ -42,13 +42,14 @@ type ServerResponse struct {
 
 // ServerConn manages an active HTTP/3 server connection over an underlying QUIC connection (RFC 9114).
 type ServerConn struct {
-	quicConn   *quic.Conn
-	handler    ServerHandlerFunc
-	qpack      *QPACKCodec
-	isClosed   atomic.Bool
-	closeErr   error
-	controlOut *quic.SendStream
-	writeMu    sync.Mutex
+	quicConn     *quic.Conn
+	handler      ServerHandlerFunc
+	qpack        *QPACKCodec
+	isClosed     atomic.Bool
+	closeErr     error
+	controlOut   *quic.SendStream
+	hasControlIn atomic.Bool
+	writeMu      sync.Mutex
 }
 
 // NewServerConn creates a new HTTP/3 server connection wrapping a QUIC connection.
@@ -121,7 +122,7 @@ func (sc *ServerConn) acceptUniStreams() {
 func (sc *ServerConn) handleUniStream(stream *quic.ReceiveStream) {
 	defer stream.CancelRead(0)
 
-	// Read stream type varint
+	// Read stream type varint (RFC 9114 §6.2)
 	qr := quicvarint.NewReader(stream)
 	streamType, err := quicvarint.Read(qr)
 	if err != nil {
@@ -130,9 +131,16 @@ func (sc *ServerConn) handleUniStream(stream *quic.ReceiveStream) {
 
 	switch streamType {
 	case StreamTypeControl:
-		// Read peer settings frame
+		// RFC 9114 §6.2.1: Only one control stream per peer is permitted
+		if sc.hasControlIn.Swap(true) {
+			_ = sc.quicConn.CloseWithError(quic.ApplicationErrorCode(ErrCodeH3StreamCreationError), "duplicate control stream (RFC 9114 §6.2.1)")
+			return
+		}
+
+		// Read peer settings frame (RFC 9114 §6.2.1 & §7.2.4)
 		frameType, err := quicvarint.Read(qr)
 		if err != nil || frameType != FrameTypeSettings {
+			_ = sc.quicConn.CloseWithError(quic.ApplicationErrorCode(ErrCodeH3MissingSettings), "missing SETTINGS on control stream (RFC 9114 §6.2.1)")
 			return
 		}
 		frameLen, err := quicvarint.Read(qr)
@@ -140,10 +148,15 @@ func (sc *ServerConn) handleUniStream(stream *quic.ReceiveStream) {
 			return
 		}
 		settingsPayload := make([]byte, frameLen)
-		_, _ = io.ReadFull(stream, settingsPayload)
+		if _, err := io.ReadFull(stream, settingsPayload); err != nil {
+			return
+		}
 
 	case StreamTypeQPACKEncoder, StreamTypeQPACKDecoder:
-		// Drain stream
+		// Drain QPACK unidirectional streams
+		_, _ = io.Copy(io.Discard, stream)
+	default:
+		// RFC 9114 §6.2: Unknown unidirectional stream types MUST either be discarded or cancelled
 		_, _ = io.Copy(io.Discard, stream)
 	}
 }
@@ -153,11 +166,13 @@ func (sc *ServerConn) handleRequestStream(stream *quic.Stream) {
 
 	qr := quicvarint.NewReader(stream)
 	var (
-		headerBlock []byte
-		bodyBuf     bytes.Buffer
+		headerBlock    []byte
+		bodyBuf        bytes.Buffer
+		hasSeenHeaders bool
+		hasSeenTrailer bool
 	)
 
-	// Read frames on request stream (RFC 9114 §7.1)
+	// Read frames on request stream (RFC 9114 §4.1 & §7.1)
 	for {
 		frameType, err := quicvarint.Read(qr)
 		if err != nil {
@@ -174,12 +189,34 @@ func (sc *ServerConn) handleRequestStream(stream *quic.Stream) {
 
 		switch frameType {
 		case FrameTypeHeaders:
-			headerBlock = make([]byte, frameLen)
-			if _, err := io.ReadFull(stream, headerBlock); err != nil {
+			if hasSeenTrailer {
+				// RFC 9114 §4.1: Frame after trailer section is invalid
+				_ = sc.quicConn.CloseWithError(quic.ApplicationErrorCode(ErrCodeH3FrameUnexpected), "frame after trailing headers (RFC 9114 §4.1)")
 				return
 			}
 
+			if !hasSeenHeaders {
+				hasSeenHeaders = true
+				headerBlock = make([]byte, frameLen)
+				if _, err := io.ReadFull(stream, headerBlock); err != nil {
+					return
+				}
+			} else {
+				// Trailing headers
+				hasSeenTrailer = true
+				trailerBlock := make([]byte, frameLen)
+				if _, err := io.ReadFull(stream, trailerBlock); err != nil {
+					return
+				}
+			}
+
 		case FrameTypeData:
+			// RFC 9114 §4.1: DATA frame before HEADERS or after trailing HEADERS is invalid
+			if !hasSeenHeaders || hasSeenTrailer {
+				_ = sc.quicConn.CloseWithError(quic.ApplicationErrorCode(ErrCodeH3FrameUnexpected), "DATA frame unexpected (RFC 9114 §4.1)")
+				return
+			}
+
 			if frameLen > 0 {
 				lr := io.LimitReader(stream, int64(frameLen))
 				if _, err := io.Copy(&bodyBuf, lr); err != nil {
@@ -188,7 +225,7 @@ func (sc *ServerConn) handleRequestStream(stream *quic.Stream) {
 			}
 
 		default:
-			// Skip unknown frame
+			// Skip unknown frame (RFC 9114 §7.2.8 & §9)
 			if frameLen > 0 {
 				lr := io.LimitReader(stream, int64(frameLen))
 				_, _ = io.Copy(io.Discard, lr)
@@ -196,13 +233,16 @@ func (sc *ServerConn) handleRequestStream(stream *quic.Stream) {
 		}
 	}
 
-	if len(headerBlock) == 0 {
+	if !hasSeenHeaders || len(headerBlock) == 0 {
+		// RFC 9114 §4.1: Incomplete request stream termination
+		stream.CancelRead(quic.StreamErrorCode(ErrCodeH3RequestIncomplete))
 		return
 	}
 
-	// Decode QPACK headers
+	// Decode QPACK headers (RFC 9114 §4.1.2)
 	method, path, scheme, authority, headers, err := sc.qpack.DecodeRequestHeaders(headerBlock)
 	if err != nil {
+		stream.CancelRead(quic.StreamErrorCode(ErrCodeH3MessageError))
 		return
 	}
 

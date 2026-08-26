@@ -21,10 +21,12 @@ import (
 )
 
 var (
-	ErrMalformedRequestLine = errors.New("h1: malformed request line")
-	ErrUnsupportedProtocol  = errors.New("h1: unsupported protocol version")
-	ErrBodyTooLarge         = errors.New("h1: request body exceeds maximum allowed size")
-	ErrHijackNotSupported   = errors.New("h1: hijacking not supported on this connection")
+	ErrMalformedRequestLine        = errors.New("h1: malformed request line (RFC 9112 §3)")
+	ErrUnsupportedProtocol         = errors.New("h1: unsupported protocol version (RFC 9112 §2.3)")
+	ErrBodyTooLarge                = errors.New("h1: request body exceeds maximum allowed size (RFC 9110 §15.5.14)")
+	ErrMissingHostHeader           = errors.New("h1: missing host header in HTTP/1.1 request (RFC 9112 §3.2)")
+	ErrUnsupportedTransferEncoding = errors.New("h1: request transfer-encoding must end with chunked (RFC 9112 §6.3)")
+	ErrHijackNotSupported          = errors.New("h1: hijacking not supported on this connection")
 )
 
 // Request holds parsed HTTP/1.1 request data without net/http wrapping.
@@ -66,6 +68,12 @@ func (r *Request) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 }
 
 // ReadRequest parses an incoming HTTP/1.1 request from the buffered stream using SIMD acceleration.
+//
+// Standards Conformance:
+//   - RFC 9112 §2.2 (Message Parsing & Leading CRLF Robustness)
+//   - RFC 9112 §3.2 (Request Target & Host Header Enforcement)
+//   - RFC 9112 §6.3 (Message Body Length & Request Smuggling Protection)
+//   - RFC 9931 §4 & §8 (Security Considerations for Optimistic Transitions)
 func (r *Request) ReadRequest(br *bufio.Reader, bw *bufio.Writer, maxBodySize int64) error {
 	// 1. Fast SIMD Path: Check if complete header block (\r\n\r\n) is already in read buffer
 	buffered := br.Buffered()
@@ -86,18 +94,22 @@ func (r *Request) ReadRequest(br *bufio.Reader, bw *bufio.Writer, maxBodySize in
 	}
 
 	// 2. Fallback Streaming Path: Read line by line
-	line, err := br.ReadBytes('\n')
-	if err != nil {
-		return err
-	}
+	// Robustness (RFC 9112 §2.2): Ignore leading CRLFs before the request-line
+	for {
+		line, err := br.ReadBytes('\n')
+		if err != nil {
+			return err
+		}
 
-	line = bytes.TrimRight(line, "\r\n")
-	if len(line) == 0 {
-		return io.EOF
-	}
+		line = bytes.TrimRight(line, "\r\n")
+		if len(line) == 0 {
+			continue
+		}
 
-	if err := r.parseRequestLine(line); err != nil {
-		return err
+		if err := r.parseRequestLine(line); err != nil {
+			return err
+		}
+		break
 	}
 
 	for {
@@ -186,23 +198,43 @@ func (r *Request) parseRequestLine(line []byte) error {
 func (r *Request) finishRequestRead(br *bufio.Reader, bw *bufio.Writer, maxBodySize int64) error {
 	r.Host = r.Headers.Get(header.Host)
 
-	// Handle "Expect: 100-continue" (RFC 7231 §5.1.1)
+	// RFC 9112 §3.2: HTTP/1.1 requests MUST include a valid Host header
+	if r.Proto == "HTTP/1.1" && r.Host == "" {
+		return ErrMissingHostHeader
+	}
+
+	hasTE := r.Headers.Has(header.TransferEncoding)
+	hasCL := r.Headers.Has(header.ContentLength)
+
+	// RFC 9112 §6.3 Item 3: If both Transfer-Encoding and Content-Length are present,
+	// Transfer-Encoding overrides Content-Length to mitigate Request Smuggling (RFC 9112 §11.2).
+	if hasTE && hasCL {
+		r.Headers.Del(header.ContentLength)
+	}
+
+	// Handle "Expect: 100-continue" (RFC 9110 §10.1.1)
 	if bytesconv.EqualFoldASCII(r.Headers.Get(header.Expect), header.Value100Continue) && bw != nil {
 		_, _ = bw.WriteString("HTTP/1.1 100 Continue\r\n\r\n")
 		_ = bw.Flush()
 	}
 
 	// Read body if present
-	if bytesconv.EqualFoldASCII(r.Headers.Get(header.TransferEncoding), header.ValueChunked) {
+	if hasTE {
+		teVal := r.Headers.Get(header.TransferEncoding)
+		// RFC 9112 §6.3 Item 4: In requests, chunked MUST be the final transfer coding
+		if !strings.HasSuffix(strings.ToLower(teVal), header.ValueChunked) {
+			return ErrUnsupportedTransferEncoding
+		}
 		chunkedBody, err := ReadAllChunked(br, maxBodySize)
 		if err != nil {
 			return err
 		}
 		r.Body = chunkedBody
 	} else if clStr := r.Headers.Get(header.ContentLength); clStr != "" {
+		// RFC 9112 §6.3 Item 5 & 6: Validate Content-Length decimal representation
 		contentLength, err := strconv.ParseInt(clStr, 10, 64)
 		if err != nil || contentLength < 0 {
-			return fmt.Errorf("h1: invalid content-length %q", clStr)
+			return fmt.Errorf("h1: invalid content-length %q (RFC 9112 §6.3)", clStr)
 		}
 		if contentLength > maxBodySize {
 			return ErrBodyTooLarge

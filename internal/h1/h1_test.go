@@ -308,6 +308,33 @@ func TestRequest_Hijack(t *testing.T) {
 	_ = clientConn.Close()
 }
 
+func TestRequestParsing_RFC9112_LeadingCRLF(t *testing.T) {
+	// RFC 9112 §2.2: Server SHOULD ignore empty lines before request-line
+	rawReq := "\r\n\r\nGET /ping HTTP/1.1\r\nHost: localhost\r\n\r\n"
+	br := bufio.NewReader(stringsReader(rawReq))
+	var req h1.Request
+
+	err := req.ReadRequest(br, nil, 1024)
+	if err != nil {
+		t.Fatalf("unexpected error parsing request with leading CRLFs: %v", err)
+	}
+	if req.Path != "/ping" {
+		t.Errorf("expected Path /ping, got %q", req.Path)
+	}
+}
+
+func TestRequestParsing_RFC9112_MissingHost(t *testing.T) {
+	// RFC 9112 §3.2: HTTP/1.1 request MUST include Host header
+	rawReq := "GET /ping HTTP/1.1\r\nUser-Agent: test\r\n\r\n"
+	br := bufio.NewReader(stringsReader(rawReq))
+	var req h1.Request
+
+	err := req.ReadRequest(br, nil, 1024)
+	if err == nil {
+		t.Fatal("expected error for missing Host header in HTTP/1.1 request")
+	}
+}
+
 func stringsReader(s string) io.Reader {
 	return bytes.NewReader([]byte(s))
 }

@@ -12,6 +12,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/silicon/pool"
 )
 
@@ -117,6 +118,11 @@ func (ch *ConnHandler) ServeConn(conn net.Conn) error {
 		}
 
 		keepAlive := req.Headers.IsKeepAlive(req.Proto)
+		// RFC 9112 §6.3 Item 3 & §11.2: To mitigate Request Smuggling when both Transfer-Encoding
+		// and Content-Length were received, the server MUST close the connection after responding.
+		if req.Headers.Has(header.TransferEncoding) && req.Headers.Has(header.ContentLength) {
+			keepAlive = false
+		}
 
 		// Set write timeout
 		if ch.WriteTimeout > 0 {

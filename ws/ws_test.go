@@ -144,6 +144,108 @@ func TestWebSocket_HandshakeAndEcho(t *testing.T) {
 	require.NoError(t, app.Shutdown(ctx))
 }
 
+func TestWebSocket_SubprotocolNegotiation(t *testing.T) {
+	app := sein.New()
+
+	sein.Handle(app, "GET", "/ws-proto", func(req *sein.Request) (any, error) {
+		conn, err := ws.Upgrade(req, ws.WithSubprotocols("graphql-transport-ws", "json-rpc"))
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+		return nil, nil
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	clientConn, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	defer clientConn.Close()
+
+	nonce := make([]byte, 16)
+	_, _ = rand.Read(nonce)
+	clientKey := base64.StdEncoding.EncodeToString(nonce)
+
+	reqStr := "GET /ws-proto HTTP/1.1\r\n" +
+		"Host: " + addr + "\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Version: 13\r\n" +
+		"Sec-WebSocket-Key: " + clientKey + "\r\n" +
+		"Sec-WebSocket-Protocol: mqtt, json-rpc\r\n\r\n"
+
+	_, err = clientConn.Write([]byte(reqStr))
+	require.NoError(t, err)
+
+	br := bufio.NewReader(clientConn)
+	statusLine, err := br.ReadString('\n')
+	require.NoError(t, err)
+	assert.Contains(t, statusLine, "101 Switching Protocols")
+
+	var matchedProto string
+	for {
+		line, err := br.ReadString('\n')
+		require.NoError(t, err)
+		if line == "\r\n" {
+			break
+		}
+		if len(line) > 24 && line[:24] == "Sec-WebSocket-Protocol: " {
+			matchedProto = line[24 : len(line)-2]
+		}
+	}
+	assert.Equal(t, "json-rpc", matchedProto)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, app.Shutdown(ctx))
+}
+
+func TestWebSocket_InvalidHandshake_Rejection(t *testing.T) {
+	app := sein.New()
+
+	sein.Handle(app, "POST", "/ws-invalid", func(req *sein.Request) (any, error) {
+		_, err := ws.Upgrade(req)
+		assert.Equal(t, ws.ErrNotWebSocket, err)
+		return nil, err
+	})
+
+	sein.Handle(app, "GET", "/ws-badkey", func(req *sein.Request) (any, error) {
+		_, err := ws.Upgrade(req)
+		assert.Equal(t, ws.ErrMissingKey, err)
+		return nil, err
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	// 1. Test POST method rejection (RFC 6455 §4.2.1 Item 1)
+	conn1, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	_, _ = conn1.Write([]byte("POST /ws-invalid HTTP/1.1\r\nHost: " + addr + "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n"))
+	_ = conn1.Close()
+
+	// 2. Test Invalid Key (not 16 bytes decoded) (RFC 6455 §4.2.1 Item 5)
+	conn2, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+	_, _ = conn2.Write([]byte("GET /ws-badkey HTTP/1.1\r\nHost: " + addr + "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: YWJjZA==\r\n\r\n"))
+	_ = conn2.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, app.Shutdown(ctx))
+}
+
 func BenchmarkWS_SIMDDemasking_64KB(b *testing.B) {
 	payload := make([]byte, 64*1024)
 	maskKey := [4]byte{0xDE, 0xAD, 0xBE, 0xEF}

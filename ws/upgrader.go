@@ -69,7 +69,12 @@ func Upgrade(req *sein.Request, opts ...Option) (*Conn, error) {
 		opt(&upgrader)
 	}
 
-	// 1. Verify Upgrade and Connection headers
+	// 1. Verify GET method (RFC 6455 §4.2.1 Item 1)
+	if req.Method() != "GET" {
+		return nil, ErrNotWebSocket
+	}
+
+	// 2. Verify Upgrade and Connection headers (RFC 6455 §4.2.1 Item 3 & 4)
 	if !strings.EqualFold(req.Header(header.Upgrade), header.ValueWebSocket) {
 		return nil, ErrNotWebSocket
 	}
@@ -79,33 +84,37 @@ func Upgrade(req *sein.Request, opts ...Option) (*Conn, error) {
 		return nil, ErrNotWebSocket
 	}
 
-	// 2. Verify Sec-WebSocket-Version == 13
+	// 3. Verify Sec-WebSocket-Version == 13 (RFC 6455 §4.2.1 Item 6)
 	version := req.Header("Sec-WebSocket-Version")
 	if version != "13" {
 		return nil, ErrUnsupportedVersion
 	}
 
-	// 3. Verify Sec-WebSocket-Key
+	// 4. Verify Sec-WebSocket-Key decodes to 16 bytes (RFC 6455 §4.2.1 Item 5)
 	clientKey := strings.TrimSpace(req.Header("Sec-WebSocket-Key"))
 	if clientKey == "" {
 		return nil, ErrMissingKey
 	}
+	decodedKey, err := base64.StdEncoding.DecodeString(clientKey)
+	if err != nil || len(decodedKey) != 16 {
+		return nil, ErrMissingKey
+	}
 
-	// 4. Validate Origin
+	// 5. Validate Origin (RFC 6455 §4.2.2 Item 4)
 	if upgrader.CheckOrigin != nil && !upgrader.CheckOrigin(req) {
 		return nil, sein.ErrForbidden("websocket origin rejected")
 	}
 
-	// 5. Compute Sec-WebSocket-Accept
+	// 6. Compute Sec-WebSocket-Accept (RFC 6455 §4.2.2 Item 5)
 	acceptKey := ComputeAcceptKey(clientKey)
 
-	// 6. Hijack underlying connection
+	// 7. Hijack underlying connection
 	netConn, rw, err := req.Hijack()
 	if err != nil {
 		return nil, err
 	}
 
-	// 7. Write 101 Switching Protocols response
+	// 8. Write 101 Switching Protocols response (RFC 6455 §4.2.2)
 	var sb strings.Builder
 	sb.WriteString("HTTP/1.1 101 Switching Protocols\r\n")
 	sb.WriteString("Upgrade: websocket\r\n")
@@ -114,20 +123,27 @@ func Upgrade(req *sein.Request, opts ...Option) (*Conn, error) {
 	sb.WriteString(acceptKey)
 	sb.WriteString("\r\n")
 
-	// Negotiate subprotocol if requested
+	// Negotiate subprotocol if requested (RFC 6455 §4.2.2 Item 5 & RFC 7936 §2: Case-sensitive single match)
 	if len(upgrader.Subprotocols) > 0 {
 		clientProtocols := req.Header("Sec-WebSocket-Protocol")
 		if clientProtocols != "" {
+			var selectedProtocol string
 			for _, cp := range strings.Split(clientProtocols, ",") {
 				cp = strings.TrimSpace(cp)
 				for _, sp := range upgrader.Subprotocols {
-					if strings.EqualFold(cp, sp) {
-						sb.WriteString("Sec-WebSocket-Protocol: ")
-						sb.WriteString(sp)
-						sb.WriteString("\r\n")
+					if cp == sp {
+						selectedProtocol = sp
 						break
 					}
 				}
+				if selectedProtocol != "" {
+					break
+				}
+			}
+			if selectedProtocol != "" {
+				sb.WriteString("Sec-WebSocket-Protocol: ")
+				sb.WriteString(selectedProtocol)
+				sb.WriteString("\r\n")
 			}
 		}
 	}

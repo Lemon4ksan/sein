@@ -28,6 +28,7 @@ type ServerRequest struct {
 	Path       string
 	Scheme     string
 	Authority  string
+	Protocol   string
 	Headers    http.Header
 	Body       []byte
 	RemoteAddr string
@@ -47,6 +48,7 @@ type serverStream struct {
 	path        string
 	scheme      string
 	authority   string
+	protocol    string
 	headers     http.Header
 	headerBlock bytes.Buffer
 	body        bytes.Buffer
@@ -268,8 +270,9 @@ func (sc *ServerConn) handleHeaders(fr *FrameHeader) error {
 	defer ReleaseFrameHeader(fr)
 
 	streamID := fr.Stream()
-	if streamID == 0 {
-		return errors.New("h2: HEADERS frame with stream ID 0")
+	// RFC 9113 §5.1.1: Client-initiated streams MUST use non-zero, odd-numbered stream identifiers
+	if streamID == 0 || (streamID%2) == 0 {
+		return ProtocolError
 	}
 
 	hFrame := fr.Body().(*Headers)
@@ -306,7 +309,7 @@ func (sc *ServerConn) handleContinuation(fr *FrameHeader) error {
 	sc.streamsMu.RUnlock()
 
 	if !ok {
-		return errors.New("h2: CONTINUATION on unknown stream")
+		return errors.New("h2: CONTINUATION on unknown stream (RFC 9113 §6.10)")
 	}
 
 	cFrame := fr.Body().(*Continuation)
@@ -325,12 +328,14 @@ func (sc *ServerConn) finishHeaderBlock(st *serverStream) error {
 	hf := AcquireHeaderField()
 	defer ReleaseHeaderField(hf)
 
+	var hasSeenRegularHeader bool
 	for len(rawBlock) > 0 {
 		hf.Reset()
 		var err error
 		rawBlock, err = sc.hpackDec.Next(hf, rawBlock)
 		if err != nil {
-			return err
+			// RFC 7541 & RFC 9113 §4.3: HPACK decoding errors MUST be treated as COMPRESSION_ERROR
+			return CompressionError
 		}
 		if hf.Empty() {
 			continue
@@ -339,18 +344,77 @@ func (sc *ServerConn) finishHeaderBlock(st *serverStream) error {
 		k := string(hf.KeyBytes())
 		v := string(hf.ValueBytes())
 
-		switch k {
-		case ":method":
-			st.method = v
-		case ":path":
-			st.path = v
-		case ":scheme":
-			st.scheme = v
-		case ":authority":
-			st.authority = v
-		default:
+		// RFC 9113 §8.2: All field names MUST be lowercase ASCII
+		for i := 0; i < len(k); i++ {
+			if k[i] >= 'A' && k[i] <= 'Z' {
+				return ProtocolError
+			}
+		}
+
+		if hf.IsPseudo() {
+			// RFC 9113 §8.3: Pseudo-headers MUST appear before regular headers
+			if hasSeenRegularHeader {
+				return ProtocolError
+			}
+			switch k {
+			case ":method":
+				if st.method != "" {
+					return ProtocolError
+				}
+				st.method = v
+			case ":path":
+				if st.path != "" {
+					return ProtocolError
+				}
+				st.path = v
+			case ":scheme":
+				if st.scheme != "" {
+					return ProtocolError
+				}
+				st.scheme = v
+			case ":authority":
+				if st.authority != "" {
+					return ProtocolError
+				}
+				st.authority = v
+			case ":protocol":
+				// RFC 8441 §4: Extended CONNECT pseudo-header
+				if st.protocol != "" {
+					return ProtocolError
+				}
+				st.protocol = v
+			default:
+				// RFC 9113 §8.3: Unknown or invalid pseudo-header
+				return ProtocolError
+			}
+		} else {
+			hasSeenRegularHeader = true
+
+			// RFC 9113 §8.2.2: Connection-specific headers are prohibited in HTTP/2
+			switch k {
+			case "connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade":
+				return ProtocolError
+			case "te":
+				if v != "trailers" {
+					return ProtocolError
+				}
+			}
+
 			st.headers.Add(k, v)
 		}
+	}
+
+	// RFC 9113 §8.3.1 & RFC 8441 §4: Mandatory request pseudo-headers
+	if st.method == "" {
+		return ProtocolError
+	}
+	if st.protocol != "" {
+		// RFC 8441 §4: :protocol pseudo-header is only valid on CONNECT requests with :scheme and :path
+		if st.method != "CONNECT" || st.scheme == "" || st.path == "" {
+			return ProtocolError
+		}
+	} else if st.method != "CONNECT" && (st.scheme == "" || st.path == "") {
+		return ProtocolError
 	}
 
 	if st.endStream {
@@ -390,6 +454,7 @@ func (sc *ServerConn) dispatchStream(st *serverStream) {
 		Path:       st.path,
 		Scheme:     st.scheme,
 		Authority:  st.authority,
+		Protocol:   st.protocol,
 		Headers:    st.headers,
 		Body:       st.body.Bytes(),
 		RemoteAddr: sc.conn.RemoteAddr().String(),
