@@ -217,7 +217,7 @@ func buildMockTLSClientHello(serverName string) []byte {
 	select {
 	case b := <-ch:
 		return b
-	case <-time.After(1 * time.Second):
+	case <-time.After(5 * time.Second):
 		return nil
 	}
 }

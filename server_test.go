@@ -1035,3 +1035,62 @@ func TestAfterResponseHook(t *testing.T) {
 	assert.Equal(t, http.StatusOK, recordedStatus)
 	assert.True(t, recordedDuration >= 0)
 }
+
+type TestUserSession struct {
+	UserID int
+	Name   string
+}
+
+func TestDerive(t *testing.T) {
+	app := sein.New()
+
+	sein.Derive(app, func(req *sein.Request) (*TestUserSession, error) {
+		token := req.Header("X-Token")
+		if token != "valid-token" {
+			return nil, sein.Unauthorized("INVALID_TOKEN", "Token is invalid")
+		}
+		return &TestUserSession{UserID: 101, Name: "Alice"}, nil
+	})
+
+	app.GetAuth("/me", func(ctx context.Context, session *TestUserSession) (string, error) {
+		return "Hello, " + session.Name, nil
+	})
+
+	// 1. Unauthorized request
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/me", nil)
+	app.ServeHTTP(rec1, req1)
+	assert.Equal(t, http.StatusUnauthorized, rec1.Code)
+
+	// 2. Authorized request
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/me", nil)
+	req2.Header.Set("X-Token", "valid-token")
+	app.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusOK, rec2.Code)
+	assert.Equal(t, "Hello, Alice", rec2.Body.String())
+}
+
+func TestMicroTrace(t *testing.T) {
+	app := sein.New()
+
+	var traceRecorded *sein.TraceInfo
+	app.Trace(func(tr *sein.TraceInfo) {
+		traceRecorded = tr
+	})
+
+	app.Get("/hello", func(ctx context.Context) (string, error) {
+		return "world", nil
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/hello", nil)
+	app.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, traceRecorded)
+	assert.Equal(t, "GET", traceRecorded.Method)
+	assert.Equal(t, "/hello", traceRecorded.Path)
+	assert.Equal(t, http.StatusOK, traceRecorded.StatusCode)
+	assert.True(t, traceRecorded.TotalDuration >= 0)
+}

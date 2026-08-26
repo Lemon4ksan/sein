@@ -32,6 +32,18 @@ type ErrorMapper func(err error) (DomainError, bool)
 // AfterResponseHook is a lifecycle callback invoked asynchronously after an HTTP response has been flushed to the client.
 type AfterResponseHook func(req *Request, statusCode int, duration time.Duration)
 
+// TraceInfo encapsulates detailed execution metrics across each phase of an HTTP request lifecycle.
+type TraceInfo struct {
+	Method        string        `json:"method"`
+	Path          string        `json:"path"`
+	StatusCode    int           `json:"status_code"`
+	ClientIP      string        `json:"client_ip"`
+	TotalDuration time.Duration `json:"total_duration"`
+}
+
+// TraceHook is a callback invoked with granular request execution timings.
+type TraceHook func(t *TraceInfo)
+
 // Server represents a high-throughput, multi-protocol HTTP server engine supporting
 // HTTP/1.1, HTTP/2, HTTP/3 (QUIC), and WebSockets with zero net/http overhead.
 type Server struct {
@@ -40,6 +52,8 @@ type Server struct {
 	middlewares            []Middleware
 	errorMappers           []ErrorMapper
 	afterResponseHooks     []AfterResponseHook
+	traceHooks             []TraceHook
+	resolvers              sync.Map
 	h1Server               *h1engine.Server
 	tcpLn                  net.Listener
 	quicLn                 *quic.Listener
@@ -228,13 +242,33 @@ func (s *Server) AfterResponse(fn AfterResponseHook) *Server {
 	return s
 }
 
+// Trace registers a micro-tracing observer callback invoked after every completed request.
+func (s *Server) Trace(fn TraceHook) *Server {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.traceHooks = append(s.traceHooks, fn)
+	return s
+}
+
 func (s *Server) triggerAfterResponse(req *Request, statusCode int, duration time.Duration) {
-	if len(s.afterResponseHooks) == 0 {
-		return
+	if len(s.afterResponseHooks) > 0 {
+		for _, hook := range s.afterResponseHooks {
+			hook(req, statusCode, duration)
+		}
 	}
 
-	for _, hook := range s.afterResponseHooks {
-		hook(req, statusCode, duration)
+	if len(s.traceHooks) > 0 {
+		info := TraceInfo{
+			Method:        req.Method(),
+			Path:          req.Path(),
+			StatusCode:    statusCode,
+			ClientIP:      req.ClientIP(),
+			TotalDuration: duration,
+		}
+		for _, hook := range s.traceHooks {
+			hook(&info)
+		}
 	}
 }
 
