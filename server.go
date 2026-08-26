@@ -378,7 +378,7 @@ func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 		return s.serializeH1Result(h1Res, res)
 	}
 
-	if handler == nil {
+	if handler == nil && s.SkipUnmatchedRoutes {
 		if status == http.StatusMethodNotAllowed {
 			if allowHeader != "" {
 				h1Res.Headers.Set(header.Allow, allowHeader)
@@ -397,12 +397,74 @@ func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 	req := NewH1Request(h1Req, params)
 	defer req.Release()
 
-	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
-	finalHandler := handler
-	if !s.SkipUnmatchedRoutes || (status != http.StatusNotFound && status != http.StatusMethodNotAllowed) {
-		for _, v := range slices.Backward(s.middlewares) {
-			finalHandler = v(finalHandler)
+	origPath := h1Req.Path
+	origMethod := h1Req.Method
+
+	baseHandler := handler
+	if baseHandler == nil {
+		baseHandler = func(r *Request) (any, error) {
+			if r.Path() != origPath || r.Method() != origMethod {
+				newHandler, newParams, newAllow, newRedir, newRedirCode, newStatus := s.resolveRoute(r.Method(), r.Path())
+				if newRedir != "" {
+					return Redirect(newRedir, newRedirCode), nil
+				}
+
+				if newHandler != nil {
+					r.params = newParams
+					return newHandler(r)
+				}
+
+				if newStatus == http.StatusMethodNotAllowed {
+					if newAllow != "" {
+						h1Res.Headers.Set(header.Allow, newAllow)
+					}
+
+					return nil, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+				}
+			}
+
+			if status == http.StatusMethodNotAllowed {
+				if allowHeader != "" {
+					h1Res.Headers.Set(header.Allow, allowHeader)
+				}
+
+				return nil, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+			}
+
+			return nil, ErrNotFound("route not found")
 		}
+	} else {
+		actualHandler := baseHandler
+		baseHandler = func(r *Request) (any, error) {
+			if r.Path() != origPath || r.Method() != origMethod {
+				newHandler, newParams, newAllow, newRedir, newRedirCode, newStatus := s.resolveRoute(r.Method(), r.Path())
+				if newRedir != "" {
+					return Redirect(newRedir, newRedirCode), nil
+				}
+
+				if newHandler != nil {
+					r.params = newParams
+					return newHandler(r)
+				}
+
+				if newStatus == http.StatusMethodNotAllowed {
+					if newAllow != "" {
+						h1Res.Headers.Set(header.Allow, newAllow)
+					}
+
+					return nil, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+				}
+
+				return nil, ErrNotFound("route not found")
+			}
+
+			return actualHandler(r)
+		}
+	}
+
+	finalHandler := baseHandler
+	for _, v := range slices.Backward(s.middlewares) {
+		finalHandler = v(finalHandler)
 	}
 
 	// Execute handler

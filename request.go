@@ -257,6 +257,28 @@ func (r *Request) Path() string {
 	return ""
 }
 
+// SetPath sets or rewrites the requested URL path.
+func (r *Request) SetPath(path string) {
+	r.path = path
+	if r.raw != nil && r.raw.URL != nil {
+		r.raw.URL.Path = path
+	}
+	if r.h1Req != nil {
+		r.h1Req.Path = path
+	}
+}
+
+// SetQuery sets or rewrites the raw query string.
+func (r *Request) SetQuery(query string) {
+	r.query = query
+	if r.raw != nil && r.raw.URL != nil {
+		r.raw.URL.RawQuery = query
+	}
+	if r.h1Req != nil {
+		r.h1Req.Query = query
+	}
+}
+
 // Param retrieves a URL path parameter by name (e.g. "id" for "/users/:id").
 func (r *Request) Param(name string) ParamValue {
 	if r.params == nil {

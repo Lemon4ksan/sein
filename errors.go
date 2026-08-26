@@ -221,6 +221,11 @@ func ErrInternal(message string, cause ...error) HTTPError {
 	return NewError(http.StatusInternalServerError, message, cause...)
 }
 
+// ErrGatewayTimeout creates a 504 Gateway Timeout ad-hoc error.
+func ErrGatewayTimeout(message string, cause ...error) HTTPError {
+	return NewError(http.StatusGatewayTimeout, message, cause...)
+}
+
 // NewHTTPError creates a structured HTTPError with status, code, and message.
 func NewHTTPError(status int, code, message string) HTTPError {
 	return HTTPError{
