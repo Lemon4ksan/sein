@@ -40,6 +40,9 @@ type Server struct {
 	middlewares            []Middleware
 	errorMappers           []ErrorMapper
 	h1Server               *h1engine.Server
+	tcpLn                  net.Listener
+	quicLn                 *quic.Listener
+	altSvcHeader           string
 	RedirectTrailingSlash  bool
 	HandleMethodNotAllowed bool
 	SkipUnmatchedRoutes    bool
@@ -474,6 +477,10 @@ func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 		return nil
 	}
 
+	if s.altSvcHeader != "" && h1Res.Headers.Get(header.AltSvc) == "" {
+		h1Res.Headers.Set(header.AltSvc, s.altSvcHeader)
+	}
+
 	if direct, ok := result.(DirectH1Responder); ok {
 		return direct.WriteToH1(h1Res)
 	}
@@ -626,6 +633,15 @@ func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.Serve
 	if err != nil {
 		s.writeH2Error(h2Res, err)
 		return nil
+	}
+
+	if s.altSvcHeader != "" {
+		if h2Res.Headers == nil {
+			h2Res.Headers = make(http.Header)
+		}
+		if h2Res.Headers.Get(header.AltSvc) == "" {
+			h2Res.Headers.Set(header.AltSvc, s.altSvcHeader)
+		}
 	}
 
 	return s.serializeH2Result(h2Res, result)
@@ -1138,33 +1154,143 @@ func (s *Server) ListenAndServeQUIC(addr, certFile, keyFile string) error {
 }
 
 // ListenAndServeUniversal starts the unified multi-protocol engine on port addr (e.g. :443)
-// serving HTTP/1.1, HTTP/2, and WebSockets over TCP, and HTTP/3 over UDP.
+// serving HTTP/1.1, HTTP/2, and WebSockets over TCP, and HTTP/3 (QUIC) over UDP concurrently on the same port.
 func (s *Server) ListenAndServeUniversal(addr, certFile, keyFile string) error {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return err
+	}
+
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		port = "443"
+	}
+
+	s.mu.Lock()
+	s.addr = addr
+	s.altSvcHeader = fmt.Sprintf("h3=\":%s\"; ma=86400", port)
+	s.mu.Unlock()
+
+	// 1. TCP TLS Listener with ALPN (h2, http/1.1)
+	tcpTLS := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h2", "http/1.1"},
+	}
+
+	var lc net.ListenConfig
+	tcpLn, err := lc.Listen(context.Background(), "tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.tcpLn = tcpLn
+	s.mu.Unlock()
+
+	// 2. UDP QUIC Listener with ALPN (h3)
+	quicTLS := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h3"},
+	}
+
+	quicConf := &quic.Config{
+		EnableDatagrams: true,
+	}
+
+	quicLn, err := quic.ListenAddr(addr, quicTLS, quicConf)
+	if err != nil {
+		_ = tcpLn.Close()
+		return err
+	}
+
+	s.mu.Lock()
+	s.quicLn = quicLn
+	s.mu.Unlock()
+
 	errCh := make(chan error, 2)
 
-	// 1. Start HTTP/3 over UDP
+	// Accept UDP QUIC connections
 	go func() {
-		errCh <- s.ListenAndServeQUIC(addr, certFile, keyFile)
+		for {
+			conn, err := quicLn.Accept(context.Background())
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			sc := h3engine.NewServerConn(conn, s.DispatchH3)
+			go func() {
+				_ = sc.Serve()
+			}()
+		}
 	}()
 
-	// 2. Start HTTP/1.1 & HTTP/2 over TCP
+	// Accept TCP TLS connections with ALPN demux
 	go func() {
-		errCh <- s.ListenAndServeTLS(certFile, keyFile)
+		tlsListener := tls.NewListener(tcpLn, tcpTLS)
+		for {
+			conn, err := tlsListener.Accept()
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			go func(c net.Conn) {
+				tlsConn, ok := c.(*tls.Conn)
+				if !ok {
+					_ = c.Close()
+					return
+				}
+
+				if err := tlsConn.HandshakeContext(context.Background()); err != nil {
+					_ = tlsConn.Close()
+					return
+				}
+
+				proto := tlsConn.ConnectionState().NegotiatedProtocol
+				if proto == "h2" {
+					sc := h2engine.NewServerConn(tlsConn, s.DispatchH2)
+					_ = sc.Serve()
+				} else {
+					connHandler := &h1engine.ConnHandler{
+						Handler: s.dispatchH1,
+					}
+					_ = connHandler.ServeConn(tlsConn)
+				}
+			}(conn)
+		}
 	}()
 
 	return <-errCh
 }
 
-// Shutdown gracefully shuts down the server.
+// Shutdown gracefully shuts down all server listeners (TCP H1/H2 and UDP QUIC H3).
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	var firstErr error
 	if s.h1Server != nil {
-		return s.h1Server.Shutdown(ctx)
+		if err := s.h1Server.Shutdown(ctx); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 
-	return nil
+	if s.tcpLn != nil {
+		if err := s.tcpLn.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		s.tcpLn = nil
+	}
+
+	if s.quicLn != nil {
+		if err := s.quicLn.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		s.quicLn = nil
+	}
+
+	return firstErr
 }
 
 // Close gracefully closes the server.
