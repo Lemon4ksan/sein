@@ -75,15 +75,15 @@ func NewBasicAuth(cfg BasicAuthConfig) sein.Middleware {
 				}
 			} else if cfg.Accounts != nil {
 				expectedPass, exists := cfg.Accounts[user]
-				if !exists {
-					return unauthorizedResponse(challengeHeader)
+				var passMatch int
+				if exists {
+					passMatch = subtle.ConstantTimeCompare([]byte(pass), []byte(expectedPass))
+				} else {
+					// Dummy constant time comparison against fixed string to prevent timing attack enumeration
+					_ = subtle.ConstantTimeCompare([]byte(pass), []byte("dummy-constant-time-pass-protection"))
 				}
 
-				// Timing attack protection via ConstantTimeCompare
-				userMatch := subtle.ConstantTimeCompare([]byte(user), []byte(user)) == 1
-
-				passMatch := subtle.ConstantTimeCompare([]byte(pass), []byte(expectedPass)) == 1
-				if !userMatch || !passMatch {
+				if !exists || passMatch != 1 {
 					return unauthorizedResponse(challengeHeader)
 				}
 			} else {

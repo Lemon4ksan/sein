@@ -199,7 +199,19 @@ func compileSpecialTypeSetter(typ reflect.Type, src ParamSource, key, format str
 
 func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedSetter {
 	switch kind {
-	case reflect.Uint64, reflect.Uint:
+	case reflect.Uint:
+		return func(ptr unsafe.Pointer, raw string) error {
+			v, err := strconv.ParseUint(raw, 10, strconv.IntSize)
+			if err != nil {
+				return ScalarError{Source: src, Key: key, Cause: err}
+			}
+
+			*(*uint)(ptr) = uint(v)
+
+			return nil
+		}
+
+	case reflect.Uint64:
 		return func(ptr unsafe.Pointer, raw string) error {
 			v, err := strconv.ParseUint(raw, 10, 64)
 			if err != nil {
@@ -207,6 +219,18 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			}
 
 			*(*uint64)(ptr) = v
+
+			return nil
+		}
+
+	case reflect.Uintptr:
+		return func(ptr unsafe.Pointer, raw string) error {
+			v, err := strconv.ParseUint(raw, 10, strconv.IntSize)
+			if err != nil {
+				return ScalarError{Source: src, Key: key, Cause: err}
+			}
+
+			*(*uintptr)(ptr) = uintptr(v)
 
 			return nil
 		}
@@ -247,7 +271,19 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			return nil
 		}
 
-	case reflect.Int64, reflect.Int:
+	case reflect.Int:
+		return func(ptr unsafe.Pointer, raw string) error {
+			v, err := strconv.ParseInt(raw, 10, strconv.IntSize)
+			if err != nil {
+				return ScalarError{Source: src, Key: key, Cause: err}
+			}
+
+			*(*int)(ptr) = int(v)
+
+			return nil
+		}
+
+	case reflect.Int64:
 		return func(ptr unsafe.Pointer, raw string) error {
 			v, err := strconv.ParseInt(raw, 10, 64)
 			if err != nil {
