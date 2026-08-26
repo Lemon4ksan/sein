@@ -58,6 +58,11 @@ func (g *Group) Post[Req, Res any](path string, fn func(context.Context, Req) (R
 	routePost(g, path, fn, mw...)
 }
 
+// PostAction registers a pure parameterless POST handler on this group: (ctx) -> (Res, error)
+func (g *Group) PostAction[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
+	routePostAction(g, path, fn, mw...)
+}
+
 // PostWith is an alias for Post on this group: (ctx, Req) -> (Res, error)
 func (g *Group) PostWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
 	routePost(g, path, fn, mw...)

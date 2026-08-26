@@ -19,13 +19,17 @@ import (
 // Option configures a sein Server instance.
 type Option func(s *Server)
 
+// ErrorMapper translates arbitrary errors into typed DomainErrors.
+type ErrorMapper func(err error) (DomainError, bool)
+
 // Server is the unified high-performance protocol server.
 type Server struct {
-	addr        string
-	router      *Router
-	middlewares []Middleware
-	httpServer  *http.Server
-	mu          sync.Mutex
+	addr         string
+	router       *Router
+	middlewares  []Middleware
+	errorMappers []ErrorMapper
+	httpServer   *http.Server
+	mu           sync.Mutex
 }
 
 // WithAddr sets the listening address.
@@ -44,6 +48,27 @@ func New(opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(s)
 	}
+	return s
+}
+
+// MapError registers a mapping from a sentinel error target to a DomainError.
+func (s *Server) MapError(target error, domainErr DomainError) *Server {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.errorMappers = append(s.errorMappers, func(err error) (DomainError, bool) {
+		if errors.Is(err, target) {
+			return domainErr, true
+		}
+		return nil, false
+	})
+	return s
+}
+
+// MapErrorFunc registers a custom error mapping predicate.
+func (s *Server) MapErrorFunc(fn ErrorMapper) *Server {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.errorMappers = append(s.errorMappers, fn)
 	return s
 }
 
@@ -66,6 +91,11 @@ func (s *Server) registerRoute(method, path string, handler RawHandler, mw ...Mi
 // Post registers a pure POST handler on the server: (ctx, Req) -> (Res, error)
 func (s *Server) Post[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
 	routePost(s, path, fn, mw...)
+}
+
+// PostAction registers a pure parameterless POST handler on the server: (ctx) -> (Res, error)
+func (s *Server) PostAction[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
+	routePostAction(s, path, fn, mw...)
 }
 
 // PostWith is an alias for Post on the server: (ctx, Req) -> (Res, error)
@@ -181,6 +211,13 @@ type errorResponse struct {
 }
 
 func (s *Server) writeError(w http.ResponseWriter, err error) {
+	for _, mapper := range s.errorMappers {
+		if mapped, ok := mapper(err); ok {
+			err = mapped
+			break
+		}
+	}
+
 	var resp errorResponse
 
 	var definedErr DefinedError

@@ -91,6 +91,17 @@ func routePost[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Co
 	}, mw...)
 }
 
+// routePostAction registers a pure parameterless POST handler: (context.Context) -> (Res, error)
+func routePostAction[Res any](r RouteBuilder, path string, fn func(ctx context.Context) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodPost, path, func(req *Request) (any, error) {
+		res, err := fn(req.Context())
+		if err != nil {
+			return nil, err
+		}
+		return toResponder(res), nil
+	}, mw...)
+}
+
 // routePostReq registers a POST handler with Request metadata: (*Request, Req) -> (Res, error)
 func routePostReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
 	ValidateRouteBinding[Req](path)
