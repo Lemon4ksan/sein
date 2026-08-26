@@ -45,7 +45,6 @@ func (e ScalarError) Unwrap() error {
 
 // CompileSetter precompiles a typed, non-branching memory writer for typ and kind at startup.
 func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key string, format string) TypedSetter {
-	// 1. TextUnmarshaler interface
 	if typ.Implements(textUnmarshalerType) {
 		return func(ptr unsafe.Pointer, raw string) error {
 			val := reflect.NewAt(typ, ptr).Interface().(encoding.TextUnmarshaler)
@@ -65,7 +64,6 @@ func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key str
 		}
 	}
 
-	// 2. Special Standard Library Types
 	switch typ {
 	case timeType:
 		return func(ptr unsafe.Pointer, raw string) error {
@@ -108,7 +106,6 @@ func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key str
 		}
 	}
 
-	// 3. Built-in scalar kinds (Direct typed memory assignment)
 	switch kind {
 	case reflect.String:
 		return func(ptr unsafe.Pointer, raw string) error {

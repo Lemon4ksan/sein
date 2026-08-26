@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"unsafe"
+
+	"github.com/lemon4ksan/foundation/generic"
 )
 
 // CompileFieldStep compiles the complete 4-stage pipeline (extraction, transforms, validations, typed assignment)
@@ -37,11 +39,12 @@ func compileScalarStep(b *FieldBinding, extract StringExtractorFunc, transforms 
 	offset := b.Offset
 
 	return func(req RequestView, structPtr unsafe.Pointer) error {
-		raw, present, err := extract(req)
-		if err != nil || !present {
+		opt, err := extract(req)
+		if err != nil || !opt.IsPresent() {
 			return err
 		}
-		if raw, err = processRaw(raw, transforms, validators); err != nil {
+		raw, err := processRaw(opt.MustValue(), transforms, validators)
+		if err != nil {
 			return err
 		}
 		return setter(unsafe.Add(structPtr, offset), raw)
@@ -54,11 +57,12 @@ func compilePointerStep(b *FieldBinding, extract StringExtractorFunc, transforms
 	offset := b.Offset
 
 	return func(req RequestView, structPtr unsafe.Pointer) error {
-		raw, present, err := extract(req)
-		if err != nil || !present {
+		opt, err := extract(req)
+		if err != nil || !opt.IsPresent() {
 			return err
 		}
-		if raw, err = processRaw(raw, transforms, validators); err != nil {
+		raw, err := processRaw(opt.MustValue(), transforms, validators)
+		if err != nil {
 			return err
 		}
 
@@ -79,12 +83,12 @@ func compileSliceStep(b *FieldBinding, extract StringExtractorFunc, transforms [
 	offset := b.Offset
 
 	return func(req RequestView, structPtr unsafe.Pointer) error {
-		raw, present, err := extract(req)
-		if err != nil || !present {
+		opt, err := extract(req)
+		if err != nil || !opt.IsPresent() {
 			return err
 		}
 
-		vals := extractSliceValues(req, source, key, raw)
+		vals := extractSliceValues(req, source, key, opt.MustValue())
 		if hasMin && float64(len(vals)) < minVal {
 			return ValidationError{Message: fmt.Sprintf("%s slice length must be at least %v", key, minVal)}
 		}
@@ -124,7 +128,7 @@ func extractSliceValues(req RequestView, source ParamSource, key, raw string) []
 	var vals []string
 	if source == SourceQuery {
 		for _, sv := range req.RawURLQuery()[key] {
-			for item := range strings.SplitSeq(sv, ",") {
+			for _, item := range strings.Split(sv, ",") {
 				if item = strings.TrimSpace(item); item != "" {
 					vals = append(vals, item)
 				}
@@ -132,11 +136,11 @@ func extractSliceValues(req RequestView, source ParamSource, key, raw string) []
 		}
 	}
 	if len(vals) == 0 && raw != "" {
-		for item := range strings.SplitSeq(raw, ",") {
+		for _, item := range strings.Split(raw, ",") {
 			if item = strings.TrimSpace(item); item != "" {
 				vals = append(vals, item)
 			}
 		}
 	}
-	return vals
+	return generic.Map(vals, strings.TrimSpace)
 }

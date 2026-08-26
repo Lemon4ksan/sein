@@ -9,8 +9,8 @@ import (
 	"net"
 	"reflect"
 	"strings"
-	"sync"
 
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/refkit"
 )
 
@@ -68,12 +68,12 @@ type FieldBinding struct {
 // StructDescriptor caches the precompiled pipeline steps and layout of a struct type.
 type StructDescriptor struct {
 	HasBodyFields bool
-	PathKeys      map[string]bool
+	PathKeys      generic.Set[string]
 	Steps         []FieldStep
 }
 
 var (
-	descriptorCache sync.Map
+	descriptorCache generic.ConcurrentMap[reflect.Type, *StructDescriptor]
 	netIPType       = reflect.TypeFor[net.IP]()
 	bytesSliceType  = reflect.TypeFor[[]byte]()
 
@@ -123,11 +123,11 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 	}
 
 	if d, ok := descriptorCache.Load(typ); ok {
-		return d.(*StructDescriptor)
+		return d
 	}
 
 	desc := &StructDescriptor{
-		PathKeys: make(map[string]bool),
+		PathKeys: generic.NewSet[string](),
 	}
 
 	for field := range typ.Fields() {
@@ -167,21 +167,19 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 				b.Source = ts.source
 				populateFieldBinding(tag, &b)
 
-				if b.Key == "" {
-					switch b.Source {
-					case SourceAuth:
-						b.Key = "bearer"
-					case SourceNet:
-						b.Key = "ip"
-					default:
-						b.Key = field.Name
-					}
+				defaultName := field.Name
+				switch b.Source {
+				case SourceAuth:
+					defaultName = "bearer"
+				case SourceNet:
+					defaultName = "ip"
 				}
+				b.Key = generic.Coalesce(b.Key, defaultName)
 
 				switch b.Source {
 				case SourcePath:
 					b.Required = true
-					desc.PathKeys[b.Key] = true
+					desc.PathKeys.Add(b.Key)
 				case SourceBodyRaw:
 					if b.Key != "raw" && b.FieldType != bytesSliceType {
 						b.Source = SourceBodyString
@@ -216,7 +214,7 @@ func ValidateRouteBinding(typ reflect.Type, routePath string) {
 
 	var pathVars []string
 	for seg := range strings.SplitSeq(routePath, "/") {
-		if after, ok := strings.CutPrefix(seg, ":"); ok  {
+		if after, ok := strings.CutPrefix(seg, ":"); ok {
 			pathVars = append(pathVars, after)
 		}
 	}
@@ -231,7 +229,7 @@ func ValidateRouteBinding(typ reflect.Type, routePath string) {
 	}
 
 	for _, pv := range pathVars {
-		if !desc.PathKeys[pv] {
+		if !desc.PathKeys.Has(pv) {
 			panic(fmt.Sprintf("sein: route %q declares path param :%s, but DTO %s has no matching field with `path:%q` tag",
 				routePath, pv, typ.Name(), pv))
 		}

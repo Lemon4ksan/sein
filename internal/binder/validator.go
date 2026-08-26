@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/refkit"
 )
 
@@ -48,19 +49,19 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 	}
 
 	if len(b.EnumVals) > 0 {
-		enums := b.EnumVals
+		lowerEnums := generic.Map(b.EnumVals, strings.ToLower)
+		enumSet := generic.NewSet(lowerEnums...)
 		key := b.Key
-		enumListStr := strings.Join(enums, ", ")
+		enumListStr := strings.Join(b.EnumVals, ", ")
+
 		validators = append(validators, func(s string) error {
 			if s == "" {
 				return nil
 			}
-			for _, ev := range enums {
-				if strings.EqualFold(s, ev) {
-					return nil
-				}
+			if !enumSet.Has(strings.ToLower(s)) {
+				return ValidationError{Message: fmt.Sprintf("%s must be one of [%s], got %q", key, enumListStr, s)}
 			}
-			return ValidationError{Message: fmt.Sprintf("%s must be one of [%s], got %q", key, enumListStr, s)}
+			return nil
 		})
 	}
 

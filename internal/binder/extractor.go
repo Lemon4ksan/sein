@@ -9,10 +9,12 @@ import (
 	"reflect"
 	"strings"
 	"unsafe"
+
+	"github.com/lemon4ksan/foundation/generic"
 )
 
-// StringExtractorFunc extracts a raw string representation from a request.
-type StringExtractorFunc func(req RequestView) (raw string, present bool, err error)
+// StringExtractorFunc extracts a raw string representation from a request wrapped in an Optional.
+type StringExtractorFunc func(req RequestView) (generic.Optional[string], error)
 
 // compileSpecialStep checks if the field source is non-string (Context, Files, Raw Body) and returns a FieldStep.
 func compileSpecialStep(b *FieldBinding, offset uintptr) FieldStep {
@@ -89,7 +91,7 @@ func compileSpecialStep(b *FieldBinding, offset uintptr) FieldStep {
 	return nil
 }
 
-// compileStringExtractor creates a StringExtractorFunc for standard sources.
+// compileStringExtractor creates a StringExtractorFunc for standard sources returning generic.Optional.
 func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 	key := b.Key
 	defaultVal := b.DefaultValue
@@ -98,19 +100,16 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 
 	switch b.Source {
 	case SourcePath:
-		return func(req RequestView) (string, bool, error) {
-			raw := req.Param(key)
+		return func(req RequestView) (generic.Optional[string], error) {
+			raw := generic.Coalesce(req.Param(key), defaultVal)
 			if raw == "" {
-				if defaultVal != "" {
-					return defaultVal, true, nil
-				}
-				return "", false, fmt.Errorf("missing path param %q", key)
+				return generic.None[string](), fmt.Errorf("missing path param %q", key)
 			}
-			return raw, true, nil
+			return generic.Some(raw), nil
 		}
 
 	case SourceQuery:
-		return func(req RequestView) (string, bool, error) {
+		return func(req RequestView) (generic.Optional[string], error) {
 			raw := req.Query(key)
 			present := raw != ""
 			if isSlice && !present {
@@ -118,63 +117,64 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 			}
 			if !present {
 				if defaultVal != "" {
-					return defaultVal, true, nil
+					return generic.Some(defaultVal), nil
 				}
 				if required {
-					return "", false, fmt.Errorf("missing query param %q", key)
+					return generic.None[string](), fmt.Errorf("missing query param %q", key)
 				}
-				return "", false, nil
+				return generic.None[string](), nil
 			}
-			return raw, true, nil
+			return generic.Some(raw), nil
 		}
 
 	case SourceHeader:
-		return func(req RequestView) (string, bool, error) {
-			raw := req.Header(key)
+		return func(req RequestView) (generic.Optional[string], error) {
+			raw := generic.Coalesce(req.Header(key), defaultVal)
 			if raw == "" {
-				if defaultVal != "" {
-					return defaultVal, true, nil
-				}
 				if required {
-					return "", false, fmt.Errorf("missing header %q", key)
+					return generic.None[string](), fmt.Errorf("missing header %q", key)
 				}
-				return "", false, nil
+				return generic.None[string](), nil
 			}
-			return raw, true, nil
+			return generic.Some(raw), nil
 		}
 
 	case SourceCookie:
-		return func(req RequestView) (string, bool, error) {
+		return func(req RequestView) (generic.Optional[string], error) {
 			c, err := req.Cookie(key)
-			if err != nil || c == "" {
-				if defaultVal != "" {
-					return defaultVal, true, nil
-				}
+			raw := generic.Coalesce(c, defaultVal)
+			if err != nil && raw == "" {
 				if required {
-					return "", false, fmt.Errorf("missing cookie %q", key)
+					return generic.None[string](), fmt.Errorf("missing cookie %q", key)
 				}
-				return "", false, nil
+				return generic.None[string](), nil
 			}
-			return c, true, nil
+			if raw == "" {
+				if required {
+					return generic.None[string](), fmt.Errorf("missing cookie %q", key)
+				}
+				return generic.None[string](), nil
+			}
+			return generic.Some(raw), nil
 		}
 
 	case SourceAuth:
 		if strings.EqualFold(key, "bearer") {
-			return func(req RequestView) (string, bool, error) {
+			return func(req RequestView) (generic.Optional[string], error) {
 				token, ok := req.BearerToken()
 				if !ok || token == "" {
 					if required {
-						return "", false, ErrMissingBearerToken
+						return generic.None[string](), ErrMissingBearerToken
 					}
-					return "", false, nil
+					return generic.None[string](), nil
 				}
-				return token, true, nil
+				return generic.Some(token), nil
 			}
 		}
 
 	case SourceNet:
 		netKey := strings.ToLower(key)
-		return func(req RequestView) (string, bool, error) {
+		return func(req RequestView) (generic.Optional[string], error) {
 			var raw string
 			switch netKey {
 			case "ip", "client_ip", "remote_ip":
@@ -191,28 +191,25 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 				raw = req.Path()
 			}
 			if raw == "" {
-				return "", false, nil
+				return generic.None[string](), nil
 			}
-			return raw, true, nil
+			return generic.Some(raw), nil
 		}
 
 	case SourceForm:
-		return func(req RequestView) (string, bool, error) {
-			raw := req.FormValue(key)
+		return func(req RequestView) (generic.Optional[string], error) {
+			raw := generic.Coalesce(req.FormValue(key), defaultVal)
 			if raw == "" {
-				if defaultVal != "" {
-					return defaultVal, true, nil
-				}
 				if required {
-					return "", false, fmt.Errorf("missing form field %q", key)
+					return generic.None[string](), fmt.Errorf("missing form field %q", key)
 				}
-				return "", false, nil
+				return generic.None[string](), nil
 			}
-			return raw, true, nil
+			return generic.Some(raw), nil
 		}
 	}
 
-	return func(req RequestView) (string, bool, error) {
-		return "", false, nil
+	return func(req RequestView) (generic.Optional[string], error) {
+		return generic.None[string](), nil
 	}
 }

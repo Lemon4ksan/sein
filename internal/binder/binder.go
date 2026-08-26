@@ -7,6 +7,7 @@ package binder
 import (
 	"errors"
 	"reflect"
+	"unsafe"
 )
 
 // Common error sentinels returned by binder engine.
@@ -21,20 +22,20 @@ var (
 )
 
 // Ingest executes the precompiled field steps across dest with zero runtime switch or allocations.
-func Ingest(req RequestView, dest any) error {
-	if ing, ok := dest.(Ingestable); ok {
+func Ingest[T any](req RequestView, dest *T) error {
+	if dest == nil {
+		return errors.New("dest must be a non-nil pointer to struct")
+	}
+
+	if ing, ok := any(dest).(Ingestable); ok {
 		if err := ing.IngestAny(req); err != nil {
 			return err
 		}
 		return RunValidation(dest)
 	}
 
-	val := reflect.ValueOf(dest)
-	if val.Kind() != reflect.Pointer || val.IsNil() {
-		return errors.New("dest must be a non-nil pointer to struct")
-	}
-
-	desc := GetDescriptor(val.Type().Elem())
+	typ := reflect.TypeFor[T]()
+	desc := GetDescriptor(typ)
 	if desc == nil {
 		if len(req.Body()) > 0 {
 			if err := req.BindJSON(dest); err != nil {
@@ -44,7 +45,7 @@ func Ingest(req RequestView, dest any) error {
 		return RunValidation(dest)
 	}
 
-	ptr := val.UnsafePointer()
+	ptr := unsafe.Pointer(dest)
 	for i := range desc.Steps {
 		if err := desc.Steps[i](req, ptr); err != nil {
 			return err
