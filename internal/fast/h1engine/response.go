@@ -32,7 +32,8 @@ func (res *Response) Reset() {
 }
 
 // WriteTo writes the full HTTP/1.1 response (status line, headers, cookies, body or stream) to the writer.
-func (res *Response) WriteTo(bw *bufio.Writer, keepAlive bool) error {
+// If flush is false, bytes remain buffered in bw to coalesce pipelined responses into a single write syscall.
+func (res *Response) WriteTo(bw *bufio.Writer, keepAlive bool, flush bool) error {
 	status := res.StatusCode
 	if status == 0 {
 		status = http.StatusOK
@@ -115,12 +116,24 @@ func (res *Response) WriteTo(bw *bufio.Writer, keepAlive bool) error {
 			return err
 		}
 
-		return closeErr
+		if closeErr != nil {
+			return closeErr
+		}
+
+		if flush {
+			return bw.Flush()
+		}
+
+		return nil
 	}
 
 	if len(res.Body) > 0 && status != http.StatusNoContent && status != http.StatusNotModified {
 		_, _ = bw.Write(res.Body)
 	}
 
-	return bw.Flush()
+	if flush {
+		return bw.Flush()
+	}
+
+	return nil
 }

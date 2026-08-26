@@ -43,6 +43,7 @@ type Server struct {
 	RedirectTrailingSlash  bool
 	HandleMethodNotAllowed bool
 	SkipUnmatchedRoutes    bool
+	Prefork                bool
 	noRouteHandler         RawHandler
 	noMethodHandler        RawHandler
 	trustedProxies         []*net.IPNet
@@ -75,6 +76,13 @@ func WithMethodNotAllowed(enabled bool) Option {
 func WithSkipUnmatchedRoutes(enabled bool) Option {
 	return func(s *Server) {
 		s.SkipUnmatchedRoutes = enabled
+	}
+}
+
+// WithPrefork configures whether the server runs in multi-process SO_REUSEPORT clustering mode.
+func WithPrefork(enabled bool) Option {
+	return func(s *Server) {
+		s.Prefork = enabled
 	}
 }
 

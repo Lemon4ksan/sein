@@ -198,11 +198,7 @@ func serveRange(f io.ReadSeeker, totalSize int64, rangeHdr string, headers http.
 			)
 		}
 
-		start = totalSize - suffixLen
-		if start < 0 {
-			start = 0
-		}
-
+		start = max(totalSize - suffixLen, 0)
 		end = totalSize - 1
 	} else {
 		start, err = strconv.ParseInt(parts[0], 10, 64)

@@ -52,22 +52,21 @@ type ConnHandler struct {
 
 // ServeConn processes HTTP/1.1 requests sequentially on conn until closed or error occurs.
 func (ch *ConnHandler) ServeConn(conn net.Conn) error {
-	var isHijacked bool
-	defer func() {
-		if !isHijacked {
-			_ = conn.Close()
-		}
-	}()
-
 	br := readerStorage.Get()
-
 	br.Reset(conn)
 	defer readerStorage.Put(br)
 
 	bw := writerStorage.Get()
-
 	bw.Reset(conn)
 	defer writerStorage.Put(bw)
+
+	var isHijacked bool
+	defer func() {
+		_ = bw.Flush()
+		if !isHijacked {
+			_ = conn.Close()
+		}
+	}()
 
 	req := reqStorage.Get()
 	defer reqStorage.Put(req)
@@ -147,7 +146,12 @@ func (ch *ConnHandler) ServeConn(conn net.Conn) error {
 			return nil
 		}
 
-		if err := res.WriteTo(bw, keepAlive); err != nil {
+		// High-Throughput HTTP Pipelining Coalescing:
+		// If more unread request bytes already reside in br and connection is keep-alive,
+		// defer bw.Flush() to combine multiple pipelined responses into a single TCP write.
+		hasMorePipelined := keepAlive && br.Buffered() > 0
+
+		if err := res.WriteTo(bw, keepAlive, !hasMorePipelined); err != nil {
 			return err
 		}
 
