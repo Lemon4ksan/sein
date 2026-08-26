@@ -1,0 +1,142 @@
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package binder
+
+import (
+	"fmt"
+	"reflect"
+	"strconv"
+	"strings"
+)
+
+// ValidationError indicates a failed declarative validation rule.
+type ValidationError struct {
+	Message string
+}
+
+func (e ValidationError) Error() string {
+	return e.Message
+}
+
+// CompileValidators builds an array of precompiled validator functions for a field pipeline.
+func CompileValidators(b *FieldBinding) []ValidatorFunc {
+	var validators []ValidatorFunc
+
+	if b.HasLen {
+		lenVal := b.LenVal
+		key := b.Key
+		validators = append(validators, func(s string) error {
+			if len(s) != lenVal {
+				return ValidationError{Message: fmt.Sprintf("%s length must be exactly %d", key, lenVal)}
+			}
+			return nil
+		})
+	}
+
+	if b.IsEmail {
+		key := b.Key
+		validators = append(validators, func(s string) error {
+			if s != "" && (!strings.Contains(s, "@") || !strings.Contains(s, ".")) {
+				return ValidationError{Message: fmt.Sprintf("%s must be a valid email address", key)}
+			}
+			return nil
+		})
+	}
+
+	if len(b.EnumVals) > 0 {
+		enums := b.EnumVals
+		key := b.Key
+		enumListStr := strings.Join(enums, ", ")
+		validators = append(validators, func(s string) error {
+			if s == "" {
+				return nil
+			}
+			for _, ev := range enums {
+				if strings.EqualFold(s, ev) {
+					return nil
+				}
+			}
+			return ValidationError{Message: fmt.Sprintf("%s must be one of [%s], got %q", key, enumListStr, s)}
+		})
+	}
+
+	targetKind := b.Kind
+	if b.IsPtr {
+		targetKind = b.ElemKind
+	}
+
+	if b.HasMin {
+		minVal := b.MinVal
+		key := b.Key
+		if targetKind == reflect.String {
+			validators = append(validators, func(s string) error {
+				if float64(len(s)) < minVal {
+					return ValidationError{Message: fmt.Sprintf("%s length must be at least %v", key, minVal)}
+				}
+				return nil
+			})
+		} else if isNumericKind(targetKind) {
+			validators = append(validators, func(s string) error {
+				if s == "" {
+					return nil
+				}
+				if num, err := strconv.ParseFloat(s, 64); err == nil {
+					if num < minVal {
+						return ValidationError{Message: fmt.Sprintf("%s value must be at least %v", key, minVal)}
+					}
+				}
+				return nil
+			})
+		}
+	}
+
+	if b.HasMax {
+		maxVal := b.MaxVal
+		key := b.Key
+		if targetKind == reflect.String {
+			validators = append(validators, func(s string) error {
+				if float64(len(s)) > maxVal {
+					return ValidationError{Message: fmt.Sprintf("%s length must be at most %v", key, maxVal)}
+				}
+				return nil
+			})
+		} else if isNumericKind(targetKind) {
+			validators = append(validators, func(s string) error {
+				if s == "" {
+					return nil
+				}
+				if num, err := strconv.ParseFloat(s, 64); err == nil {
+					if num > maxVal {
+						return ValidationError{Message: fmt.Sprintf("%s value must be at most %v", key, maxVal)}
+					}
+				}
+				return nil
+			})
+		}
+	}
+
+	return validators
+}
+
+func isNumericKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
+}
+
+// RunValidation triggers the Validatable interface on dest if implemented.
+func RunValidation(dest any) error {
+	if v, ok := dest.(Validatable); ok {
+		if err := v.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}

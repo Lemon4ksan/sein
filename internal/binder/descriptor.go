@@ -31,7 +31,7 @@ const (
 	SourceContext
 )
 
-// FieldBinding contains precomputed metadata and offsets for single-field fast reflection binding.
+// FieldBinding contains parsed metadata and flags for a struct field.
 type FieldBinding struct {
 	Offset        uintptr
 	Kind          reflect.Kind
@@ -63,10 +63,11 @@ type FieldBinding struct {
 	IsEmail  bool
 }
 
-// StructDescriptor caches the pre-analyzed layout and bindings of a struct type.
+// StructDescriptor caches the precompiled pipeline stages and layout of a struct type.
 type StructDescriptor struct {
 	HasBodyFields bool
-	Bindings      []FieldBinding
+	PathKeys      map[string]bool
+	Pipelines     []FieldPipeline
 }
 
 var (
@@ -120,7 +121,7 @@ func ParseTagOptions(tagStr string, binding *FieldBinding) {
 	}
 }
 
-// GetDescriptor retrieves or creates a cached StructDescriptor for typ.
+// GetDescriptor retrieves or compiles a cached StructDescriptor for typ.
 func GetDescriptor(typ reflect.Type) *StructDescriptor {
 	if typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
@@ -133,7 +134,10 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 		return d.(*StructDescriptor)
 	}
 
-	desc := &StructDescriptor{}
+	desc := &StructDescriptor{
+		PathKeys: make(map[string]bool),
+	}
+
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		if !field.IsExported() {
@@ -173,6 +177,7 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 			}
 			b.Required = true
 			matched = true
+			desc.PathKeys[b.Key] = true
 		} else if tag, ok := field.Tag.Lookup("param"); ok {
 			b.Source = SourcePath
 			ParseTagOptions(tag, &b)
@@ -181,6 +186,7 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 			}
 			b.Required = true
 			matched = true
+			desc.PathKeys[b.Key] = true
 		} else if tag, ok := field.Tag.Lookup("query"); ok {
 			b.Source = SourceQuery
 			ParseTagOptions(tag, &b)
@@ -256,7 +262,16 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 		}
 
 		if matched {
-			desc.Bindings = append(desc.Bindings, b)
+			extractor, specialExtractor := CompileExtractor(b.Source, b.Key, b.Required, b.DefaultValue, b.FieldType, b.IsSlice)
+			pipeline := FieldPipeline{
+				Offset:         b.Offset,
+				Extract:        extractor,
+				SpecialExtract: specialExtractor,
+				Transforms:     CompileTransforms(&b),
+				Validators:     CompileValidators(&b),
+				Assign:         CompileAssigner(&b),
+			}
+			desc.Pipelines = append(desc.Pipelines, pipeline)
 		}
 
 		if _, ok := field.Tag.Lookup("json"); ok {
@@ -293,15 +308,8 @@ func ValidateRouteBinding(typ reflect.Type, routePath string) {
 		panic(fmt.Sprintf("sein: route %q declares path params %v, but DTO %s is not a struct", routePath, pathVars, typ.Name()))
 	}
 
-	boundKeys := make(map[string]bool)
-	for _, b := range desc.Bindings {
-		if b.Source == SourcePath {
-			boundKeys[b.Key] = true
-		}
-	}
-
 	for _, pv := range pathVars {
-		if !boundKeys[pv] {
+		if !desc.PathKeys[pv] {
 			panic(fmt.Sprintf("sein: route %q declares path param :%s, but DTO %s has no matching field with `path:%q` tag",
 				routePath, pv, typ.Name(), pv))
 		}

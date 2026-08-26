@@ -9,24 +9,27 @@ import (
 	"unicode"
 )
 
-// ApplyTransforms executes string transformation pipelines (trim, lower, upper, singleSpace, digitsOnly).
-func ApplyTransforms(s string, b *FieldBinding) string {
+// CompileTransforms constructs an array of precompiled transform functions for a field pipeline.
+func CompileTransforms(b *FieldBinding) []TransformFunc {
+	var transforms []TransformFunc
+
 	if b.Trim {
-		s = strings.TrimSpace(s)
+		transforms = append(transforms, strings.TrimSpace)
 	}
 	if b.Lower {
-		s = strings.ToLower(s)
+		transforms = append(transforms, strings.ToLower)
 	}
 	if b.Upper {
-		s = strings.ToUpper(s)
+		transforms = append(transforms, strings.ToUpper)
 	}
 	if b.SingleSpace {
-		s = collapseSpaces(s)
+		transforms = append(transforms, collapseSpaces)
 	}
 	if b.DigitsOnly {
-		s = extractDigits(s)
+		transforms = append(transforms, extractDigits)
 	}
-	return s
+
+	return transforms
 }
 
 func collapseSpaces(s string) string {

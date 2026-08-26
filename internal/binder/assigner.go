@@ -40,9 +40,92 @@ func (e ScalarError) Unwrap() error {
 	return e.Cause
 }
 
+// CompileAssigner builds the optimized type assignment function for a field.
+func CompileAssigner(b *FieldBinding) AssignerFunc {
+	if b.IsSlice {
+		sliceElemKind := b.SliceElemKind
+		sliceElemType := b.FieldType.Elem()
+		fieldType := b.FieldType
+		source := b.Source
+		key := b.Key
+		hasMin := b.HasMin
+		minVal := b.MinVal
+		hasMax := b.HasMax
+		maxVal := b.MaxVal
+
+		transforms := CompileTransforms(b)
+
+		return func(req RequestView, fieldPtr unsafe.Pointer, initialVal string) error {
+			var vals []string
+			if source == SourceQuery {
+				q := req.RawURLQuery()
+				if sliceVals, ok := q[key]; ok && len(sliceVals) > 0 {
+					for _, sv := range sliceVals {
+						for _, item := range strings.Split(sv, ",") {
+							if item = strings.TrimSpace(item); item != "" {
+								vals = append(vals, item)
+							}
+						}
+					}
+				}
+			}
+
+			if len(vals) == 0 && initialVal != "" {
+				for _, item := range strings.Split(initialVal, ",") {
+					if item = strings.TrimSpace(item); item != "" {
+						vals = append(vals, item)
+					}
+				}
+			}
+
+			if hasMin && float64(len(vals)) < minVal {
+				return ValidationError{Message: fmt.Sprintf("%s slice length must be at least %v", key, minVal)}
+			}
+			if hasMax && float64(len(vals)) > maxVal {
+				return ValidationError{Message: fmt.Sprintf("%s slice length must be at most %v", key, maxVal)}
+			}
+
+			sliceVal := reflect.MakeSlice(fieldType, len(vals), len(vals))
+			for i, v := range vals {
+				for _, t := range transforms {
+					v = t(v)
+				}
+				elemPtr := sliceVal.Index(i).Addr().UnsafePointer()
+				if err := AssignScalar(elemPtr, sliceElemKind, sliceElemType, v, source, key); err != nil {
+					return err
+				}
+			}
+
+			reflect.NewAt(fieldType, fieldPtr).Elem().Set(sliceVal)
+			return nil
+		}
+	}
+
+	if b.IsPtr {
+		elemKind := b.ElemKind
+		elemType := b.FieldType.Elem()
+		source := b.Source
+		key := b.Key
+
+		return func(req RequestView, fieldPtr unsafe.Pointer, raw string) error {
+			valPtr := reflect.New(elemType).UnsafePointer()
+			*(*unsafe.Pointer)(fieldPtr) = valPtr
+			return AssignScalar(valPtr, elemKind, elemType, raw, source, key)
+		}
+	}
+
+	kind := b.Kind
+	typ := b.FieldType
+	source := b.Source
+	key := b.Key
+
+	return func(req RequestView, fieldPtr unsafe.Pointer, raw string) error {
+		return AssignScalar(fieldPtr, kind, typ, raw, source, key)
+	}
+}
+
 // AssignScalar parses and assigns a string representation to a typed scalar pointer.
 func AssignScalar(ptr unsafe.Pointer, kind reflect.Kind, typ reflect.Type, s string, src ParamSource, key string) error {
-	// 1. Check custom encoding.TextUnmarshaler
 	if typ.Implements(textUnmarshalerType) {
 		val := reflect.NewAt(typ, ptr).Interface().(encoding.TextUnmarshaler)
 		if err := val.UnmarshalText([]byte(s)); err != nil {
@@ -58,7 +141,6 @@ func AssignScalar(ptr unsafe.Pointer, kind reflect.Kind, typ reflect.Type, s str
 		return nil
 	}
 
-	// 2. Special stdlib types
 	switch typ {
 	case timeType:
 		t, err := parseTime(s)
