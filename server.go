@@ -285,6 +285,11 @@ func (s *Server) Put[Req, Res any](path string, fn func(context.Context, Req) (R
 	routePut(s, path, fn, mw...)
 }
 
+// PutAction registers a pure parameterless PUT handler on the server: (ctx) -> (Res, error)
+func (s *Server) PutAction[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
+	routePutAction(s, path, fn, mw...)
+}
+
 // PutWith is an alias for Put on the server: (ctx, Req) -> (Res, error)
 func (s *Server) PutWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
 	routePut(s, path, fn, mw...)
@@ -300,9 +305,9 @@ func (s *Server) Patch[Req, Res any](path string, fn func(context.Context, Req) 
 	routePatch(s, path, fn, mw...)
 }
 
-// PatchWith is an alias for Patch on the server: (ctx, Req) -> (Res, error)
-func (s *Server) PatchWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	routePatch(s, path, fn, mw...)
+// PatchAction registers a pure parameterless PATCH handler on the server: (ctx) -> (Res, error)
+func (s *Server) PatchAction[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
+	routePatchAction(s, path, fn, mw...)
 }
 
 // PatchReq registers a PATCH handler with Request metadata on the server: (req, Req) -> (Res, error)

@@ -198,6 +198,30 @@ func routePutReq[Req, Res any](
 	}, mw...)
 }
 
+// routePutAction registers a pure parameterless PUT handler: (context.Context) -> (Res, error)
+func routePutAction[Res any](r RouteBuilder, path string, fn func(ctx context.Context) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodPut, path, func(req *Request) (any, error) {
+		res, err := fn(req.Context())
+		if err != nil {
+			return nil, err
+		}
+
+		return toResponder(res), nil
+	}, mw...)
+}
+
+// routePatchAction registers a pure parameterless PATCH handler: (context.Context) -> (Res, error)
+func routePatchAction[Res any](r RouteBuilder, path string, fn func(ctx context.Context) (Res, error), mw ...Middleware) {
+	Handle(r, http.MethodPatch, path, func(req *Request) (any, error) {
+		res, err := fn(req.Context())
+		if err != nil {
+			return nil, err
+		}
+
+		return toResponder(res), nil
+	}, mw...)
+}
+
 // routePatch registers a pure PATCH handler: (context.Context, Req) -> (Res, error)
 func routePatch[Req, Res any](
 	r RouteBuilder,

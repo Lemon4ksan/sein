@@ -257,6 +257,19 @@ func (r *Request) Path() string {
 	return ""
 }
 
+// Proto returns the HTTP protocol version (e.g. "HTTP/1.1", "HTTP/2.0", "HTTP/3.0").
+func (r *Request) Proto() string {
+	if r.proto != "" {
+		return r.proto
+	}
+
+	if r.raw != nil {
+		return r.raw.Proto
+	}
+
+	return "HTTP/1.1"
+}
+
 // SetPath sets or rewrites the requested URL path.
 func (r *Request) SetPath(path string) {
 	r.path = path
@@ -265,6 +278,17 @@ func (r *Request) SetPath(path string) {
 	}
 	if r.h1Req != nil {
 		r.h1Req.Path = path
+	}
+}
+
+// SetMethod sets or rewrites the HTTP request method.
+func (r *Request) SetMethod(method string) {
+	r.method = method
+	if r.raw != nil {
+		r.raw.Method = method
+	}
+	if r.h1Req != nil {
+		r.h1Req.Method = method
 	}
 }
 
