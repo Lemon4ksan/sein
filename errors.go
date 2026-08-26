@@ -58,6 +58,9 @@ var (
 	ErrInvalidQueryParam  = BadRequest("INVALID_QUERY_PARAM", "Query parameter value is invalid")
 	ErrMissingHeader      = BadRequest("MISSING_HEADER", "Required header is missing")
 	ErrInvalidHeader      = BadRequest("INVALID_HEADER", "Header value is invalid")
+	ErrMissingCookie      = BadRequest("MISSING_COOKIE", "Required cookie is missing")
+	ErrInvalidCookie      = BadRequest("INVALID_COOKIE", "Cookie value is invalid")
+	ErrMissingContext     = Unauthorized("MISSING_CONTEXT", "Required context value is missing")
 )
 
 func (d DefinedError) Error() string {

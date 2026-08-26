@@ -50,6 +50,7 @@ func routeGet[Res any](r RouteBuilder, path string, fn func(ctx context.Context)
 
 // routeGetWith registers a pure GET handler with Path/Query/Header DTO: (context.Context, Req) -> (Res, error)
 func routeGetWith[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, req Req) (Res, error), mw ...Middleware) {
+	ValidateRouteBinding[Req](path)
 	Handle(r, http.MethodGet, path, func(req *Request) (any, error) {
 		body, err := bindAndValidate[Req](req)
 		if err != nil {
@@ -76,6 +77,7 @@ func routeGetReq[Res any](r RouteBuilder, path string, fn func(req *Request) (Re
 
 // routePost registers a pure POST handler: (context.Context, Req) -> (Res, error)
 func routePost[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
+	ValidateRouteBinding[Req](path)
 	Handle(r, http.MethodPost, path, func(req *Request) (any, error) {
 		body, err := bindAndValidate[Req](req)
 		if err != nil {
@@ -91,6 +93,7 @@ func routePost[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Co
 
 // routePostReq registers a POST handler with Request metadata: (*Request, Req) -> (Res, error)
 func routePostReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
+	ValidateRouteBinding[Req](path)
 	Handle(r, http.MethodPost, path, func(req *Request) (any, error) {
 		body, err := bindAndValidate[Req](req)
 		if err != nil {
@@ -106,6 +109,7 @@ func routePostReq[Req, Res any](r RouteBuilder, path string, fn func(req *Reques
 
 // routePut registers a pure PUT handler: (context.Context, Req) -> (Res, error)
 func routePut[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
+	ValidateRouteBinding[Req](path)
 	Handle(r, http.MethodPut, path, func(req *Request) (any, error) {
 		body, err := bindAndValidate[Req](req)
 		if err != nil {
@@ -121,6 +125,7 @@ func routePut[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Con
 
 // routePutReq registers a PUT handler with Request metadata: (*Request, Req) -> (Res, error)
 func routePutReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
+	ValidateRouteBinding[Req](path)
 	Handle(r, http.MethodPut, path, func(req *Request) (any, error) {
 		body, err := bindAndValidate[Req](req)
 		if err != nil {
@@ -136,6 +141,7 @@ func routePutReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request
 
 // routePatch registers a pure PATCH handler: (context.Context, Req) -> (Res, error)
 func routePatch[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, body Req) (Res, error), mw ...Middleware) {
+	ValidateRouteBinding[Req](path)
 	Handle(r, http.MethodPatch, path, func(req *Request) (any, error) {
 		body, err := bindAndValidate[Req](req)
 		if err != nil {
@@ -151,6 +157,7 @@ func routePatch[Req, Res any](r RouteBuilder, path string, fn func(ctx context.C
 
 // routePatchReq registers a PATCH handler with Request metadata: (*Request, Req) -> (Res, error)
 func routePatchReq[Req, Res any](r RouteBuilder, path string, fn func(req *Request, body Req) (Res, error), mw ...Middleware) {
+	ValidateRouteBinding[Req](path)
 	Handle(r, http.MethodPatch, path, func(req *Request) (any, error) {
 		body, err := bindAndValidate[Req](req)
 		if err != nil {
@@ -177,6 +184,7 @@ func routeDelete[Res any](r RouteBuilder, path string, fn func(ctx context.Conte
 
 // routeDeleteWith registers a pure DELETE handler with Path/Query DTO: (context.Context, Req) -> (Res, error)
 func routeDeleteWith[Req, Res any](r RouteBuilder, path string, fn func(ctx context.Context, req Req) (Res, error), mw ...Middleware) {
+	ValidateRouteBinding[Req](path)
 	Handle(r, http.MethodDelete, path, func(req *Request) (any, error) {
 		body, err := bindAndValidate[Req](req)
 		if err != nil {

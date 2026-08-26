@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"reflect"
 	"strings"
@@ -129,13 +130,113 @@ func (r *Request) BearerToken() (string, bool) {
 	return "", false
 }
 
+// ClientIP returns the real client IP address, checking CF-Connecting-IP, X-Real-IP, X-Forwarded-For and RemoteAddr.
+func (r *Request) ClientIP() string {
+	if cfIP := r.Header(header.CFConnectingIP); cfIP != "" {
+		return strings.TrimSpace(cfIP)
+	}
+	if realIP := r.Header(header.XRealIP); realIP != "" {
+		return strings.TrimSpace(realIP)
+	}
+	if fwd := r.Header(header.XForwardedFor); fwd != "" {
+		if ip, _, found := strings.Cut(fwd, ","); found {
+			return strings.TrimSpace(ip)
+		}
+		return strings.TrimSpace(fwd)
+	}
+	if r.raw != nil {
+		host, _, err := net.SplitHostPort(r.raw.RemoteAddr)
+		if err == nil {
+			return host
+		}
+		return r.raw.RemoteAddr
+	}
+	return ""
+}
+
+// Protocol returns the network protocol (e.g. "HTTP/1.1", "HTTP/2.0", "HTTP/3.0").
+func (r *Request) Protocol() string {
+	if r.raw != nil {
+		return r.raw.Proto
+	}
+	return ""
+}
+
+// Scheme returns the request scheme ("https" or "http").
+func (r *Request) Scheme() string {
+	if proto := r.Header(header.XForwardedProto); proto != "" {
+		return proto
+	}
+	if r.raw != nil {
+		if r.raw.TLS != nil {
+			return "https"
+		}
+		if r.raw.URL != nil && r.raw.URL.Scheme != "" {
+			return r.raw.URL.Scheme
+		}
+	}
+	return "http"
+}
+
+// Host returns the request target host (Host header or URL host).
+func (r *Request) Host() string {
+	if r.raw != nil {
+		return r.raw.Host
+	}
+	return ""
+}
+
+// FormValue retrieves a value from POST/PUT form-encoded or multipart data.
+func (r *Request) FormValue(key string) string {
+	if r.raw != nil {
+		return r.raw.FormValue(key)
+	}
+	return ""
+}
+
 // Cookie retrieves a cookie value by name.
 func (r *Request) Cookie(name string) (string, error) {
+	if r.raw == nil {
+		return "", http.ErrNoCookie
+	}
 	c, err := r.raw.Cookie(name)
 	if err != nil {
 		return "", err
 	}
 	return c.Value, nil
+}
+
+// FormFile retrieves an uploaded file from multipart form data.
+func (r *Request) FormFile(key string) (*File, error) {
+	if r.raw == nil {
+		return nil, ErrBadRequest("request is nil")
+	}
+	_, fh, err := r.raw.FormFile(key)
+	if err != nil {
+		return nil, err
+	}
+	return NewFile(fh), nil
+}
+
+// FormFiles retrieves all uploaded files under key from multipart form data.
+func (r *Request) FormFiles(key string) ([]*File, error) {
+	if r.raw == nil {
+		return nil, ErrBadRequest("request is nil")
+	}
+	if r.raw.MultipartForm == nil {
+		if err := r.raw.ParseMultipartForm(32 << 20); err != nil {
+			return nil, err
+		}
+	}
+	if r.raw.MultipartForm != nil && r.raw.MultipartForm.File != nil {
+		fhs := r.raw.MultipartForm.File[key]
+		files := make([]*File, len(fhs))
+		for i, fh := range fhs {
+			files[i] = NewFile(fh)
+		}
+		return files, nil
+	}
+	return nil, nil
 }
 
 // Body reads and caches the full request body.

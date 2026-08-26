@@ -9,9 +9,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/lemon4ksan/sein"
 )
@@ -503,3 +508,257 @@ func TestMultiSourceDTOIngestion(t *testing.T) {
 		t.Fatalf("expected email gordon@blackmesa.gov, got %v", res["email"])
 	}
 }
+
+type UserSessionData struct {
+	AccountID uint64
+	Role      string
+}
+
+type FullFeaturedDTO struct {
+	UserID    uint64           `path:"user_id"`
+	TraceID   string           `header:"X-Trace-ID,required"`
+	SessionID string           `cookie:"session_id,required"`
+	Token     string           `auth:"bearer,required"`
+	Session   *UserSessionData `ctx:""`
+	Tags      []string         `query:"tag"`
+	Limit     int              `query:"limit,default=50"`
+	Optional  *string          `query:"opt"`
+	Title     string           `json:"title"`
+}
+
+func TestUnifiedDTO_FullFeatures(t *testing.T) {
+	app := sein.New()
+
+	// Middleware injecting typed context
+	app.Use(func(next sein.RawHandler) sein.RawHandler {
+		return func(req *sein.Request) (any, error) {
+			sein.Set(req, &UserSessionData{AccountID: 42, Role: "admin"})
+			return next(req)
+		}
+	})
+
+	app.Post("/users/:user_id/posts", func(ctx context.Context, req FullFeaturedDTO) (map[string]any, error) {
+		optVal := ""
+		if req.Optional != nil {
+			optVal = *req.Optional
+		}
+		return map[string]any{
+			"user_id":    req.UserID,
+			"trace_id":   req.TraceID,
+			"session_id": req.SessionID,
+			"token":      req.Token,
+			"account_id": req.Session.AccountID,
+			"role":       req.Session.Role,
+			"tags":       req.Tags,
+			"limit":      req.Limit,
+			"optional":   optVal,
+			"title":      req.Title,
+		}, nil
+	})
+
+	bodyJSON, _ := json.Marshal(map[string]string{"title": "Zero-Reflection Post"})
+	httpReq := httptest.NewRequest(http.MethodPost, "/users/100/posts?tag=go&tag=rust&opt=custom", bytes.NewReader(bodyJSON))
+	httpReq.Header.Set("X-Trace-ID", "trace-xyz-777")
+	httpReq.Header.Set("Authorization", "Bearer secret-token-abc")
+	httpReq.AddCookie(&http.Cookie{Name: "session_id", Value: "sess-cookie-999"})
+
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, httpReq)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &res)
+
+	if res["user_id"].(float64) != 100 {
+		t.Fatalf("expected user_id 100, got %v", res["user_id"])
+	}
+	if res["trace_id"] != "trace-xyz-777" {
+		t.Fatalf("expected trace_id trace-xyz-777, got %v", res["trace_id"])
+	}
+	if res["session_id"] != "sess-cookie-999" {
+		t.Fatalf("expected session_id sess-cookie-999, got %v", res["session_id"])
+	}
+	if res["token"] != "secret-token-abc" {
+		t.Fatalf("expected token secret-token-abc, got %v", res["token"])
+	}
+	if res["account_id"].(float64) != 42 || res["role"] != "admin" {
+		t.Fatalf("unexpected session: %v, %v", res["account_id"], res["role"])
+	}
+	if res["limit"].(float64) != 50 {
+		t.Fatalf("expected limit default 50, got %v", res["limit"])
+	}
+	if res["optional"] != "custom" {
+		t.Fatalf("expected optional custom, got %v", res["optional"])
+	}
+	if res["title"] != "Zero-Reflection Post" {
+		t.Fatalf("expected title Zero-Reflection Post, got %v", res["title"])
+	}
+}
+
+type MismatchedDTO struct {
+	WrongParam string `path:"some_other_id"`
+}
+
+func TestUnifiedDTO_StartupValidationPanic(t *testing.T) {
+	app := sein.New()
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("expected panic on mismatched path params, got nil")
+		}
+		msg, ok := r.(string)
+		if !ok || !strings.Contains(msg, "declares path param :user_id") {
+			t.Fatalf("unexpected panic message: %v", r)
+		}
+	}()
+
+	// Should panic immediately because route has :user_id but DTO only has some_other_id
+	app.GetWith("/users/:user_id", func(ctx context.Context, req MismatchedDTO) (string, error) {
+		return "ok", nil
+	})
+}
+
+type AdvancedTransformDTO struct {
+	CleanEmail    string        `query:"email,trim,lower,email"`
+	CountryCode   string        `query:"country,trim,upper,len=2"`
+	CleanText     string        `query:"text,single_space"`
+	CardNumber    string        `query:"card,digits_only"`
+	Status        string        `query:"status,enum=active|pending|archived"`
+	CreatedAt     time.Time     `query:"created_at"`
+	Timeout       time.Duration `query:"timeout,default=15s"`
+	ClientIP      net.IP        `net:"ip"`
+	IPAddr        netip.Addr    `net:"ip"`
+	Protocol      string        `net:"proto"`
+	Host          string        `net:"host"`
+}
+
+func TestUnifiedDTO_AdvancedTransformsAndAdapters(t *testing.T) {
+	app := sein.New()
+
+	app.GetWith("/analytics", func(ctx context.Context, req AdvancedTransformDTO) (map[string]any, error) {
+		return map[string]any{
+			"email":      req.CleanEmail,
+			"country":    req.CountryCode,
+			"text":       req.CleanText,
+			"card":       req.CardNumber,
+			"status":     req.Status,
+			"created_at": req.CreatedAt.Format(time.RFC3339),
+			"timeout_ms": req.Timeout.Milliseconds(),
+			"client_ip":  req.ClientIP.String(),
+			"ip_addr":    req.IPAddr.String(),
+			"protocol":   req.Protocol,
+			"host":       req.Host,
+		}, nil
+	})
+
+	url := "/analytics?email=%20%20User.Name@Example.COM%20%20" +
+		"&country=us" +
+		"&text=Hello%20%20%20World%20%20%20From%20%20Sein" +
+		"&card=4111-2222-3333-4444" +
+		"&status=active" +
+		"&created_at=2026-08-26T12:00:00Z"
+
+	httpReq := httptest.NewRequest(http.MethodGet, url, nil)
+	httpReq.Header.Set("X-Real-IP", "203.0.113.195")
+	httpReq.Host = "api.sein.dev"
+
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, httpReq)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &res)
+
+	if res["email"] != "user.name@example.com" {
+		t.Fatalf("expected sanitized email, got %v", res["email"])
+	}
+	if res["country"] != "US" {
+		t.Fatalf("expected upper country US, got %v", res["country"])
+	}
+	if res["text"] != "Hello World From Sein" {
+		t.Fatalf("expected single-spaced text, got %v", res["text"])
+	}
+	if res["card"] != "4111222233334444" {
+		t.Fatalf("expected digits_only card, got %v", res["card"])
+	}
+	if res["status"] != "active" {
+		t.Fatalf("expected status active, got %v", res["status"])
+	}
+	if res["created_at"] != "2026-08-26T12:00:00Z" {
+		t.Fatalf("expected parsed time, got %v", res["created_at"])
+	}
+	if res["timeout_ms"].(float64) != 15000 {
+		t.Fatalf("expected timeout 15000ms, got %v", res["timeout_ms"])
+	}
+	if res["client_ip"] != "203.0.113.195" {
+		t.Fatalf("expected client IP 203.0.113.195, got %v", res["client_ip"])
+	}
+	if res["host"] != "api.sein.dev" {
+		t.Fatalf("expected host api.sein.dev, got %v", res["host"])
+	}
+}
+
+type FileUploadDTO struct {
+	Category string     `form:"category,required,trim,lower"`
+	Avatar   *sein.File `file:"avatar,required"`
+}
+
+func TestUnifiedDTO_FileUpload(t *testing.T) {
+	app := sein.New()
+
+	app.Post("/upload", func(ctx context.Context, req FileUploadDTO) (map[string]any, error) {
+		fileBytes, err := req.Avatar.Bytes()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"category":  req.Category,
+			"filename":  req.Avatar.Filename,
+			"size":      req.Avatar.Size,
+			"file_data": string(fileBytes),
+		}, nil
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("category", "  AVATARS  ")
+
+	part, err := writer.CreateFormFile("avatar", "profile.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write([]byte("fake-image-bytes-12345"))
+	_ = writer.Close()
+
+	httpReq := httptest.NewRequest(http.MethodPost, "/upload", &body)
+	httpReq.Header.Set("Content-Type", writer.FormDataContentType())
+
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, httpReq)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &res)
+
+	if res["category"] != "avatars" {
+		t.Fatalf("expected category avatars, got %v", res["category"])
+	}
+	if res["filename"] != "profile.png" {
+		t.Fatalf("expected filename profile.png, got %v", res["filename"])
+	}
+	if res["file_data"] != "fake-image-bytes-12345" {
+		t.Fatalf("expected file_data fake-image-bytes-12345, got %v", res["file_data"])
+	}
+}
+
+
