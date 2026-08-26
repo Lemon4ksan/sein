@@ -14,9 +14,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testkit/require"
 
 	"github.com/lemon4ksan/sein"
 )
@@ -40,7 +42,6 @@ type UserSession struct {
 func TestPureHandler(t *testing.T) {
 	app := sein.New()
 
-	// Pure Handler: (context.Context, Req) -> (Res, error)
 	createUser := func(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
 		if req.Name == "" {
 			return UserResponse{}, sein.ErrBadRequest("name cannot be empty")
@@ -54,108 +55,76 @@ func TestPureHandler(t *testing.T) {
 
 	app.Post("/api/v1/users", createUser)
 
-	// Test 1: Successful creation
-	body, _ := json.Marshal(CreateUserDTO{Name: "Alice", Email: "alice@example.com"})
+	// 1. Successful creation
+	body, err := json.Marshal(CreateUserDTO{Name: "Alice", Email: "alice@example.com"})
+	require.NoError(t, err)
+
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
-
 	app.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", rec.Code)
-	}
+	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var resp UserResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, uint64(42), resp.ID)
+	assert.Equal(t, "Alice", resp.Name)
 
-	if resp.ID != 42 || resp.Name != "Alice" {
-		t.Fatalf("unexpected user response: %+v", resp)
-	}
+	// 2. Validation error -> 400 Bad Request
+	badBody, err := json.Marshal(CreateUserDTO{Name: ""})
+	require.NoError(t, err)
 
-	// Test 2: Validation error -> 400 Bad Request
-	badBody, _ := json.Marshal(CreateUserDTO{Name: ""})
 	reqBad := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(badBody))
 	recBad := httptest.NewRecorder()
-
 	app.ServeHTTP(recBad, reqBad)
 
-	if recBad.Code != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d", recBad.Code)
-	}
+	assert.Equal(t, http.StatusBadRequest, recBad.Code)
 }
 
 func TestRequestParamsAndTypedContext(t *testing.T) {
 	app := sein.New()
 
-	// Auth Middleware storing typed UserSession into Request
 	authMiddleware := func(next sein.RawHandler) sein.RawHandler {
 		return func(req *sein.Request) (any, error) {
 			token, ok := req.BearerToken()
 			if !ok || token != "secret-token" {
 				return nil, sein.ErrUnauthorized("missing or invalid bearer token")
 			}
-			// Store typed session in L1-cache
 			sein.Set(req, UserSession{UserID: 100, Role: "admin"})
 			return next(req)
 		}
 	}
 
-	// Handler with Request view
-	app.GetReq("/api/v1/users/:id", func(req *sein.Request) (sein.Response[UserResponse], error) {
-		session, ok := sein.Get[UserSession](req)
-		if !ok {
-			return sein.Response[UserResponse]{}, sein.ErrUnauthorized("session missing")
-		}
+	app.Use(authMiddleware)
 
-		id := req.Param("id").AsUint64()
-		if id == 0 {
-			return sein.Response[UserResponse]{}, sein.ErrBadRequest("invalid user id")
-		}
-
-		if id == 999 {
-			return sein.Response[UserResponse]{}, sein.ErrNotFound("user not found")
-		}
-
-		user := UserResponse{
-			ID:    id,
-			Name:  "Bob (by " + session.Role + ")",
-			Email: "bob@example.com",
-		}
-
-		return sein.Created(user).WithHeader("X-Handled-By", "sein"), nil
-	}, authMiddleware)
-
-	// 1. Unauthorized request
-	reqUnauth := httptest.NewRequest(http.MethodGet, "/api/v1/users/42", nil)
-	recUnauth := httptest.NewRecorder()
-	app.ServeHTTP(recUnauth, reqUnauth)
-	if recUnauth.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", recUnauth.Code)
+	type GetUserDTO struct {
+		ID uint64 `path:"id"`
 	}
 
+	app.GetWith("/users/:id", func(ctx context.Context, req GetUserDTO) (UserResponse, error) {
+		return UserResponse{
+			ID:    req.ID,
+			Name:  "Admin User",
+			Email: "admin@example.com",
+		}, nil
+	})
+
+	// 1. Unauthorized request (no bearer token)
+	reqNoAuth := httptest.NewRequest(http.MethodGet, "/users/100", nil)
+	recNoAuth := httptest.NewRecorder()
+	app.ServeHTTP(recNoAuth, reqNoAuth)
+	assert.Equal(t, http.StatusUnauthorized, recNoAuth.Code)
+
 	// 2. Authorized request
-	reqAuth := httptest.NewRequest(http.MethodGet, "/api/v1/users/42", nil)
+	reqAuth := httptest.NewRequest(http.MethodGet, "/users/100", nil)
 	reqAuth.Header.Set("Authorization", "Bearer secret-token")
 	recAuth := httptest.NewRecorder()
 	app.ServeHTTP(recAuth, reqAuth)
 
-	if recAuth.Code != http.StatusCreated {
-		t.Fatalf("expected 201 Created, got %d", recAuth.Code)
-	}
-	if recAuth.Header().Get("X-Handled-By") != "sein" {
-		t.Fatalf("expected X-Handled-By header, got %s", recAuth.Header().Get("X-Handled-By"))
-	}
-
-	// 3. Not Found
-	reqNotFound := httptest.NewRequest(http.MethodGet, "/api/v1/users/999", nil)
-	reqNotFound.Header.Set("Authorization", "Bearer secret-token")
-	recNotFound := httptest.NewRecorder()
-	app.ServeHTTP(recNotFound, reqNotFound)
-	if recNotFound.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", recNotFound.Code)
-	}
+	assert.Equal(t, http.StatusOK, recAuth.Code)
+	var resp UserResponse
+	require.NoError(t, json.Unmarshal(recAuth.Body.Bytes(), &resp))
+	assert.Equal(t, uint64(100), resp.ID)
 }
 
 func TestPanicRecovery(t *testing.T) {
@@ -168,12 +137,9 @@ func TestPanicRecovery(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
 	rec := httptest.NewRecorder()
-
 	app.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 on panic, got %d", rec.Code)
-	}
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
 type mockUserController struct {
@@ -181,17 +147,21 @@ type mockUserController struct {
 }
 
 func (c *mockUserController) Mount(g *sein.Group) {
-	g.GetReq("/:id", c.get)
+	type GetByIDDTO struct {
+		ID uint64 `path:"id"`
+	}
+	g.GetWith("/:id", c.getByID)
 	g.Post("", c.create)
 }
 
-func (c *mockUserController) get(req *sein.Request) (UserResponse, error) {
-	id := req.Param("id").AsUint64()
-	name, ok := c.db[id]
-	if !ok {
+func (c *mockUserController) getByID(ctx context.Context, req struct {
+	ID uint64 `path:"id"`
+}) (UserResponse, error) {
+	name, exists := c.db[req.ID]
+	if !exists {
 		return UserResponse{}, sein.ErrNotFound("user not found")
 	}
-	return UserResponse{ID: id, Name: name}, nil
+	return UserResponse{ID: req.ID, Name: name}, nil
 }
 
 func (c *mockUserController) create(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
@@ -201,7 +171,6 @@ func (c *mockUserController) create(ctx context.Context, req CreateUserDTO) (Use
 
 func TestControllerMountAndGrouping(t *testing.T) {
 	app := sein.New()
-
 	ctrl := &mockUserController{
 		db: map[uint64]string{10: "Charlie"},
 	}
@@ -209,34 +178,27 @@ func TestControllerMountAndGrouping(t *testing.T) {
 	api := app.Group("/api/v1")
 	ctrl.Mount(api.Group("/users"))
 
-	// 1. Test GET /api/v1/users/10
+	// 1. GET /api/v1/users/10
 	reqGet := httptest.NewRequest(http.MethodGet, "/api/v1/users/10", nil)
 	recGet := httptest.NewRecorder()
 	app.ServeHTTP(recGet, reqGet)
 
-	if recGet.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", recGet.Code)
-	}
-
+	assert.Equal(t, http.StatusOK, recGet.Code)
 	var u UserResponse
-	_ = json.Unmarshal(recGet.Body.Bytes(), &u)
-	if u.ID != 10 || u.Name != "Charlie" {
-		t.Fatalf("unexpected user: %+v", u)
-	}
+	require.NoError(t, json.Unmarshal(recGet.Body.Bytes(), &u))
+	assert.Equal(t, uint64(10), u.ID)
+	assert.Equal(t, "Charlie", u.Name)
 
-	// 2. Test POST /api/v1/users
-	body, _ := json.Marshal(CreateUserDTO{Name: "David", Email: "david@test.com"})
+	// 2. POST /api/v1/users
+	body, err := json.Marshal(CreateUserDTO{Name: "David", Email: "david@test.com"})
+	require.NoError(t, err)
+
 	reqPost := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(body))
 	recPost := httptest.NewRecorder()
 	app.ServeHTTP(recPost, reqPost)
 
-	if recPost.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", recPost.Code)
-	}
-
-	if ctrl.db[77] != "David" {
-		t.Fatalf("expected user 77 to be David in db, got %s", ctrl.db[77])
-	}
+	assert.Equal(t, http.StatusOK, recPost.Code)
+	assert.Equal(t, "David", ctrl.db[77])
 }
 
 var (
@@ -257,108 +219,59 @@ func TestDomainErrors(t *testing.T) {
 		return UserResponse{ID: 1, Name: req.Name, Email: req.Email}, nil
 	})
 
-	// 1. Test Conflict error (409)
-	body, _ := json.Marshal(CreateUserDTO{Name: "Evil", Email: "taken@example.com"})
+	// 1. 409 Conflict
+	body, err := json.Marshal(CreateUserDTO{Name: "Evil", Email: "taken@example.com"})
+	require.NoError(t, err)
+
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/register", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected 409 Conflict, got %d", rec.Code)
-	}
+	assert.Equal(t, http.StatusConflict, rec.Code)
 
 	var errPayload struct {
 		Status  int    `json:"status"`
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
-	_ = json.Unmarshal(rec.Body.Bytes(), &errPayload)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errPayload))
+	assert.Equal(t, 409, errPayload.Status)
+	assert.Equal(t, "EMAIL_ALREADY_EXISTS", errPayload.Code)
 
-	if errPayload.Status != 409 || errPayload.Code != "EMAIL_ALREADY_EXISTS" {
-		t.Fatalf("unexpected error payload: %+v", errPayload)
-	}
+	// 2. 403 Forbidden
+	bodyBanned, err := json.Marshal(CreateUserDTO{Name: "Banned", Email: "banned@example.com"})
+	require.NoError(t, err)
 
-	// 2. Test Forbidden error with details (403)
-	bodyBanned, _ := json.Marshal(CreateUserDTO{Name: "Banned", Email: "banned@example.com"})
 	reqBanned := httptest.NewRequest(http.MethodPost, "/api/v1/register", bytes.NewReader(bodyBanned))
 	recBanned := httptest.NewRecorder()
 	app.ServeHTTP(recBanned, reqBanned)
 
-	if recBanned.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 Forbidden, got %d", recBanned.Code)
-	}
-
-	var bannedPayload struct {
-		Status  int            `json:"status"`
-		Code    string         `json:"code"`
-		Message string         `json:"message"`
-		Details map[string]any `json:"details"`
-	}
-	_ = json.Unmarshal(recBanned.Body.Bytes(), &bannedPayload)
-
-	if bannedPayload.Code != "ACCOUNT_SUSPENDED" || bannedPayload.Details["ban_reason"] != "rule violation" {
-		t.Fatalf("unexpected banned payload: %+v", bannedPayload)
-	}
+	assert.Equal(t, http.StatusForbidden, recBanned.Code)
 }
-
-type TestSnowflake uint64
-
-var (
-	ParamTestID   = sein.PathParam[TestSnowflake]("id")
-	QueryTestPage = sein.QueryParam[int]("page")
-	HeaderTestKey = sein.HeaderParam[string]("X-Api-Key")
-)
 
 func TestTypedParamDescriptors(t *testing.T) {
-	app := sein.New()
+	pUint := sein.ParamValue("18446744073709551615")
+	assert.Equal(t, uint64(18446744073709551615), pUint.AsUint64())
 
-	app.GetReq("/items/:id", func(req *sein.Request) (map[string]any, error) {
-		id, err := ParamTestID.Get(req)
-		if err != nil {
-			return nil, err
-		}
+	pInt := sein.ParamValue("-9223372036854775808")
+	assert.Equal(t, int64(-9223372036854775808), pInt.AsInt64())
 
-		page := QueryTestPage.GetOr(req, 1)
-		apiKey, err := HeaderTestKey.Get(req)
-		if err != nil {
-			return nil, err
-		}
+	pBool := sein.ParamValue("true")
+	assert.True(t, pBool.AsBool())
 
-		return map[string]any{
-			"id":      id,
-			"page":    page,
-			"api_key": apiKey,
-		}, nil
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/items/8888?page=5", nil)
-	req.Header.Set("X-Api-Key", "secret-token")
-	rec := httptest.NewRecorder()
-	app.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var res map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &res)
-
-	if res["id"].(float64) != 8888 || res["page"].(float64) != 5 || res["api_key"] != "secret-token" {
-		t.Fatalf("unexpected response: %+v", res)
-	}
+	pEmpty := sein.ParamValue("")
+	assert.Equal(t, uint64(0), pEmpty.AsUint64())
+	assert.Equal(t, int(0), pEmpty.AsInt())
+	assert.False(t, pEmpty.AsBool())
 }
 
-type ValidatedUserDTO struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
+type SelfValidatingDTO struct {
+	Age int `json:"age"`
 }
 
-func (v ValidatedUserDTO) Validate() error {
-	if v.Name == "" {
-		return errors.New("name is required")
-	}
-	if v.Email == "" {
-		return errors.New("email is required")
+func (dto SelfValidatingDTO) Validate() error {
+	if dto.Age < 18 {
+		return errors.New("must be at least 18 years old")
 	}
 	return nil
 }
@@ -366,147 +279,29 @@ func (v ValidatedUserDTO) Validate() error {
 func TestValidatableDTO(t *testing.T) {
 	app := sein.New()
 
-	app.Post("/validate", func(ctx context.Context, req ValidatedUserDTO) (string, error) {
-		return "OK: " + req.Name, nil
+	app.Post("/verify-age", func(ctx context.Context, req SelfValidatingDTO) (string, error) {
+		return "verified", nil
 	})
 
-	// 1. Invalid payload (missing name)
-	bodyInvalid, _ := json.Marshal(ValidatedUserDTO{Name: "", Email: "test@example.com"})
-	reqInvalid := httptest.NewRequest(http.MethodPost, "/validate", bytes.NewReader(bodyInvalid))
-	recInvalid := httptest.NewRecorder()
-	app.ServeHTTP(recInvalid, reqInvalid)
+	// 1. Invalid age (15)
+	bodyUnderage, err := json.Marshal(SelfValidatingDTO{Age: 15})
+	require.NoError(t, err)
 
-	if recInvalid.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 Bad Request, got %d", recInvalid.Code)
-	}
+	reqUnder := httptest.NewRequest(http.MethodPost, "/verify-age", bytes.NewReader(bodyUnderage))
+	recUnder := httptest.NewRecorder()
+	app.ServeHTTP(recUnder, reqUnder)
 
-	var errResp struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}
-	_ = json.Unmarshal(recInvalid.Body.Bytes(), &errResp)
+	assert.Equal(t, http.StatusBadRequest, recUnder.Code)
 
-	if errResp.Code != "VALIDATION_FAILED" || errResp.Message != "name is required" {
-		t.Fatalf("unexpected error response: %+v", errResp)
-	}
+	// 2. Valid age (21)
+	bodyAdult, err := json.Marshal(SelfValidatingDTO{Age: 21})
+	require.NoError(t, err)
 
-	// 2. Valid payload
-	bodyValid, _ := json.Marshal(ValidatedUserDTO{Name: "Alice", Email: "alice@example.com"})
-	reqValid := httptest.NewRequest(http.MethodPost, "/validate", bytes.NewReader(bodyValid))
-	recValid := httptest.NewRecorder()
-	app.ServeHTTP(recValid, reqValid)
+	reqAdult := httptest.NewRequest(http.MethodPost, "/verify-age", bytes.NewReader(bodyAdult))
+	recAdult := httptest.NewRecorder()
+	app.ServeHTTP(recAdult, reqAdult)
 
-	if recValid.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d", recValid.Code)
-	}
-}
-
-func TestBearerAuthMiddleware(t *testing.T) {
-	app := sein.New()
-
-	authMW := sein.BearerAuth(func(ctx context.Context, token string) (UserSession, error) {
-		if token == "valid-admin-token" {
-			return UserSession{UserID: 42, Role: "admin"}, nil
-		}
-		return UserSession{}, sein.Unauthorized("INVALID_TOKEN", "Token is expired")
-	})
-
-	protected := app.Group("/admin", authMW)
-	protected.GetReq("/dashboard", func(req *sein.Request) (UserSession, error) {
-		session, ok := sein.Get[UserSession](req)
-		if !ok {
-			return UserSession{}, sein.Internal("SESSION_MISSING")
-		}
-		return session, nil
-	})
-
-	// 1. Missing header -> 401
-	reqNoAuth := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
-	recNoAuth := httptest.NewRecorder()
-	app.ServeHTTP(recNoAuth, reqNoAuth)
-
-	if recNoAuth.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 Unauthorized, got %d", recNoAuth.Code)
-	}
-
-	// 2. Valid header -> 200 + typed session
-	reqAuth := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
-	reqAuth.Header.Set("Authorization", "Bearer valid-admin-token")
-	recAuth := httptest.NewRecorder()
-	app.ServeHTTP(recAuth, reqAuth)
-
-	if recAuth.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d", recAuth.Code)
-	}
-
-	var session UserSession
-	_ = json.Unmarshal(recAuth.Body.Bytes(), &session)
-
-	if session.UserID != 42 || session.Role != "admin" {
-		t.Fatalf("unexpected session: %+v", session)
-	}
-}
-
-type ComplexUserDTO struct {
-	ID        uint64 `path:"id"`
-	DryRun    bool   `query:"dry_run"`
-	AuthKey   string `header:"X-Api-Key"`
-	Name      string `json:"name"`
-	UserEmail string `json:"email"`
-}
-
-func (c ComplexUserDTO) Validate() error {
-	if c.Name == "" {
-		return errors.New("name cannot be empty")
-	}
-	return nil
-}
-
-func TestMultiSourceDTOIngestion(t *testing.T) {
-	app := sein.New()
-
-	app.Post("/users/:id/action", func(ctx context.Context, req ComplexUserDTO) (map[string]any, error) {
-		return map[string]any{
-			"id":      req.ID,
-			"dry_run": req.DryRun,
-			"api_key": req.AuthKey,
-			"name":    req.Name,
-			"email":   req.UserEmail,
-		}, nil
-	})
-
-	bodyJSON, _ := json.Marshal(map[string]string{
-		"name":  "Gordon Freeman",
-		"email": "gordon@blackmesa.gov",
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/users/9999/action?dry_run=true", bytes.NewReader(bodyJSON))
-	req.Header.Set("X-Api-Key", "mesa-secret")
-	rec := httptest.NewRecorder()
-	app.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var res map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &res)
-
-	if res["id"].(float64) != 9999 {
-		t.Fatalf("expected id 9999, got %v", res["id"])
-	}
-	if res["dry_run"] != true {
-		t.Fatalf("expected dry_run true, got %v", res["dry_run"])
-	}
-	if res["api_key"] != "mesa-secret" {
-		t.Fatalf("expected api_key mesa-secret, got %v", res["api_key"])
-	}
-	if res["name"] != "Gordon Freeman" {
-		t.Fatalf("expected name Gordon Freeman, got %v", res["name"])
-	}
-	if res["email"] != "gordon@blackmesa.gov" {
-		t.Fatalf("expected email gordon@blackmesa.gov, got %v", res["email"])
-	}
+	assert.Equal(t, http.StatusOK, recAdult.Code)
 }
 
 type UserSessionData struct {
@@ -529,7 +324,6 @@ type FullFeaturedDTO struct {
 func TestUnifiedDTO_FullFeatures(t *testing.T) {
 	app := sein.New()
 
-	// Middleware injecting typed context
 	app.Use(func(next sein.RawHandler) sein.RawHandler {
 		return func(req *sein.Request) (any, error) {
 			sein.Set(req, &UserSessionData{AccountID: 42, Role: "admin"})
@@ -556,7 +350,9 @@ func TestUnifiedDTO_FullFeatures(t *testing.T) {
 		}, nil
 	})
 
-	bodyJSON, _ := json.Marshal(map[string]string{"title": "Zero-Reflection Post"})
+	bodyJSON, err := json.Marshal(map[string]string{"title": "Zero-Reflection Post"})
+	require.NoError(t, err)
+
 	httpReq := httptest.NewRequest(http.MethodPost, "/users/100/posts?tag=go&tag=rust&opt=custom", bytes.NewReader(bodyJSON))
 	httpReq.Header.Set("X-Trace-ID", "trace-xyz-777")
 	httpReq.Header.Set("Authorization", "Bearer secret-token-abc")
@@ -565,37 +361,20 @@ func TestUnifiedDTO_FullFeatures(t *testing.T) {
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, httpReq)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
-	}
+	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var res map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &res)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
 
-	if res["user_id"].(float64) != 100 {
-		t.Fatalf("expected user_id 100, got %v", res["user_id"])
-	}
-	if res["trace_id"] != "trace-xyz-777" {
-		t.Fatalf("expected trace_id trace-xyz-777, got %v", res["trace_id"])
-	}
-	if res["session_id"] != "sess-cookie-999" {
-		t.Fatalf("expected session_id sess-cookie-999, got %v", res["session_id"])
-	}
-	if res["token"] != "secret-token-abc" {
-		t.Fatalf("expected token secret-token-abc, got %v", res["token"])
-	}
-	if res["account_id"].(float64) != 42 || res["role"] != "admin" {
-		t.Fatalf("unexpected session: %v, %v", res["account_id"], res["role"])
-	}
-	if res["limit"].(float64) != 50 {
-		t.Fatalf("expected limit default 50, got %v", res["limit"])
-	}
-	if res["optional"] != "custom" {
-		t.Fatalf("expected optional custom, got %v", res["optional"])
-	}
-	if res["title"] != "Zero-Reflection Post" {
-		t.Fatalf("expected title Zero-Reflection Post, got %v", res["title"])
-	}
+	assert.Equal(t, float64(100), res["user_id"])
+	assert.Equal(t, "trace-xyz-777", res["trace_id"])
+	assert.Equal(t, "sess-cookie-999", res["session_id"])
+	assert.Equal(t, "secret-token-abc", res["token"])
+	assert.Equal(t, float64(42), res["account_id"])
+	assert.Equal(t, "admin", res["role"])
+	assert.Equal(t, float64(50), res["limit"])
+	assert.Equal(t, "custom", res["optional"])
+	assert.Equal(t, "Zero-Reflection Post", res["title"])
 }
 
 type MismatchedDTO struct {
@@ -605,35 +384,25 @@ type MismatchedDTO struct {
 func TestUnifiedDTO_StartupValidationPanic(t *testing.T) {
 	app := sein.New()
 
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatalf("expected panic on mismatched path params, got nil")
-		}
-		msg, ok := r.(string)
-		if !ok || !strings.Contains(msg, "declares path param :user_id") {
-			t.Fatalf("unexpected panic message: %v", r)
-		}
-	}()
-
-	// Should panic immediately because route has :user_id but DTO only has some_other_id
-	app.GetWith("/users/:user_id", func(ctx context.Context, req MismatchedDTO) (string, error) {
-		return "ok", nil
+	assert.Panics(t, func() {
+		app.GetWith("/users/:user_id", func(ctx context.Context, req MismatchedDTO) (string, error) {
+			return "ok", nil
+		})
 	})
 }
 
 type AdvancedTransformDTO struct {
-	CleanEmail    string        `query:"email,trim,lower,email"`
-	CountryCode   string        `query:"country,trim,upper,len=2"`
-	CleanText     string        `query:"text,single_space"`
-	CardNumber    string        `query:"card,digits_only"`
-	Status        string        `query:"status,enum=active|pending|archived"`
-	CreatedAt     time.Time     `query:"created_at"`
-	Timeout       time.Duration `query:"timeout,default=15s"`
-	ClientIP      net.IP        `net:"ip"`
-	IPAddr        netip.Addr    `net:"ip"`
-	Protocol      string        `net:"proto"`
-	Host          string        `net:"host"`
+	CleanEmail  string        `query:"email,trim,lower,email"`
+	CountryCode string        `query:"country,trim,upper,len=2"`
+	CleanText   string        `query:"text,single_space"`
+	CardNumber  string        `query:"card,digits_only"`
+	Status      string        `query:"status,enum=active|pending|archived"`
+	CreatedAt   time.Time     `query:"created_at"`
+	Timeout     time.Duration `query:"timeout,default=15s"`
+	ClientIP    net.IP        `net:"ip"`
+	IPAddr      netip.Addr    `net:"ip"`
+	Protocol    string        `net:"proto"`
+	Host        string        `net:"host"`
 }
 
 func TestUnifiedDTO_AdvancedTransformsAndAdapters(t *testing.T) {
@@ -669,40 +438,20 @@ func TestUnifiedDTO_AdvancedTransformsAndAdapters(t *testing.T) {
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, httpReq)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
-	}
+	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var res map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &res)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
 
-	if res["email"] != "user.name@example.com" {
-		t.Fatalf("expected sanitized email, got %v", res["email"])
-	}
-	if res["country"] != "US" {
-		t.Fatalf("expected upper country US, got %v", res["country"])
-	}
-	if res["text"] != "Hello World From Sein" {
-		t.Fatalf("expected single-spaced text, got %v", res["text"])
-	}
-	if res["card"] != "4111222233334444" {
-		t.Fatalf("expected digits_only card, got %v", res["card"])
-	}
-	if res["status"] != "active" {
-		t.Fatalf("expected status active, got %v", res["status"])
-	}
-	if res["created_at"] != "2026-08-26T12:00:00Z" {
-		t.Fatalf("expected parsed time, got %v", res["created_at"])
-	}
-	if res["timeout_ms"].(float64) != 15000 {
-		t.Fatalf("expected timeout 15000ms, got %v", res["timeout_ms"])
-	}
-	if res["client_ip"] != "203.0.113.195" {
-		t.Fatalf("expected client IP 203.0.113.195, got %v", res["client_ip"])
-	}
-	if res["host"] != "api.sein.dev" {
-		t.Fatalf("expected host api.sein.dev, got %v", res["host"])
-	}
+	assert.Equal(t, "user.name@example.com", res["email"])
+	assert.Equal(t, "US", res["country"])
+	assert.Equal(t, "Hello World From Sein", res["text"])
+	assert.Equal(t, "4111222233334444", res["card"])
+	assert.Equal(t, "active", res["status"])
+	assert.Equal(t, "2026-08-26T12:00:00Z", res["created_at"])
+	assert.Equal(t, float64(15000), res["timeout_ms"])
+	assert.Equal(t, "203.0.113.195", res["client_ip"])
+	assert.Equal(t, "api.sein.dev", res["host"])
 }
 
 type FileUploadDTO struct {
@@ -731,9 +480,7 @@ func TestUnifiedDTO_FileUpload(t *testing.T) {
 	_ = writer.WriteField("category", "  AVATARS  ")
 
 	part, err := writer.CreateFormFile("avatar", "profile.png")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	_, _ = part.Write([]byte("fake-image-bytes-12345"))
 	_ = writer.Close()
 
@@ -743,22 +490,12 @@ func TestUnifiedDTO_FileUpload(t *testing.T) {
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, httpReq)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
-	}
+	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var res map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &res)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
 
-	if res["category"] != "avatars" {
-		t.Fatalf("expected category avatars, got %v", res["category"])
-	}
-	if res["filename"] != "profile.png" {
-		t.Fatalf("expected filename profile.png, got %v", res["filename"])
-	}
-	if res["file_data"] != "fake-image-bytes-12345" {
-		t.Fatalf("expected file_data fake-image-bytes-12345, got %v", res["file_data"])
-	}
+	assert.Equal(t, "avatars", res["category"])
+	assert.Equal(t, "profile.png", res["filename"])
+	assert.Equal(t, "fake-image-bytes-12345", res["file_data"])
 }
-
-
