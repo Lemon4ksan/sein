@@ -238,6 +238,12 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 				case SourcePath:
 					b.Required = true
 					desc.PathKeys.Add(b.Key)
+				case SourceForm:
+					if b.FieldType.String() == "*sein.File" || (isPtr && ft.Elem().Name() == "File") {
+						b.Source = SourceFile
+					} else if b.FieldType.String() == "[]*sein.File" || (isSlice && ft.Elem().Kind() == reflect.Pointer && ft.Elem().Elem().Name() == "File") {
+						b.Source = SourceFiles
+					}
 				case SourceBodyRaw:
 					if b.Key != "raw" && b.FieldType != bytesSliceType {
 						b.Source = SourceBodyString

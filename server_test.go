@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -574,4 +575,239 @@ func TestSecretMasking(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "\"******\"", string(data))
 }
+
+func TestNativeH1Server_SocketAndKeepAlive(t *testing.T) {
+	app := sein.New()
+
+	type CreateUserReq struct {
+		Name  string `json:"name"`
+		Email string `json:"email"`
+	}
+
+	type UserResp struct {
+		ID    int    `json:"id"`
+		Name  string `json:"name"`
+		Email string `json:"email"`
+	}
+
+	app.Post("/users", func(ctx context.Context, req CreateUserReq) (UserResp, error) {
+		return UserResp{
+			ID:    42,
+			Name:  req.Name,
+			Email: req.Email,
+		}, nil
+	})
+
+	type GetUserDTO struct {
+		ID int `path:"id"`
+	}
+
+	app.GetWith("/users/:id", func(ctx context.Context, req GetUserDTO) (UserResp, error) {
+		if req.ID == 42 {
+			return UserResp{ID: 42, Name: "Bob", Email: "bob@example.com"}, nil
+		}
+		return UserResp{}, sein.NotFound("USER_NOT_FOUND", "User not found")
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 1. POST /users
+	postBody, _ := json.Marshal(CreateUserReq{Name: "Bob", Email: "bob@example.com"})
+	resp, err := client.Post("http://"+addr+"/users", "application/json", bytes.NewReader(postBody))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var created UserResp
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
+	_ = resp.Body.Close()
+	assert.Equal(t, 42, created.ID)
+	assert.Equal(t, "Bob", created.Name)
+
+	// 2. GET /users/42 (Keep-Alive reused connection)
+	resp2, err := client.Get("http://" + addr + "/users/42")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp2.StatusCode)
+
+	var fetched UserResp
+	require.NoError(t, json.NewDecoder(resp2.Body).Decode(&fetched))
+	_ = resp2.Body.Close()
+	assert.Equal(t, 42, fetched.ID)
+
+	// 3. GET /users/999 (404 Domain Error)
+	resp3, err := client.Get("http://" + addr + "/users/999")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp3.StatusCode)
+	_ = resp3.Body.Close()
+
+	// 4. Graceful Shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, app.Shutdown(ctx))
+}
+
+func TestNativeH1Server_StreamWriterAndSSE(t *testing.T) {
+	app := sein.New()
+
+	app.Get("/stream", func(ctx context.Context) (sein.StreamWriterResponse, error) {
+		return sein.StreamWriter(func(w io.Writer) error {
+			_, _ = w.Write([]byte("chunk-alpha-"))
+			_, _ = w.Write([]byte("chunk-beta"))
+			return nil
+		}), nil
+	})
+
+	app.Get("/sse", func(ctx context.Context) (sein.SSEResponse, error) {
+		return sein.SSE(func(s *sein.SSESender) error {
+			_ = s.SendEvent("update", "state_ready")
+			_ = s.SendJSON("metric", map[string]int{"cpu": 45})
+			return nil
+		}), nil
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 1. Test /stream (Chunked output)
+	respStream, err := client.Get("http://" + addr + "/stream")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, respStream.StatusCode)
+	streamBody, err := io.ReadAll(respStream.Body)
+	require.NoError(t, err)
+	_ = respStream.Body.Close()
+	assert.Equal(t, "chunk-alpha-chunk-beta", string(streamBody))
+
+	// 2. Test /sse (Event stream)
+	respSSE, err := client.Get("http://" + addr + "/sse")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, respSSE.StatusCode)
+	assert.Equal(t, "text/event-stream", respSSE.Header.Get("Content-Type"))
+	sseBody, err := io.ReadAll(respSSE.Body)
+	require.NoError(t, err)
+	_ = respSSE.Body.Close()
+
+	assert.Contains(t, string(sseBody), "event: update\ndata: state_ready\n\n")
+	assert.Contains(t, string(sseBody), "event: metric\ndata: {\"cpu\":45}\n\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, app.Shutdown(ctx))
+}
+
+func TestNativeH1Server_MultipartFileUpload(t *testing.T) {
+	app := sein.New()
+
+	type UploadDTO struct {
+		Title string     `form:"title"`
+		Doc   *sein.File `form:"doc"`
+	}
+
+	app.PostWith("/upload", func(ctx context.Context, req UploadDTO) (map[string]any, error) {
+		docBytes, err := req.Doc.Bytes()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"title":    req.Title,
+			"filename": req.Doc.Filename,
+			"size":     req.Doc.Size,
+			"content":  string(docBytes),
+		}, nil
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	// Build multipart request body
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	_ = w.WriteField("title", "Quarterly Report")
+	part, _ := w.CreateFormFile("doc", "report.txt")
+	_, _ = part.Write([]byte("Confidential corporate data 2026"))
+	_ = w.Close()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post("http://"+addr+"/upload", w.FormDataContentType(), &b)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var result map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+	_ = resp.Body.Close()
+
+	assert.Equal(t, "Quarterly Report", result["title"])
+	assert.Equal(t, "report.txt", result["filename"])
+	assert.Equal(t, float64(len("Confidential corporate data 2026")), result["size"])
+	assert.Equal(t, "Confidential corporate data 2026", result["content"])
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, app.Shutdown(ctx))
+}
+
+func TestNativeH1Server_ConditionalETagAnd304(t *testing.T) {
+	app := sein.New()
+
+	const currentETag = "\"v1.0.0-hash\""
+
+	app.GetReq("/config", func(req *sein.Request) (sein.Response[any], error) {
+		if req.IfNoneMatch(currentETag) {
+			return sein.NotModified().WithETag(currentETag), nil
+		}
+		return sein.OK[any](map[string]string{"theme": "dark"}).WithETag(currentETag), nil
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 1. Initial request without ETag (gets 200 OK and ETag header)
+	resp1, err := client.Get("http://" + addr + "/config")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp1.StatusCode)
+	assert.Equal(t, currentETag, resp1.Header.Get("ETag"))
+	_ = resp1.Body.Close()
+
+	// 2. Subsequent request WITH If-None-Match matching currentETag (gets 304 Not Modified)
+	req2, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/config", nil)
+	req2.Header.Set("If-None-Match", currentETag)
+	resp2, err := client.Do(req2)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotModified, resp2.StatusCode)
+	body2, _ := io.ReadAll(resp2.Body)
+	_ = resp2.Body.Close()
+	assert.Empty(t, body2)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, app.Shutdown(ctx))
+}
+
+
+
 

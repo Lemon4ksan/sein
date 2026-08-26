@@ -1,0 +1,162 @@
+// Copyright (c) 2026 Lemon4ksan All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package compress provides an ultra-fast, zero-allocation HTTP response compression middleware
+// supporting Brotli (br) and Gzip.
+package compress
+
+import (
+	"compress/gzip"
+	"encoding/json"
+	"net/http"
+	"strings"
+
+	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/sein"
+	"github.com/lemon4ksan/sein/internal/compress"
+)
+
+// Config configures the HTTP response compression middleware.
+type Config struct {
+	// MinLength is the minimum response payload size in bytes before compression is activated. Default is 512 bytes.
+	MinLength int
+	// BrotliLevel is the Brotli compression quality (0-11). Default is 6.
+	BrotliLevel int
+	// GzipLevel is the Gzip compression level (1-9). Default is 6.
+	GzipLevel int
+}
+
+// Option configures compression settings.
+type Option func(*Config)
+
+// WithMinLength sets the minimum byte threshold for activating compression.
+func WithMinLength(minLen int) Option {
+	return func(c *Config) {
+		c.MinLength = minLen
+	}
+}
+
+// WithBrotliLevel sets the Brotli compression level (0 = fastest, 6 = default HTTP, 11 = best).
+func WithBrotliLevel(level int) Option {
+	return func(c *Config) {
+		c.BrotliLevel = level
+	}
+}
+
+// New creates a new response compression middleware supporting Brotli and Gzip.
+func New(opts ...Option) sein.Middleware {
+	cfg := Config{
+		MinLength:   512,
+		BrotliLevel: compress.BrotliDefaultCompression,
+		GzipLevel:   gzip.DefaultCompression,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	return func(next sein.RawHandler) sein.RawHandler {
+		return func(req *sein.Request) (any, error) {
+			res, err := next(req)
+			if err != nil {
+				return nil, err
+			}
+
+			acceptEncoding := req.Header(header.AcceptEncoding)
+			if acceptEncoding == "" {
+				return res, nil
+			}
+
+			// Extract raw response bytes and existing headers
+			var rawBytes []byte
+			var contentType string
+			var status int
+			var existingHeaders http.Header
+
+			if holder, ok := res.(sein.ResponseHolder); ok {
+				status = holder.StatusCode()
+				existingHeaders = holder.ResponseHeaders()
+				if existingHeaders != nil {
+					contentType = existingHeaders.Get(header.ContentType)
+				}
+				body := holder.ResponseBody()
+				switch b := body.(type) {
+				case nil:
+					return res, nil
+				case []byte:
+					rawBytes = b
+				case string:
+					rawBytes = []byte(b)
+				default:
+					rawBytes, _ = json.Marshal(b)
+					if contentType == "" {
+						contentType = header.MIMEApplicationJSONCharsetUTF8
+					}
+				}
+			} else {
+				switch v := res.(type) {
+				case []byte:
+					rawBytes = v
+				case string:
+					rawBytes = []byte(v)
+				default:
+					rawBytes, _ = json.Marshal(v)
+					contentType = header.MIMEApplicationJSONCharsetUTF8
+				}
+			}
+
+			if len(rawBytes) < cfg.MinLength {
+				return res, nil
+			}
+
+			// Negotiate best compression algorithm (Brotli preferred over Gzip)
+			if strings.Contains(acceptEncoding, "br") {
+				compressed, compErr := compress.CompressBrotli(rawBytes, cfg.BrotliLevel)
+				if compErr == nil && len(compressed) < len(rawBytes) {
+					resp := sein.OK[any](compressed).
+						WithHeader(header.ContentEncoding, "br").
+						WithHeader(header.Vary, header.AcceptEncoding)
+					if status != 0 {
+						resp = resp.WithStatus(status)
+					}
+					if contentType != "" {
+						resp = resp.WithHeader(header.ContentType, contentType)
+					}
+					for k, vv := range existingHeaders {
+						if !strings.EqualFold(k, header.ContentEncoding) && !strings.EqualFold(k, header.Vary) && !strings.EqualFold(k, header.ContentLength) {
+							for _, v := range vv {
+								resp = resp.WithHeader(k, v)
+							}
+						}
+					}
+					return resp, nil
+				}
+			}
+
+			if strings.Contains(acceptEncoding, "gzip") {
+				compressed, compErr := compress.CompressGzip(rawBytes, cfg.GzipLevel)
+				if compErr == nil && len(compressed) < len(rawBytes) {
+					resp := sein.OK[any](compressed).
+						WithHeader(header.ContentEncoding, "gzip").
+						WithHeader(header.Vary, header.AcceptEncoding)
+					if status != 0 {
+						resp = resp.WithStatus(status)
+					}
+					if contentType != "" {
+						resp = resp.WithHeader(header.ContentType, contentType)
+					}
+					for k, vv := range existingHeaders {
+						if !strings.EqualFold(k, header.ContentEncoding) && !strings.EqualFold(k, header.Vary) && !strings.EqualFold(k, header.ContentLength) {
+							for _, v := range vv {
+								resp = resp.WithHeader(k, v)
+							}
+						}
+					}
+					return resp, nil
+				}
+			}
+
+			return res, nil
+		}
+	}
+}

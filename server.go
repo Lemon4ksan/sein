@@ -5,15 +5,16 @@
 package sein
 
 import (
-	"slices"
 	"context"
 	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/sein/internal/h1"
 )
 
 // Option configures a sein Server instance.
@@ -28,7 +29,7 @@ type Server struct {
 	router       *Router
 	middlewares  []Middleware
 	errorMappers []ErrorMapper
-	httpServer   *http.Server
+	h1Server     *h1.Server
 	mu           sync.Mutex
 }
 
@@ -168,7 +169,124 @@ func (s *Server) DeleteReq[Res any](path string, fn func(*Request) (Res, error),
 	routeDeleteReq(s, path, fn, mw...)
 }
 
-// ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib.
+// dispatchH1 is the native zero-net/http request pipeline dispatcher.
+func (s *Server) dispatchH1(h1Req *h1.Request, h1Res *h1.Response) error {
+	handler, params, found := s.router.Match(h1Req.Method, h1Req.Path)
+	if !found {
+		s.writeH1Error(h1Res, ErrNotFound("route not found"))
+		return nil
+	}
+
+	req := NewH1Request(h1Req, params)
+	defer req.Release()
+
+	// Wrap in global middlewares
+	finalHandler := handler
+	for _, v := range slices.Backward(s.middlewares) {
+		finalHandler = v(finalHandler)
+	}
+
+	// Execute handler
+	result, err := finalHandler(req)
+	if err != nil {
+		s.writeH1Error(h1Res, err)
+		return nil
+	}
+
+	if direct, ok := result.(DirectH1Responder); ok {
+		return direct.WriteToH1(h1Res)
+	}
+
+	return s.serializeH1Result(h1Res, result)
+}
+
+func (s *Server) serializeH1Result(res *h1.Response, result any) error {
+	res.StatusCode = http.StatusOK
+
+	switch v := result.(type) {
+	case nil:
+		return nil
+	case []byte:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMEApplicationOctetStream)
+		}
+		res.Body = append(res.Body, v...)
+		return nil
+	case string:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
+		}
+		res.Body = append(res.Body, v...)
+		return nil
+	default:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+		}
+		data, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		res.Body = append(res.Body, data...)
+		return nil
+	}
+}
+
+type errorResponse struct {
+	Status  int            `json:"status"`
+	Code    string         `json:"code"`
+	Message string         `json:"message"`
+	Details map[string]any `json:"details,omitempty"`
+}
+
+func (s *Server) writeH1Error(res *h1.Response, err error) {
+	for _, mapper := range s.errorMappers {
+		if mapped, ok := mapper(err); ok {
+			err = mapped
+			break
+		}
+	}
+
+	var resp errorResponse
+	var definedErr DefinedError
+	var domainErr DomainError
+	var httpErr HTTPError
+
+	switch {
+	case errors.As(err, &definedErr):
+		resp = errorResponse{
+			Status:  definedErr.HTTPStatus(),
+			Code:    definedErr.ErrorCode(),
+			Message: definedErr.Message(),
+			Details: definedErr.Details(),
+		}
+	case errors.As(err, &domainErr):
+		resp = errorResponse{
+			Status:  domainErr.HTTPStatus(),
+			Code:    domainErr.ErrorCode(),
+			Message: domainErr.Error(),
+		}
+	case errors.As(err, &httpErr):
+		resp = errorResponse{
+			Status:  httpErr.HTTPStatus(),
+			Code:    httpErr.ErrorCode(),
+			Message: httpErr.Message,
+			Details: httpErr.Details,
+		}
+	default:
+		resp = errorResponse{
+			Status:  http.StatusInternalServerError,
+			Code:    "INTERNAL_SERVER_ERROR",
+			Message: err.Error(),
+		}
+	}
+
+	res.StatusCode = resp.Status
+	res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+	data, _ := json.Marshal(resp)
+	res.Body = data
+}
+
+// ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib test recorders.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	handler, params, found := s.router.Match(r.Method, r.URL.Path)
 	if !found {
@@ -179,13 +297,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req := NewRequest(r, params)
 	defer req.Release()
 
-	// Wrap in global middlewares
 	finalHandler := handler
 	for _, v := range slices.Backward(s.middlewares) {
 		finalHandler = v(finalHandler)
 	}
 
-	// Execute handler
 	result, err := finalHandler(req)
 	if err != nil {
 		s.writeError(w, err)
@@ -199,15 +315,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fallback to OK JSON
 	_ = OK(result).WriteResponse(w)
-}
-
-type errorResponse struct {
-	Status  int            `json:"status"`
-	Code    string         `json:"code"`
-	Message string         `json:"message"`
-	Details map[string]any `json:"details,omitempty"`
 }
 
 func (s *Server) writeError(w http.ResponseWriter, err error) {
@@ -219,7 +327,6 @@ func (s *Server) writeError(w http.ResponseWriter, err error) {
 	}
 
 	var resp errorResponse
-
 	var definedErr DefinedError
 	var domainErr DomainError
 	var httpErr HTTPError
@@ -258,16 +365,38 @@ func (s *Server) writeError(w http.ResponseWriter, err error) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// ListenAndServe starts the HTTP server listening on the configured address.
-func (s *Server) ListenAndServe() error {
+// Serve starts the native H1 zero-net/http server on the provided net.Listener.
+func (s *Server) Serve(ln net.Listener) error {
 	s.mu.Lock()
-	s.httpServer = &http.Server{
-		Addr:    s.addr,
-		Handler: s,
-	}
+	s.h1Server = h1.NewServer(s.dispatchH1)
 	s.mu.Unlock()
 
-	return s.httpServer.ListenAndServe()
+	return s.h1Server.Serve(ln)
+}
+
+// ListenAndServe starts the native H1 zero-net/http server listening on the configured address.
+func (s *Server) ListenAndServe() error {
+	addr := s.addr
+	if addr == "" {
+		addr = ":8080"
+	}
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	return s.Serve(ln)
+}
+
+// ListenAndServeTLS starts listening on s.addr with TLS using native H1 engine.
+func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
+	s.mu.Lock()
+	s.h1Server = h1.NewServer(s.dispatchH1)
+	s.h1Server.Addr = s.addr
+	s.mu.Unlock()
+
+	return s.h1Server.ListenAndServeTLS(certFile, keyFile)
 }
 
 // Listen starts listening on the specified address.
@@ -276,24 +405,17 @@ func (s *Server) Listen(addr string) error {
 	return s.ListenAndServe()
 }
 
-// Serve starts serving connections from the provided net.Listener.
-func (s *Server) Serve(ln net.Listener) error {
+// Shutdown gracefully shuts down the server.
+func (s *Server) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
-	s.httpServer = &http.Server{
-		Addr:    s.addr,
-		Handler: s,
+	defer s.mu.Unlock()
+	if s.h1Server != nil {
+		return s.h1Server.Shutdown(ctx)
 	}
-	s.mu.Unlock()
-
-	return s.httpServer.Serve(ln)
+	return nil
 }
 
 // Close gracefully closes the server.
 func (s *Server) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.httpServer != nil {
-		return s.httpServer.Close()
-	}
-	return nil
+	return s.Shutdown(context.Background())
 }

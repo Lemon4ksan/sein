@@ -7,13 +7,29 @@ package sein
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/sein/internal/h1"
 )
 
-// Responder is an interface that allows custom types to control their exact wire serialization.
+// Responder is an interface that allows custom types to control their exact wire serialization for net/http.
 type Responder interface {
 	WriteResponse(w http.ResponseWriter) error
+}
+
+// DirectH1Responder is an interface for direct serialization to the native H1 response.
+type DirectH1Responder interface {
+	WriteToH1(res *h1.Response) error
+}
+
+// ResponseHolder allows middlewares to inspect response metadata and payload.
+type ResponseHolder interface {
+	StatusCode() int
+	ResponseBody() any
+	ResponseHeaders() http.Header
+	ResponseCookies() []*http.Cookie
 }
 
 // Response is a type-safe HTTP response container carrying status, headers, and body.
@@ -22,6 +38,75 @@ type Response[T any] struct {
 	Body    T
 	Headers http.Header
 	Cookies []*http.Cookie
+}
+
+// StatusCode returns the HTTP status code.
+func (r Response[T]) StatusCode() int {
+	return r.Status
+}
+
+// ResponseBody returns the generic body payload.
+func (r Response[T]) ResponseBody() any {
+	return r.Body
+}
+
+// ResponseHeaders returns the response headers map.
+func (r Response[T]) ResponseHeaders() http.Header {
+	return r.Headers
+}
+
+// ResponseCookies returns attached cookies.
+func (r Response[T]) ResponseCookies() []*http.Cookie {
+	return r.Cookies
+}
+
+// WriteToH1 serializes the response directly into an h1.Response with zero net/http allocations.
+func (r Response[T]) WriteToH1(res *h1.Response) error {
+	for k, vv := range r.Headers {
+		for _, v := range vv {
+			res.Headers.Add(k, v)
+		}
+	}
+	for _, c := range r.Cookies {
+		res.Cookies = append(res.Cookies, c)
+	}
+
+	status := r.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	res.StatusCode = status
+
+	if status == http.StatusNoContent || status == http.StatusNotModified {
+		return nil
+	}
+
+	switch v := any(r.Body).(type) {
+	case nil:
+		return nil
+	case []byte:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMEApplicationOctetStream)
+		}
+		res.Body = append(res.Body, v...)
+		return nil
+	case string:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
+		}
+		res.Body = append(res.Body, v...)
+		return nil
+	default:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+		}
+		data, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		res.Body = append(res.Body, data...)
+		return nil
+	}
 }
 
 // WriteResponse serializes the response to the given http.ResponseWriter.
@@ -43,8 +128,8 @@ func (r Response[T]) WriteResponse(w http.ResponseWriter) error {
 		status = http.StatusOK
 	}
 
-	// 204 No Content
-	if status == http.StatusNoContent {
+	// 204 No Content or 304 Not Modified
+	if status == http.StatusNoContent || status == http.StatusNotModified {
 		w.WriteHeader(status)
 		return nil
 	}
@@ -98,6 +183,19 @@ func (r Response[T]) WithStatus(code int) Response[T] {
 	return r
 }
 
+// WithETag sets the ETag header with quotes automatically formatted if omitted.
+func (r Response[T]) WithETag(etag string) Response[T] {
+	if !strings.HasPrefix(etag, "\"") && !strings.HasPrefix(etag, "W/\"") {
+		etag = "\"" + etag + "\""
+	}
+	return r.WithHeader(header.ETag, etag)
+}
+
+// WithLastModified sets the Last-Modified header formatted per RFC 7232.
+func (r Response[T]) WithLastModified(t time.Time) Response[T] {
+	return r.WithHeader(header.LastModified, t.UTC().Format(http.TimeFormat))
+}
+
 // OK creates a 200 OK response with the given body.
 func OK[T any](body T) Response[T] {
 	return Response[T]{
@@ -126,6 +224,13 @@ func Accepted[T any](body T) Response[T] {
 func NoContent() Response[any] {
 	return Response[any]{
 		Status: http.StatusNoContent,
+	}
+}
+
+// NotModified creates a 304 Not Modified conditional response.
+func NotModified() Response[any] {
+	return Response[any]{
+		Status: http.StatusNotModified,
 	}
 }
 
