@@ -63,6 +63,37 @@ func (g *Group) Group(prefix string, mw ...Middleware) *Group {
 	}
 }
 
+// Guard creates a protected GuardScope inheriting the group's prefix with the specified middlewares applied.
+func (g *Group) Guard(mw ...Middleware) *GuardScope {
+	return &GuardScope{
+		Group: g.Group("", mw...),
+	}
+}
+
+// GuardScope encapsulates a scoped collection of routes and modules protected by a shared middleware guard.
+// It embeds *Group, allowing all standard HTTP routing and module mounting methods to be called directly.
+type GuardScope struct {
+	*Group
+}
+
+// Do executes a configuration callback function receiving the protected *Group.
+func (gs *GuardScope) Do(fn func(g *Group)) *GuardScope {
+	fn(gs.Group)
+	return gs
+}
+
+// Mount mounts a domain Module under prefix with the guard's middlewares applied.
+func (gs *GuardScope) Mount(prefix string, m Module, extraMW ...Middleware) *GuardScope {
+	gs.Group.Mount(prefix, m, extraMW...)
+	return gs
+}
+
+// MountModule mounts a domain Module directly at the current level with the guard's middlewares applied.
+func (gs *GuardScope) MountModule(m Module) *GuardScope {
+	m.Mount(gs.Group)
+	return gs
+}
+
 // Use appends middlewares to the group.
 func (g *Group) Use(mw ...Middleware) {
 	g.middlewares = append(g.middlewares, mw...)

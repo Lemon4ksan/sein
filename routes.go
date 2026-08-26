@@ -20,6 +20,13 @@ func (s *Server) Mount(prefix string, m Module, mw ...Middleware) *Server {
 	return s
 }
 
+// Guard creates a protected GuardScope on the server with the specified middlewares applied.
+func (s *Server) Guard(mw ...Middleware) *GuardScope {
+	return &GuardScope{
+		Group: s.Group("", mw...),
+	}
+}
+
 // MountModule attaches a domain Module directly at root level.
 func (s *Server) MountModule(m Module) *Server {
 	m.Mount(s.Group(""))

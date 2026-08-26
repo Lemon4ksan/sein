@@ -13,6 +13,7 @@ import (
 	"slices"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/foundation/timekit"
 
 	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 	"github.com/lemon4ksan/sein/internal/fast/h2engine"
@@ -241,34 +242,49 @@ func (s *Server) Close() error {
 	return s.Shutdown(context.Background())
 }
 
+type statusWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (sw *statusWriter) WriteHeader(code int) {
+	sw.statusCode = code
+	sw.ResponseWriter.WriteHeader(code)
+}
+
 // ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib test recorders.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	sw := timekit.StartStopwatch()
+	swWriter := &statusWriter{ResponseWriter: w, statusCode: http.StatusOK}
 	var params Params
 	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(r.Method, r.URL.Path, &params)
 	if redirectURL != "" {
-		w.Header().Set(header.Location, redirectURL)
-		w.WriteHeader(redirectCode)
+		swWriter.Header().Set(header.Location, redirectURL)
+		swWriter.WriteHeader(redirectCode)
 		return
 	}
 
 	if handler == nil {
 		if status == http.StatusMethodNotAllowed {
 			if allowHeader != "" {
-				w.Header().Set(header.Allow, allowHeader)
+				swWriter.Header().Set(header.Allow, allowHeader)
 			}
 
-			s.writeError(w, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+			s.writeError(swWriter, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
 
 			return
 		}
 
-		s.writeError(w, ErrNotFound("route not found"))
+		s.writeError(swWriter, ErrNotFound("route not found"))
 
 		return
 	}
 
 	req := NewRequest(r, &params)
 	defer req.Release()
+	defer func() {
+		s.triggerAfterResponse(req, swWriter.statusCode, sw.Elapsed())
+	}()
 
 	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
 	finalHandler := handler
@@ -280,17 +296,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	result, err := finalHandler(req)
 	if err != nil {
-		s.writeError(w, err)
+		s.writeError(swWriter, err)
 		return
 	}
 
 	if responder, ok := result.(Responder); ok {
-		if err := responder.WriteResponse(w); err != nil {
-			s.writeError(w, ErrInternal("failed to write response", err))
+		if err := responder.WriteResponse(swWriter); err != nil {
+			s.writeError(swWriter, ErrInternal("failed to write response", err))
 		}
 
 		return
 	}
 
-	_ = OK(result).WriteResponse(w)
+	_ = OK(result).WriteResponse(swWriter)
 }

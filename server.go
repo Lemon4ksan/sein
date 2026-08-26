@@ -12,8 +12,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/foundation/timekit"
 
 	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 	"github.com/lemon4ksan/sein/internal/fast/h2engine"
@@ -27,6 +29,9 @@ type Option func(s *Server)
 // ErrorMapper translates arbitrary errors into typed DomainErrors.
 type ErrorMapper func(err error) (DomainError, bool)
 
+// AfterResponseHook is a lifecycle callback invoked asynchronously after an HTTP response has been flushed to the client.
+type AfterResponseHook func(req *Request, statusCode int, duration time.Duration)
+
 // Server represents a high-throughput, multi-protocol HTTP server engine supporting
 // HTTP/1.1, HTTP/2, HTTP/3 (QUIC), and WebSockets with zero net/http overhead.
 type Server struct {
@@ -34,6 +39,7 @@ type Server struct {
 	router                 *Router
 	middlewares            []Middleware
 	errorMappers           []ErrorMapper
+	afterResponseHooks     []AfterResponseHook
 	h1Server               *h1engine.Server
 	tcpLn                  net.Listener
 	quicLn                 *quic.Listener
@@ -213,6 +219,25 @@ func (s *Server) SetTrustedPlatform(platformHeader string) {
 	s.trustedPlatform = platformHeader
 }
 
+// AfterResponse registers a lifecycle hook that executes after every completed HTTP response.
+func (s *Server) AfterResponse(fn AfterResponseHook) *Server {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.afterResponseHooks = append(s.afterResponseHooks, fn)
+	return s
+}
+
+func (s *Server) triggerAfterResponse(req *Request, statusCode int, duration time.Duration) {
+	if len(s.afterResponseHooks) == 0 {
+		return
+	}
+
+	for _, hook := range s.afterResponseHooks {
+		hook(req, statusCode, duration)
+	}
+}
+
 // PrintRoutes formats and returns an ASCII table representation of all registered routes.
 func (s *Server) PrintRoutes() string {
 	routes := s.Routes()
@@ -285,12 +310,19 @@ func (s *Server) resolveRoute(
 
 // dispatchH1 is the native zero-net/http request pipeline dispatcher.
 func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) error {
+	sw := timekit.StartStopwatch()
 	var params Params
 	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h1Req.Method, h1Req.Path, &params)
 	if redirectURL != "" {
 		res := Redirect(redirectURL, redirectCode)
 		return s.serializeH1Result(h1Res, res)
 	}
+
+	req := NewH1Request(h1Req, &params)
+	defer req.Release()
+	defer func() {
+		s.triggerAfterResponse(req, h1Res.StatusCode, sw.Elapsed())
+	}()
 
 	if handler == nil && s.SkipUnmatchedRoutes {
 		if status == http.StatusMethodNotAllowed {
@@ -307,9 +339,6 @@ func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 
 		return nil
 	}
-
-	req := NewH1Request(h1Req, &params)
-	defer req.Release()
 
 	origPath := h1Req.Path
 	origMethod := h1Req.Method
@@ -401,6 +430,7 @@ func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 
 // DispatchH2 is the native zero-net/http HTTP/2 stream request dispatcher.
 func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.ServerResponse) error {
+	sw := timekit.StartStopwatch()
 	var params Params
 	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h2Req.Method, h2Req.Path, &params)
 	if redirectURL != "" {
@@ -430,6 +460,9 @@ func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.Serve
 
 	req := NewH2Request(h2Req.Method, h2Req.Path, h2Req.Authority, h2Req.RemoteAddr, h2Req.Headers, h2Req.Body, &params)
 	defer req.Release()
+	defer func() {
+		s.triggerAfterResponse(req, h2Res.StatusCode, sw.Elapsed())
+	}()
 
 	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
 	finalHandler := handler
@@ -451,6 +484,7 @@ func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.Serve
 
 // DispatchH3 is the native zero-net/http HTTP/3 stream request dispatcher.
 func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.ServerResponse) error {
+	sw := timekit.StartStopwatch()
 	var params Params
 	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h3Req.Method, h3Req.Path, &params)
 	if redirectURL != "" {
@@ -480,6 +514,9 @@ func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.Serve
 
 	req := NewH3Request(h3Req.Method, h3Req.Path, h3Req.Authority, h3Req.RemoteAddr, h3Req.Headers, h3Req.Body, &params)
 	defer req.Release()
+	defer func() {
+		s.triggerAfterResponse(req, h3Res.StatusCode, sw.Elapsed())
+	}()
 
 	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
 	finalHandler := handler

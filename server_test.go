@@ -962,3 +962,76 @@ func TestRouteIntrospection(t *testing.T) {
 	assert.Contains(t, table, "/users/profile")
 	assert.Contains(t, table, "/auth/login")
 }
+
+func TestGuardScope(t *testing.T) {
+	app := sein.New()
+
+	authMiddleware := func(next sein.RawHandler) sein.RawHandler {
+		return func(req *sein.Request) (any, error) {
+			if req.Header("Authorization") != "Bearer secret" {
+				return nil, sein.Unauthorized("UNAUTHORIZED", "Missing or invalid token")
+			}
+			return next(req)
+		}
+	}
+
+	// 1. Guard with Mount
+	app.Guard(authMiddleware).Mount("/users", mockUserModule{})
+
+	// 2. Guard with Do block
+	app.Guard(authMiddleware).Do(func(g *sein.Group) {
+		g.Get("/secret-data", func(ctx context.Context) (string, error) {
+			return "top-secret", nil
+		})
+	})
+
+	// Test unauthenticated access to /users/profile -> 401
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/users/profile", nil)
+	app.ServeHTTP(rec1, req1)
+	assert.Equal(t, http.StatusUnauthorized, rec1.Code)
+
+	// Test authenticated access to /users/profile -> 200
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/users/profile", nil)
+	req2.Header.Set("Authorization", "Bearer secret")
+	app.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusOK, rec2.Code)
+	assert.Equal(t, "user-profile", rec2.Body.String())
+
+	// Test authenticated access to /secret-data -> 200
+	rec3 := httptest.NewRecorder()
+	req3 := httptest.NewRequest(http.MethodGet, "/secret-data", nil)
+	req3.Header.Set("Authorization", "Bearer secret")
+	app.ServeHTTP(rec3, req3)
+	assert.Equal(t, http.StatusOK, rec3.Code)
+	assert.Equal(t, "top-secret", rec3.Body.String())
+}
+
+func TestAfterResponseHook(t *testing.T) {
+	app := sein.New()
+
+	var recordedPath string
+	var recordedStatus int
+	var recordedDuration time.Duration
+
+	app.AfterResponse(func(req *sein.Request, statusCode int, duration time.Duration) {
+		recordedPath = req.Path()
+		recordedStatus = statusCode
+		recordedDuration = duration
+	})
+
+	app.Get("/ping", func(ctx context.Context) (string, error) {
+		return "pong", nil
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+	app.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "pong", rec.Body.String())
+	assert.Equal(t, "/ping", recordedPath)
+	assert.Equal(t, http.StatusOK, recordedStatus)
+	assert.True(t, recordedDuration >= 0)
+}
