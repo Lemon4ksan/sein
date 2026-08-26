@@ -17,6 +17,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
+	"github.com/lemon4ksan/foundation/silicon/simd"
 )
 
 var (
@@ -64,9 +65,27 @@ func (r *Request) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return r.HijackFn()
 }
 
-// ReadRequest parses an incoming HTTP/1.1 request from the buffered stream.
+// ReadRequest parses an incoming HTTP/1.1 request from the buffered stream using SIMD acceleration.
 func (r *Request) ReadRequest(br *bufio.Reader, bw *bufio.Writer, maxBodySize int64) error {
-	// 1. Read request line
+	// 1. Fast SIMD Path: Check if complete header block (\r\n\r\n) is already in read buffer
+	buffered := br.Buffered()
+	if buffered >= 4 {
+		peekBytes, err := br.Peek(buffered)
+		if err == nil {
+			headerEnd := simd.IndexCRLFCRLFVector(peekBytes)
+			if headerEnd != -1 {
+				headerBlock := peekBytes[:headerEnd-4]
+				_, _ = br.Discard(headerEnd)
+
+				if err := r.parseHeaderBlock(headerBlock); err != nil {
+					return err
+				}
+				return r.finishRequestRead(br, bw, maxBodySize)
+			}
+		}
+	}
+
+	// 2. Fallback Streaming Path: Read line by line
 	line, err := br.ReadBytes('\n')
 	if err != nil {
 		return err
@@ -77,32 +96,10 @@ func (r *Request) ReadRequest(br *bufio.Reader, bw *bufio.Writer, maxBodySize in
 		return io.EOF
 	}
 
-	// Parse "METHOD URI PROTO"
-	firstSpace := bytes.IndexByte(line, ' ')
-	if firstSpace <= 0 {
-		return ErrMalformedRequestLine
+	if err := r.parseRequestLine(line); err != nil {
+		return err
 	}
 
-	secondSpace := bytes.IndexByte(line[firstSpace+1:], ' ')
-	if secondSpace <= 0 {
-		return ErrMalformedRequestLine
-	}
-	secondSpace += firstSpace + 1
-
-	r.Method = bytesconv.B2S(line[:firstSpace])
-	r.URI = bytesconv.B2S(line[firstSpace+1 : secondSpace])
-	r.Proto = bytesconv.B2S(line[secondSpace+1:])
-
-	// Split URI into Path and Query
-	if qIdx := strings.IndexByte(r.URI, '?'); qIdx != -1 {
-		r.Path = r.URI[:qIdx]
-		r.Query = r.URI[qIdx+1:]
-	} else {
-		r.Path = r.URI
-		r.Query = ""
-	}
-
-	// 2. Read headers
 	for {
 		headerLine, err := br.ReadBytes('\n')
 		if err != nil {
@@ -111,23 +108,92 @@ func (r *Request) ReadRequest(br *bufio.Reader, bw *bufio.Writer, maxBodySize in
 
 		headerLine = bytes.TrimRight(headerLine, "\r\n")
 		if len(headerLine) == 0 {
-			// Empty line marks end of headers
 			break
 		}
 
 		r.Headers.ParseHeaderLine(headerLine)
 	}
 
+	return r.finishRequestRead(br, bw, maxBodySize)
+}
+
+func (r *Request) parseHeaderBlock(headerBlock []byte) error {
+	crlfIdx := simd.ScanByteVector(headerBlock, '\n')
+	if crlfIdx <= 0 {
+		return r.parseRequestLine(headerBlock)
+	}
+
+	reqLine := headerBlock[:crlfIdx]
+	if len(reqLine) > 0 && reqLine[len(reqLine)-1] == '\r' {
+		reqLine = reqLine[:len(reqLine)-1]
+	}
+
+	if err := r.parseRequestLine(reqLine); err != nil {
+		return err
+	}
+
+	rest := headerBlock[crlfIdx+1:]
+	for len(rest) > 0 {
+		nextLF := simd.ScanByteVector(rest, '\n')
+		var line []byte
+		if nextLF == -1 {
+			line = rest
+			rest = nil
+		} else {
+			line = rest[:nextLF]
+			rest = rest[nextLF+1:]
+		}
+
+		if len(line) > 0 && line[len(line)-1] == '\r' {
+			line = line[:len(line)-1]
+		}
+		if len(line) == 0 {
+			break
+		}
+
+		r.Headers.ParseHeaderLine(line)
+	}
+
+	return nil
+}
+
+func (r *Request) parseRequestLine(line []byte) error {
+	sp1 := simd.ScanByteVector(line, ' ')
+	if sp1 <= 0 {
+		return ErrMalformedRequestLine
+	}
+
+	sp2 := simd.ScanByteVector(line[sp1+1:], ' ')
+	if sp2 <= 0 {
+		return ErrMalformedRequestLine
+	}
+	secondSpace := sp1 + 1 + sp2
+
+	r.Method = bytesconv.B2S(line[:sp1])
+	r.URI = bytesconv.B2S(line[sp1+1 : secondSpace])
+	r.Proto = bytesconv.B2S(line[secondSpace+1:])
+
+	if qIdx := strings.IndexByte(r.URI, '?'); qIdx != -1 {
+		r.Path = r.URI[:qIdx]
+		r.Query = r.URI[qIdx+1:]
+	} else {
+		r.Path = r.URI
+		r.Query = ""
+	}
+	return nil
+}
+
+func (r *Request) finishRequestRead(br *bufio.Reader, bw *bufio.Writer, maxBodySize int64) error {
 	r.Host = r.Headers.Get(header.Host)
 
-	// 3. Handle "Expect: 100-continue" (RFC 7231 §5.1.1)
-	if strings.EqualFold(r.Headers.Get(header.Expect), "100-continue") && bw != nil {
+	// Handle "Expect: 100-continue" (RFC 7231 §5.1.1)
+	if bytesconv.EqualFoldASCII(r.Headers.Get(header.Expect), header.Value100Continue) && bw != nil {
 		_, _ = bw.WriteString("HTTP/1.1 100 Continue\r\n\r\n")
 		_ = bw.Flush()
 	}
 
-	// 4. Read body if present
-	if strings.EqualFold(r.Headers.Get(header.TransferEncoding), header.ValueChunked) {
+	// Read body if present
+	if bytesconv.EqualFoldASCII(r.Headers.Get(header.TransferEncoding), header.ValueChunked) {
 		chunkedBody, err := ReadAllChunked(br, maxBodySize)
 		if err != nil {
 			return err

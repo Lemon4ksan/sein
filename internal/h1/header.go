@@ -5,11 +5,11 @@
 package h1
 
 import (
-	"bytes"
 	"strings"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
+	"github.com/lemon4ksan/foundation/silicon/simd"
 )
 
 // HeaderEntry represents a parsed HTTP header key-value pair.
@@ -23,6 +23,13 @@ type Headers struct {
 	entries []HeaderEntry
 }
 
+// NewHeadersWithCapacity creates a Headers container with pre-allocated capacity.
+func NewHeadersWithCapacity(cap int) Headers {
+	return Headers{
+		entries: make([]HeaderEntry, 0, cap),
+	}
+}
+
 // Reset clears the headers slice while preserving underlying capacity.
 func (h *Headers) Reset() {
 	h.entries = h.entries[:0]
@@ -31,7 +38,7 @@ func (h *Headers) Reset() {
 // Set sets the header key to value, replacing any existing entry.
 func (h *Headers) Set(key, val string) {
 	for i := range h.entries {
-		if strings.EqualFold(h.entries[i].Key, key) {
+		if bytesconv.EqualFoldASCII(h.entries[i].Key, key) {
 			h.entries[i].Value = val
 			return
 		}
@@ -44,10 +51,10 @@ func (h *Headers) Add(key, val string) {
 	h.entries = append(h.entries, HeaderEntry{Key: key, Value: val})
 }
 
-// Get retrieves the first value associated with key (case-insensitive).
+// Get retrieves the first value associated with key (case-insensitive ASCII).
 func (h *Headers) Get(key string) string {
 	for i := range h.entries {
-		if strings.EqualFold(h.entries[i].Key, key) {
+		if bytesconv.EqualFoldASCII(h.entries[i].Key, key) {
 			return h.entries[i].Value
 		}
 	}
@@ -58,7 +65,7 @@ func (h *Headers) Get(key string) string {
 func (h *Headers) Del(key string) {
 	n := 0
 	for _, entry := range h.entries {
-		if !strings.EqualFold(entry.Key, key) {
+		if !bytesconv.EqualFoldASCII(entry.Key, key) {
 			h.entries[n] = entry
 			n++
 		}
@@ -71,9 +78,9 @@ func (h *Headers) Entries() []HeaderEntry {
 	return h.entries
 }
 
-// ParseHeaderLine parses a single raw "Key: Value\r\n" or "Key: Value" byte slice.
+// ParseHeaderLine parses a single raw "Key: Value\r\n" or "Key: Value" byte slice using SIMD.
 func (h *Headers) ParseHeaderLine(line []byte) bool {
-	colonIdx := bytes.IndexByte(line, ':')
+	colonIdx := simd.ScanByteVector(line, ':')
 	if colonIdx <= 0 {
 		return false
 	}
@@ -89,8 +96,8 @@ func (h *Headers) ParseHeaderLine(line []byte) bool {
 func (h *Headers) IsKeepAlive(proto string) bool {
 	connHeader := h.Get(header.Connection)
 	if proto == "HTTP/1.0" {
-		return strings.EqualFold(connHeader, header.ValueKeepAlive)
+		return bytesconv.EqualFoldASCII(connHeader, header.ValueKeepAlive)
 	}
 	// HTTP/1.1 is keep-alive by default unless explicitly closed
-	return !strings.EqualFold(connHeader, header.ValueClose)
+	return !bytesconv.EqualFoldASCII(connHeader, header.ValueClose)
 }

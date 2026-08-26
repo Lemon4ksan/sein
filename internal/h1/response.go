@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 )
@@ -39,66 +38,72 @@ func (res *Response) WriteTo(bw *bufio.Writer, keepAlive bool) error {
 		status = http.StatusOK
 	}
 
-	statusText := http.StatusText(status)
-	if statusText == "" {
-		statusText = "Unknown"
+	// 1. Fast Status Line (from pre-compiled static table)
+	if status >= 100 && status < len(statusLines) && statusLines[status] != nil {
+		_, _ = bw.Write(statusLines[status])
+	} else {
+		statusText := http.StatusText(status)
+		if statusText == "" {
+			statusText = "Unknown"
+		}
+		_, _ = bw.WriteString("HTTP/1.1 ")
+		_, _ = bw.WriteString(strconv.Itoa(status))
+		_ = bw.WriteByte(' ')
+		_, _ = bw.WriteString(statusText)
+		_, _ = bw.Write(hdrCRLF)
 	}
 
-	// 1. Status Line: "HTTP/1.1 200 OK\r\n"
-	_, _ = bw.WriteString("HTTP/1.1 ")
-	_, _ = bw.WriteString(strconv.Itoa(status))
-	_ = bw.WriteByte(' ')
-	_, _ = bw.WriteString(statusText)
-	_, _ = bw.WriteString("\r\n")
-
-	// 2. Default Headers (Date, Connection, Content-Length/Chunked)
+	// 2. Atomic Cached Date Header
 	if res.Headers.Get(header.Date) == "" {
-		_, _ = bw.WriteString("Date: ")
-		_, _ = bw.WriteString(time.Now().UTC().Format(http.TimeFormat))
-		_, _ = bw.WriteString("\r\n")
+		dateBytes := cachedDateHeader.Load()
+		if dateBytes != nil {
+			_, _ = bw.Write(*dateBytes)
+		}
 	}
 
+	// 3. Connection Header
 	if keepAlive {
 		if res.Headers.Get(header.Connection) == "" {
-			_, _ = bw.WriteString("Connection: keep-alive\r\n")
+			_, _ = bw.Write(hdrConnectionKeepAlive)
 		}
 	} else {
-		_, _ = bw.WriteString("Connection: close\r\n")
+		_, _ = bw.Write(hdrConnectionClose)
 	}
 
+	// 4. Transfer-Encoding or Content-Length
 	if res.StreamWriter != nil {
 		if res.Headers.Get(header.TransferEncoding) == "" {
-			_, _ = bw.WriteString("Transfer-Encoding: chunked\r\n")
+			_, _ = bw.Write(hdrTransferChunked)
 		}
 	} else if status != http.StatusNoContent && status != http.StatusNotModified {
 		if res.Headers.Get(header.ContentLength) == "" && res.Headers.Get(header.TransferEncoding) == "" {
-			_, _ = bw.WriteString("Content-Length: ")
+			_, _ = bw.Write(hdrContentLengthPrefix)
 			_, _ = bw.WriteString(strconv.Itoa(len(res.Body)))
-			_, _ = bw.WriteString("\r\n")
+			_, _ = bw.Write(hdrCRLF)
 		}
 	}
 
-	// 3. User Headers
+	// 5. User Headers
 	for _, entry := range res.Headers.Entries() {
 		_, _ = bw.WriteString(entry.Key)
-		_, _ = bw.WriteString(": ")
+		_, _ = bw.Write(hdrColonSpace)
 		_, _ = bw.WriteString(entry.Value)
-		_, _ = bw.WriteString("\r\n")
+		_, _ = bw.Write(hdrCRLF)
 	}
 
-	// 4. Cookies
+	// 6. Cookies
 	for _, c := range res.Cookies {
 		if c != nil {
-			_, _ = bw.WriteString("Set-Cookie: ")
+			_, _ = bw.Write(hdrSetCookiePrefix)
 			_, _ = bw.WriteString(c.String())
-			_, _ = bw.WriteString("\r\n")
+			_, _ = bw.Write(hdrCRLF)
 		}
 	}
 
 	// End of Headers
-	_, _ = bw.WriteString("\r\n")
+	_, _ = bw.Write(hdrCRLF)
 
-	// 5. Streaming Body or Static Body
+	// 7. Streaming Body or Static Body
 	if res.StreamWriter != nil {
 		_ = bw.Flush()
 		cw := NewChunkedWriter(bw)

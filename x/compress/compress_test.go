@@ -22,11 +22,11 @@ import (
 	"github.com/lemon4ksan/sein/x/compress"
 )
 
-func TestBrotliResponseCompression(t *testing.T) {
+func TestResponseCompression_ZstdBrotliGzip(t *testing.T) {
 	app := sein.New()
 	app.Use(compress.New(compress.WithMinLength(100)))
 
-	largeText := strings.Repeat("Brotli is fast, efficient, and perfect for JSON APIs! ", 30)
+	largeText := strings.Repeat("Zstd, Brotli, and Gzip multi-algorithm server compression! ", 30)
 
 	type UserData struct {
 		Payload string `json:"payload"`
@@ -46,36 +46,50 @@ func TestBrotliResponseCompression(t *testing.T) {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	// 1. Request with Accept-Encoding: br
-	req, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/data", nil)
-	req.Header.Set("Accept-Encoding", "br, gzip")
-	resp, err := client.Do(req)
+	// 1. Request with Accept-Encoding: zstd (should pick Zstd)
+	reqZstd, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/data", nil)
+	reqZstd.Header.Set("Accept-Encoding", "zstd, br, gzip")
+	respZstd, err := client.Do(reqZstd)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "br", resp.Header.Get("Content-Encoding"))
+	assert.Equal(t, http.StatusOK, respZstd.StatusCode)
+	assert.Equal(t, "zstd", respZstd.Header.Get("Content-Encoding"))
 
-	compressedBody, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	_ = resp.Body.Close()
-
-	// Decompress and verify
-	decompressed, err := intCompress.DecompressBrotli(compressedBody)
+	zstdCompressed, _ := io.ReadAll(respZstd.Body)
+	_ = respZstd.Body.Close()
+	zstdDecompressed, err := intCompress.DecompressZstd(zstdCompressed)
 	require.NoError(t, err)
 
-	var result UserData
-	require.NoError(t, json.Unmarshal(decompressed, &result))
-	assert.Equal(t, largeText, result.Payload)
+	var zstdResult UserData
+	require.NoError(t, json.Unmarshal(zstdDecompressed, &zstdResult))
+	assert.Equal(t, largeText, zstdResult.Payload)
 
-	// 2. Request with Accept-Encoding: gzip
+	// 2. Request with Accept-Encoding: br (should pick Brotli)
+	reqBr, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/data", nil)
+	reqBr.Header.Set("Accept-Encoding", "br, gzip")
+	respBr, err := client.Do(reqBr)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, respBr.StatusCode)
+	assert.Equal(t, "br", respBr.Header.Get("Content-Encoding"))
+
+	brCompressed, _ := io.ReadAll(respBr.Body)
+	_ = respBr.Body.Close()
+	brDecompressed, err := intCompress.DecompressBrotli(brCompressed)
+	require.NoError(t, err)
+
+	var brResult UserData
+	require.NoError(t, json.Unmarshal(brDecompressed, &brResult))
+	assert.Equal(t, largeText, brResult.Payload)
+
+	// 3. Request with Accept-Encoding: gzip (should pick Gzip)
 	reqGzip, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/data", nil)
 	reqGzip.Header.Set("Accept-Encoding", "gzip")
 	respGzip, err := client.Do(reqGzip)
 	require.NoError(t, err)
 	assert.Equal(t, "gzip", respGzip.Header.Get("Content-Encoding"))
 
-	gzCompressedBody, _ := io.ReadAll(respGzip.Body)
+	gzCompressed, _ := io.ReadAll(respGzip.Body)
 	_ = respGzip.Body.Close()
-	gzDecompressed, err := intCompress.DecompressGzip(gzCompressedBody)
+	gzDecompressed, err := intCompress.DecompressGzip(gzCompressed)
 	require.NoError(t, err)
 
 	var gzResult UserData
@@ -87,7 +101,7 @@ func TestBrotliResponseCompression(t *testing.T) {
 	require.NoError(t, app.Shutdown(ctx))
 }
 
-func TestInboundBrotliRequestBodyDecompression(t *testing.T) {
+func TestInboundCompressedRequestBodyDecompression(t *testing.T) {
 	app := sein.New()
 
 	type InputDTO struct {
@@ -108,22 +122,37 @@ func TestInboundBrotliRequestBodyDecompression(t *testing.T) {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	// Compress request body with Brotli
-	rawJSON, _ := json.Marshal(InputDTO{Message: "Secret payload over Brotli"})
-	compressedReqBody, err := intCompress.CompressBrotli(rawJSON, intCompress.BrotliDefaultCompression)
+	// 1. Zstd Request Body
+	rawJSON, _ := json.Marshal(InputDTO{Message: "Secret Zstd payload"})
+	zstdComp, err := intCompress.CompressZstd(rawJSON, intCompress.ZstdSpeedDefault)
 	require.NoError(t, err)
 
-	postReq, _ := http.NewRequest(http.MethodPost, "http://"+addr+"/echo", bytes.NewReader(compressedReqBody))
-	postReq.Header.Set("Content-Type", "application/json")
-	postReq.Header.Set("Content-Encoding", "br")
+	postZstd, _ := http.NewRequest(http.MethodPost, "http://"+addr+"/echo", bytes.NewReader(zstdComp))
+	postZstd.Header.Set("Content-Type", "application/json")
+	postZstd.Header.Set("Content-Encoding", "zstd")
 
-	resp, err := client.Do(postReq)
+	respZstd, err := client.Do(postZstd)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, respZstd.StatusCode)
+	zstdEcho, _ := io.ReadAll(respZstd.Body)
+	_ = respZstd.Body.Close()
+	assert.Equal(t, "Echo: Secret Zstd payload", string(zstdEcho))
 
-	respBody, _ := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	assert.Equal(t, "Echo: Secret payload over Brotli", string(respBody))
+	// 2. Brotli Request Body
+	brJSON, _ := json.Marshal(InputDTO{Message: "Secret Brotli payload"})
+	brComp, err := intCompress.CompressBrotli(brJSON, intCompress.BrotliDefaultCompression)
+	require.NoError(t, err)
+
+	postBr, _ := http.NewRequest(http.MethodPost, "http://"+addr+"/echo", bytes.NewReader(brComp))
+	postBr.Header.Set("Content-Type", "application/json")
+	postBr.Header.Set("Content-Encoding", "br")
+
+	respBr, err := client.Do(postBr)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, respBr.StatusCode)
+	brEcho, _ := io.ReadAll(respBr.Body)
+	_ = respBr.Body.Close()
+	assert.Equal(t, "Echo: Secret Brotli payload", string(brEcho))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

@@ -10,35 +10,31 @@ import (
 	"errors"
 	"io"
 	"net"
-	"sync"
 	"time"
+
+	"github.com/lemon4ksan/foundation/silicon/pool"
 )
 
 var (
-	readerPool = sync.Pool{
-		New: func() any {
-			return bufio.NewReaderSize(nil, 4096)
-		},
-	}
-	writerPool = sync.Pool{
-		New: func() any {
-			return bufio.NewWriterSize(nil, 4096)
-		},
-	}
-	reqPool = sync.Pool{
-		New: func() any {
-			return &Request{
-				Body: make([]byte, 0, 1024),
-			}
-		},
-	}
-	resPool = sync.Pool{
-		New: func() any {
-			return &Response{
-				Body: make([]byte, 0, 1024),
-			}
-		},
-	}
+	readerStorage = pool.NewPerPStorage(func() *bufio.Reader {
+		return bufio.NewReaderSize(nil, 4096)
+	})
+	writerStorage = pool.NewPerPStorage(func() *bufio.Writer {
+		return bufio.NewWriterSize(nil, 4096)
+	})
+	reqStorage = pool.NewPerPStorage(func() *Request {
+		return &Request{
+			Body: make([]byte, 0, 1024),
+			Headers: Headers{
+				entries: make([]HeaderEntry, 0, 16),
+			},
+		}
+	})
+	resStorage = pool.NewPerPStorage(func() *Response {
+		return &Response{
+			Body: make([]byte, 0, 1024),
+		}
+	})
 )
 
 // HandlerFunc is the core callback for dispatching an incoming H1 request to the server router.
@@ -62,19 +58,19 @@ func (ch *ConnHandler) ServeConn(conn net.Conn) error {
 		}
 	}()
 
-	br := readerPool.Get().(*bufio.Reader)
+	br := readerStorage.Get()
 	br.Reset(conn)
-	defer readerPool.Put(br)
+	defer readerStorage.Put(br)
 
-	bw := writerPool.Get().(*bufio.Writer)
+	bw := writerStorage.Get()
 	bw.Reset(conn)
-	defer writerPool.Put(bw)
+	defer writerStorage.Put(bw)
 
-	req := reqPool.Get().(*Request)
-	defer reqPool.Put(req)
+	req := reqStorage.Get()
+	defer reqStorage.Put(req)
 
-	res := resPool.Get().(*Response)
-	defer resPool.Put(res)
+	res := resStorage.Get()
+	defer resStorage.Put(res)
 
 	remoteAddr := conn.RemoteAddr().String()
 	var tlsState *tls.ConnectionState

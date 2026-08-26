@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package compress provides an ultra-fast, zero-allocation HTTP response compression middleware
-// supporting Brotli (br) and Gzip.
+// supporting Zstandard (zstd), Brotli (br), and Gzip.
 package compress
 
 import (
@@ -15,12 +15,15 @@ import (
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/internal/compress"
+	"github.com/lemon4ksan/sein/internal/compress/zstd"
 )
 
 // Config configures the HTTP response compression middleware.
 type Config struct {
 	// MinLength is the minimum response payload size in bytes before compression is activated. Default is 512 bytes.
 	MinLength int
+	// ZstdLevel is the Zstandard compression level (SpeedFastest, SpeedDefault, etc.).
+	ZstdLevel zstd.EncoderLevel
 	// BrotliLevel is the Brotli compression quality (0-11). Default is 6.
 	BrotliLevel int
 	// GzipLevel is the Gzip compression level (1-9). Default is 6.
@@ -37,6 +40,13 @@ func WithMinLength(minLen int) Option {
 	}
 }
 
+// WithZstdLevel sets the Zstandard compression speed level.
+func WithZstdLevel(level zstd.EncoderLevel) Option {
+	return func(c *Config) {
+		c.ZstdLevel = level
+	}
+}
+
 // WithBrotliLevel sets the Brotli compression level (0 = fastest, 6 = default HTTP, 11 = best).
 func WithBrotliLevel(level int) Option {
 	return func(c *Config) {
@@ -44,10 +54,11 @@ func WithBrotliLevel(level int) Option {
 	}
 }
 
-// New creates a new response compression middleware supporting Brotli and Gzip.
+// New creates a new response compression middleware supporting Zstd, Brotli, and Gzip.
 func New(opts ...Option) sein.Middleware {
 	cfg := Config{
 		MinLength:   512,
+		ZstdLevel:   zstd.SpeedDefault,
 		BrotliLevel: compress.BrotliDefaultCompression,
 		GzipLevel:   gzip.DefaultCompression,
 	}
@@ -109,50 +120,44 @@ func New(opts ...Option) sein.Middleware {
 				return res, nil
 			}
 
-			// Negotiate best compression algorithm (Brotli preferred over Gzip)
+			buildResponse := func(compressed []byte, encoding string) (any, error) {
+				resp := sein.OK[any](compressed).
+					WithHeader(header.ContentEncoding, encoding).
+					WithHeader(header.Vary, header.AcceptEncoding)
+				if status != 0 {
+					resp = resp.WithStatus(status)
+				}
+				if contentType != "" {
+					resp = resp.WithHeader(header.ContentType, contentType)
+				}
+				for k, vv := range existingHeaders {
+					if !strings.EqualFold(k, header.ContentEncoding) && !strings.EqualFold(k, header.Vary) && !strings.EqualFold(k, header.ContentLength) {
+						for _, v := range vv {
+							resp = resp.WithHeader(k, v)
+						}
+					}
+				}
+				return resp, nil
+			}
+
+			if strings.Contains(acceptEncoding, "zstd") {
+				compressed, compErr := compress.CompressZstd(rawBytes, cfg.ZstdLevel)
+				if compErr == nil && len(compressed) < len(rawBytes) {
+					return buildResponse(compressed, "zstd")
+				}
+			}
+
 			if strings.Contains(acceptEncoding, "br") {
 				compressed, compErr := compress.CompressBrotli(rawBytes, cfg.BrotliLevel)
 				if compErr == nil && len(compressed) < len(rawBytes) {
-					resp := sein.OK[any](compressed).
-						WithHeader(header.ContentEncoding, "br").
-						WithHeader(header.Vary, header.AcceptEncoding)
-					if status != 0 {
-						resp = resp.WithStatus(status)
-					}
-					if contentType != "" {
-						resp = resp.WithHeader(header.ContentType, contentType)
-					}
-					for k, vv := range existingHeaders {
-						if !strings.EqualFold(k, header.ContentEncoding) && !strings.EqualFold(k, header.Vary) && !strings.EqualFold(k, header.ContentLength) {
-							for _, v := range vv {
-								resp = resp.WithHeader(k, v)
-							}
-						}
-					}
-					return resp, nil
+					return buildResponse(compressed, "br")
 				}
 			}
 
 			if strings.Contains(acceptEncoding, "gzip") {
 				compressed, compErr := compress.CompressGzip(rawBytes, cfg.GzipLevel)
 				if compErr == nil && len(compressed) < len(rawBytes) {
-					resp := sein.OK[any](compressed).
-						WithHeader(header.ContentEncoding, "gzip").
-						WithHeader(header.Vary, header.AcceptEncoding)
-					if status != 0 {
-						resp = resp.WithStatus(status)
-					}
-					if contentType != "" {
-						resp = resp.WithHeader(header.ContentType, contentType)
-					}
-					for k, vv := range existingHeaders {
-						if !strings.EqualFold(k, header.ContentEncoding) && !strings.EqualFold(k, header.Vary) && !strings.EqualFold(k, header.ContentLength) {
-							for _, v := range vv {
-								resp = resp.WithHeader(k, v)
-							}
-						}
-					}
-					return resp, nil
+					return buildResponse(compressed, "gzip")
 				}
 			}
 
