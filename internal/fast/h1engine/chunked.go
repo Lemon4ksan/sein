@@ -16,12 +16,10 @@ var (
 	ErrInvalidChunkSize   = errors.New("h1: invalid chunk size in chunked encoding")
 	ErrChunkBoundaryError = errors.New("h1: missing CRLF at chunk boundary")
 	errEmptyHexNum        = errors.New("h1: empty hex number")
-
-	_ = parseHexUintFallback
-	_ = formatHexUintFallback
 )
 
-func parseHexUintFallback(src []byte) (int, int, error) {
+// ParseHexUint parses a hex-encoded uint from src.
+func ParseHexUint(src []byte) (int, int, error) {
 	if len(src) == 0 {
 		return 0, 0, errEmptyHexNum
 	}
@@ -54,7 +52,8 @@ func parseHexUintFallback(src []byte) (int, int, error) {
 	return val, i, nil
 }
 
-func formatHexUintFallback(buf *[16]byte, val int) int {
+// FormatHexUint writes the hex representation of val into buf.
+func FormatHexUint(buf *[16]byte, val int) int {
 	if val == 0 {
 		buf[0] = '0'
 		return 1
@@ -116,7 +115,7 @@ func (cr *ChunkedReader) Read(p []byte) (n int, err error) {
 			return 0, ErrInvalidChunkSize
 		}
 
-		chunkSize, _, err := vectorParseHexUint(line)
+		chunkSize, _, err := ParseHexUint(line)
 		if err != nil || chunkSize < 0 {
 			return 0, fmt.Errorf("%w: %w", ErrInvalidChunkSize, err)
 		}
@@ -187,7 +186,7 @@ func (cw *ChunkedWriter) Write(p []byte) (int, error) {
 
 	var hexBuf [16]byte
 
-	n := vectorFormatHexUint(&hexBuf, len(p))
+	n := FormatHexUint(&hexBuf, len(p))
 
 	_, _ = cw.w.Write(hexBuf[:n])
 	_, _ = cw.w.Write(hdrCRLF)

@@ -891,3 +891,74 @@ func TestSkipUnmatchedRoutes(t *testing.T) {
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
 }
+
+type mockUserModule struct{}
+
+func (m mockUserModule) Mount(g *sein.Group) {
+	g.Get("/profile", func(ctx context.Context) (string, error) {
+		return "user-profile", nil
+	})
+	g.Post("/settings", func(ctx context.Context, req map[string]string) (string, error) {
+		return "settings-saved", nil
+	})
+}
+
+func TestModularMounting(t *testing.T) {
+	app := sein.New()
+
+	// 1. Mount struct module
+	app.Mount("/users", mockUserModule{})
+
+	// 2. Mount functional module
+	app.Mount("/bots", sein.ModuleFunc(func(g *sein.Group) {
+		g.Get("/status", func(ctx context.Context) (string, error) {
+			return "bots-running", nil
+		})
+	}))
+
+	// Test /users/profile
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/users/profile", nil)
+	app.ServeHTTP(rec1, req1)
+	assert.Equal(t, http.StatusOK, rec1.Code)
+	assert.Equal(t, "user-profile", rec1.Body.String())
+
+	// Test /bots/status
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/bots/status", nil)
+	app.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusOK, rec2.Code)
+	assert.Equal(t, "bots-running", rec2.Body.String())
+}
+
+func TestRouteIntrospection(t *testing.T) {
+	app := sein.New()
+
+	app.Get("/health", func(ctx context.Context) (string, error) {
+		return "ok", nil
+	})
+	app.Post("/auth/login", func(ctx context.Context, req map[string]string) (string, error) {
+		return "token", nil
+	})
+	app.Mount("/users", mockUserModule{})
+
+	routes := app.Routes()
+	require.Len(t, routes, 4)
+
+	assert.Equal(t, "GET", routes[0].Method)
+	assert.Equal(t, "/health", routes[0].Path)
+
+	assert.Equal(t, "POST", routes[1].Method)
+	assert.Equal(t, "/auth/login", routes[1].Path)
+
+	assert.Equal(t, "GET", routes[2].Method)
+	assert.Equal(t, "/users/profile", routes[2].Path)
+
+	assert.Equal(t, "POST", routes[3].Method)
+	assert.Equal(t, "/users/settings", routes[3].Path)
+
+	table := app.PrintRoutes()
+	assert.Contains(t, table, "GET")
+	assert.Contains(t, table, "/users/profile")
+	assert.Contains(t, table, "/auth/login")
+}

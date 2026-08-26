@@ -213,6 +213,27 @@ func (s *Server) SetTrustedPlatform(platformHeader string) {
 	s.trustedPlatform = platformHeader
 }
 
+// PrintRoutes formats and returns an ASCII table representation of all registered routes.
+func (s *Server) PrintRoutes() string {
+	routes := s.Routes()
+	if len(routes) == 0 {
+		return "No routes registered."
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n┌─────────┬────────────────────────────────────────────────────────┐\n")
+	sb.WriteString("│ METHOD  │ PATH                                                   │\n")
+	sb.WriteString("├─────────┼────────────────────────────────────────────────────────┤\n")
+
+	for _, r := range routes {
+		fmt.Fprintf(&sb, "│ %-7s │ %-54s │\n", r.Method, r.Path)
+	}
+
+	sb.WriteString("└─────────┴────────────────────────────────────────────────────────┘\n")
+
+	return sb.String()
+}
+
 func (s *Server) resolveRoute(
 	method, path string,
 	params *Params,

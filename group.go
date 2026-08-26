@@ -10,6 +10,19 @@ import (
 	"strings"
 )
 
+// Module represents a self-contained domain component that mounts its endpoints onto a Group.
+type Module interface {
+	Mount(g *Group)
+}
+
+// ModuleFunc is a functional adapter that satisfies the Module interface.
+type ModuleFunc func(g *Group)
+
+// Mount satisfies the Module interface for ModuleFunc.
+func (f ModuleFunc) Mount(g *Group) {
+	f(g)
+}
+
 // RouteBuilder is the route-registration interface implemented by both *Server and *Group.
 type RouteBuilder interface {
 	registerRoute(method, path string, handler RawHandler, mw ...Middleware)
@@ -29,6 +42,13 @@ func NewGroup(parent RouteBuilder, prefix string, mw ...Middleware) *Group {
 		prefix:      cleanPrefix(prefix),
 		middlewares: mw,
 	}
+}
+
+// Mount attaches a nested domain Module under the specified prefix with optional group middlewares.
+func (g *Group) Mount(prefix string, m Module, mw ...Middleware) *Group {
+	sub := g.Group(prefix, mw...)
+	m.Mount(sub)
+	return g
 }
 
 // Group creates a nested subgroup inheriting the current prefix and middlewares.

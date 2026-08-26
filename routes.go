@@ -13,6 +13,19 @@ func (s *Server) Group(prefix string, mw ...Middleware) *Group {
 	return NewGroup(s, prefix, mw...)
 }
 
+// Mount attaches a domain Module under the specified prefix with optional group middlewares.
+func (s *Server) Mount(prefix string, m Module, mw ...Middleware) *Server {
+	g := s.Group(prefix, mw...)
+	m.Mount(g)
+	return s
+}
+
+// MountModule attaches a domain Module directly at root level.
+func (s *Server) MountModule(m Module) *Server {
+	m.Mount(s.Group(""))
+	return s
+}
+
 func (s *Server) registerRoute(method, path string, handler RawHandler, mw ...Middleware) {
 	Handle(s, method, path, handler, mw...)
 }

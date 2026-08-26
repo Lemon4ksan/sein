@@ -5,6 +5,7 @@
 package sein
 
 import (
+	"slices"
 	"context"
 	"net/http"
 )
@@ -13,8 +14,8 @@ import (
 func Handle(r RouteBuilder, method, path string, fn RawHandler, mw ...Middleware) {
 	if srv, ok := r.(*Server); ok {
 		handler := fn
-		for i := len(mw) - 1; i >= 0; i-- {
-			handler = mw[i](handler)
+		for _, m := range slices.Backward(mw) {
+			handler = m(handler)
 		}
 
 		srv.router.Add(method, path, handler)

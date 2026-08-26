@@ -10,4 +10,3 @@ require (
 )
 
 replace github.com/lemon4ksan/foundation => ../../foundation
-
