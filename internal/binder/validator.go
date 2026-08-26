@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/lemon4ksan/foundation/refkit"
 )
 
 // ValidationError indicates a failed declarative validation rule.
@@ -77,7 +79,7 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 				}
 				return nil
 			})
-		} else if isNumericKind(targetKind) {
+		} else if refkit.IsNumeric(targetKind) {
 			validators = append(validators, func(s string) error {
 				if s == "" {
 					return nil
@@ -102,7 +104,7 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 				}
 				return nil
 			})
-		} else if isNumericKind(targetKind) {
+		} else if refkit.IsNumeric(targetKind) {
 			validators = append(validators, func(s string) error {
 				if s == "" {
 					return nil
@@ -118,17 +120,6 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 	}
 
 	return validators
-}
-
-func isNumericKind(k reflect.Kind) bool {
-	switch k {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
-		return true
-	default:
-		return false
-	}
 }
 
 // RunValidation triggers the Validatable interface on dest if implemented.

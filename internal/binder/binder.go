@@ -20,9 +20,8 @@ var (
 	ErrEmptyRequestBody   = errors.New("request body cannot be empty")
 )
 
-// Ingest executes the precompiled 4-stage pipeline across all fields in dest.
+// Ingest executes the precompiled field steps across dest with zero runtime switch or allocations.
 func Ingest(req RequestView, dest any) error {
-	// 1. Check Ingestable interface (vortex gen compiled fast-path)
 	if ing, ok := dest.(Ingestable); ok {
 		if err := ing.IngestAny(req); err != nil {
 			return err
@@ -35,8 +34,7 @@ func Ingest(req RequestView, dest any) error {
 		return errors.New("dest must be a non-nil pointer to struct")
 	}
 
-	typ := val.Type().Elem()
-	desc := GetDescriptor(typ)
+	desc := GetDescriptor(val.Type().Elem())
 	if desc == nil {
 		if len(req.Body()) > 0 {
 			if err := req.BindJSON(dest); err != nil {
@@ -47,15 +45,12 @@ func Ingest(req RequestView, dest any) error {
 	}
 
 	ptr := val.UnsafePointer()
-
-	// 2. Linear execution of precompiled field pipelines (0-switch, 0-alloc overhead)
-	for i := range desc.Pipelines {
-		if err := desc.Pipelines[i].Execute(req, ptr); err != nil {
+	for i := range desc.Steps {
+		if err := desc.Steps[i](req, ptr); err != nil {
 			return err
 		}
 	}
 
-	// 3. Extract JSON body if fields are defined
 	if desc.HasBodyFields && len(req.Body()) > 0 {
 		if err := req.BindJSON(dest); err != nil {
 			return err

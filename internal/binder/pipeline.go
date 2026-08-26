@@ -5,64 +5,138 @@
 package binder
 
 import (
+	"fmt"
+	"reflect"
+	"strings"
 	"unsafe"
 )
 
-// ExtractorFunc extracts raw data from a request.
-type ExtractorFunc func(req RequestView) (raw string, present bool, err error)
+// CompileFieldStep compiles the complete 4-stage pipeline (extraction, transforms, validations, typed assignment)
+// into a unified, non-branching FieldStep closure executed at runtime.
+func CompileFieldStep(b *FieldBinding) FieldStep {
+	if special := compileSpecialStep(b, b.Offset); special != nil {
+		return special
+	}
 
-// SpecialExtractorFunc directly handles non-string sources like files or context injection.
-type SpecialExtractorFunc func(req RequestView, fieldPtr unsafe.Pointer) error
+	extractor := compileStringExtractor(b)
+	transforms := CompileTransforms(b)
+	validators := CompileValidators(b)
 
-// TransformFunc applies a transformation to an extracted string value.
-type TransformFunc func(s string) string
-
-// ValidatorFunc validates a value against declarative constraints.
-type ValidatorFunc func(s string) error
-
-// AssignerFunc parses and writes the transformed value into the target field memory pointer.
-type AssignerFunc func(req RequestView, fieldPtr unsafe.Pointer, raw string) error
-
-// FieldPipeline encapsulates the precompiled 4-stage pipeline for a single DTO struct field.
-type FieldPipeline struct {
-	Offset           uintptr
-	Extract          ExtractorFunc
-	SpecialExtract   SpecialExtractorFunc
-	Transforms       []TransformFunc
-	Validators       []ValidatorFunc
-	Assign           AssignerFunc
+	switch {
+	case b.IsSlice:
+		return compileSliceStep(b, extractor, transforms)
+	case b.IsPtr:
+		return compilePointerStep(b, extractor, transforms, validators)
+	default:
+		return compileScalarStep(b, extractor, transforms, validators)
+	}
 }
 
-// Execute runs the precompiled 4-stage pipeline for this field against the destination struct pointer.
-func (p *FieldPipeline) Execute(req RequestView, structPtr unsafe.Pointer) error {
-	fieldPtr := unsafe.Pointer(uintptr(structPtr) + p.Offset)
+func compileScalarStep(b *FieldBinding, extract StringExtractorFunc, transforms []TransformFunc, validators []ValidatorFunc) FieldStep {
+	setter := CompileSetter(b.FieldType, b.Kind, b.Source, b.Key, b.Format)
+	offset := b.Offset
 
-	// Special extractors (files, raw body, context injection) bypass string parsing
-	if p.SpecialExtract != nil {
-		return p.SpecialExtract(req, fieldPtr)
-	}
-
-	// 1. Extract Stage
-	raw, present, err := p.Extract(req)
-	if err != nil {
-		return err
-	}
-	if !present {
-		return nil
-	}
-
-	// 2. Transform Stage
-	for _, t := range p.Transforms {
-		raw = t(raw)
-	}
-
-	// 3. Validate Stage
-	for _, v := range p.Validators {
-		if err := v(raw); err != nil {
+	return func(req RequestView, structPtr unsafe.Pointer) error {
+		raw, present, err := extract(req)
+		if err != nil || !present {
 			return err
 		}
+		if raw, err = processRaw(raw, transforms, validators); err != nil {
+			return err
+		}
+		return setter(unsafe.Add(structPtr, offset), raw)
 	}
+}
 
-	// 4. Assign Stage
-	return p.Assign(req, fieldPtr, raw)
+func compilePointerStep(b *FieldBinding, extract StringExtractorFunc, transforms []TransformFunc, validators []ValidatorFunc) FieldStep {
+	elemType := b.FieldType.Elem()
+	setter := CompileSetter(elemType, b.ElemKind, b.Source, b.Key, b.Format)
+	offset := b.Offset
+
+	return func(req RequestView, structPtr unsafe.Pointer) error {
+		raw, present, err := extract(req)
+		if err != nil || !present {
+			return err
+		}
+		if raw, err = processRaw(raw, transforms, validators); err != nil {
+			return err
+		}
+
+		fieldPtr := unsafe.Add(structPtr, offset)
+		valPtr := reflect.New(elemType).UnsafePointer()
+		*(*unsafe.Pointer)(fieldPtr) = valPtr
+		return setter(valPtr, raw)
+	}
+}
+
+func compileSliceStep(b *FieldBinding, extract StringExtractorFunc, transforms []TransformFunc) FieldStep {
+	elemSetter := CompileSetter(b.FieldType.Elem(), b.SliceElemKind, b.Source, b.Key, b.Format)
+	sliceType := b.FieldType
+	key := b.Key
+	source := b.Source
+	hasMin, minVal := b.HasMin, b.MinVal
+	hasMax, maxVal := b.HasMax, b.MaxVal
+	offset := b.Offset
+
+	return func(req RequestView, structPtr unsafe.Pointer) error {
+		raw, present, err := extract(req)
+		if err != nil || !present {
+			return err
+		}
+
+		vals := extractSliceValues(req, source, key, raw)
+		if hasMin && float64(len(vals)) < minVal {
+			return ValidationError{Message: fmt.Sprintf("%s slice length must be at least %v", key, minVal)}
+		}
+		if hasMax && float64(len(vals)) > maxVal {
+			return ValidationError{Message: fmt.Sprintf("%s slice length must be at most %v", key, maxVal)}
+		}
+
+		sliceVal := reflect.MakeSlice(sliceType, len(vals), len(vals))
+		for i, v := range vals {
+			for _, t := range transforms {
+				v = t(v)
+			}
+			elemPtr := sliceVal.Index(i).Addr().UnsafePointer()
+			if err := elemSetter(elemPtr, v); err != nil {
+				return err
+			}
+		}
+
+		reflect.NewAt(sliceType, unsafe.Add(structPtr, offset)).Elem().Set(sliceVal)
+		return nil
+	}
+}
+
+func processRaw(raw string, transforms []TransformFunc, validators []ValidatorFunc) (string, error) {
+	for _, t := range transforms {
+		raw = t(raw)
+	}
+	for _, v := range validators {
+		if err := v(raw); err != nil {
+			return "", err
+		}
+	}
+	return raw, nil
+}
+
+func extractSliceValues(req RequestView, source ParamSource, key, raw string) []string {
+	var vals []string
+	if source == SourceQuery {
+		for _, sv := range req.RawURLQuery()[key] {
+			for item := range strings.SplitSeq(sv, ",") {
+				if item = strings.TrimSpace(item); item != "" {
+					vals = append(vals, item)
+				}
+			}
+		}
+	}
+	if len(vals) == 0 && raw != "" {
+		for item := range strings.SplitSeq(raw, ",") {
+			if item = strings.TrimSpace(item); item != "" {
+				vals = append(vals, item)
+			}
+		}
+	}
+	return vals
 }

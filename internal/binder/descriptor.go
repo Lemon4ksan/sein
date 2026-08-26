@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"net"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/lemon4ksan/foundation/refkit"
 )
 
 // ParamSource defines where a DTO field value originates from.
@@ -40,6 +41,7 @@ type FieldBinding struct {
 	Key           string
 	Required      bool
 	DefaultValue  string
+	Format        string
 	IsPtr         bool
 	ElemKind      reflect.Kind
 	IsSlice       bool
@@ -63,69 +65,59 @@ type FieldBinding struct {
 	IsEmail  bool
 }
 
-// StructDescriptor caches the precompiled pipeline stages and layout of a struct type.
+// StructDescriptor caches the precompiled pipeline steps and layout of a struct type.
 type StructDescriptor struct {
 	HasBodyFields bool
 	PathKeys      map[string]bool
-	Pipelines     []FieldPipeline
+	Steps         []FieldStep
 }
 
 var (
 	descriptorCache sync.Map
 	netIPType       = reflect.TypeFor[net.IP]()
 	bytesSliceType  = reflect.TypeFor[[]byte]()
+
+	// Declarative tag sources registry
+	tagSources = []struct {
+		tag    string
+		source ParamSource
+	}{
+		{"path", SourcePath},
+		{"param", SourcePath},
+		{"query", SourceQuery},
+		{"header", SourceHeader},
+		{"cookie", SourceCookie},
+		{"auth", SourceAuth},
+		{"net", SourceNet},
+		{"form", SourceForm},
+		{"file", SourceFile},
+		{"files", SourceFiles},
+		{"body", SourceBodyRaw},
+		{"ctx", SourceContext},
+		{"context", SourceContext},
+	}
 )
 
-// ParseTagOptions extracts key, options, sanitizers, and validation flags from a struct tag.
-func ParseTagOptions(tagStr string, binding *FieldBinding) {
-	parts := strings.Split(tagStr, ",")
-	binding.Key = strings.TrimSpace(parts[0])
-
-	for _, part := range parts[1:] {
-		part = strings.TrimSpace(part)
-		switch {
-		case part == "required":
-			binding.Required = true
-		case strings.HasPrefix(part, "default="):
-			binding.DefaultValue = strings.TrimPrefix(part, "default=")
-		case part == "trim":
-			binding.Trim = true
-		case part == "lower":
-			binding.Lower = true
-		case part == "upper":
-			binding.Upper = true
-		case part == "single_space" || part == "squish":
-			binding.SingleSpace = true
-		case part == "digits_only":
-			binding.DigitsOnly = true
-		case part == "email":
-			binding.IsEmail = true
-		case strings.HasPrefix(part, "min="):
-			if v, err := strconv.ParseFloat(strings.TrimPrefix(part, "min="), 64); err == nil {
-				binding.HasMin = true
-				binding.MinVal = v
-			}
-		case strings.HasPrefix(part, "max="):
-			if v, err := strconv.ParseFloat(strings.TrimPrefix(part, "max="), 64); err == nil {
-				binding.HasMax = true
-				binding.MaxVal = v
-			}
-		case strings.HasPrefix(part, "len="):
-			if v, err := strconv.Atoi(strings.TrimPrefix(part, "len=")); err == nil {
-				binding.HasLen = true
-				binding.LenVal = v
-			}
-		case strings.HasPrefix(part, "enum="):
-			binding.EnumVals = strings.Split(strings.TrimPrefix(part, "enum="), "|")
-		}
-	}
+func populateFieldBinding(tag refkit.Tag, b *FieldBinding) {
+	b.Key = tag.Name
+	b.Required = tag.Has("required")
+	b.DefaultValue = tag.Get("default")
+	b.Format = tag.Get("format")
+	b.Trim = tag.Has("trim")
+	b.Lower = tag.Has("lower")
+	b.Upper = tag.Has("upper")
+	b.SingleSpace = tag.Has("single_space") || tag.Has("squish")
+	b.DigitsOnly = tag.Has("digits_only")
+	b.IsEmail = tag.Has("email")
+	b.MinVal, b.HasMin = tag.GetFloat("min")
+	b.MaxVal, b.HasMax = tag.GetFloat("max")
+	b.LenVal, b.HasLen = tag.GetInt("len")
+	b.EnumVals = tag.SplitOption("enum", "|")
 }
 
 // GetDescriptor retrieves or compiles a cached StructDescriptor for typ.
 func GetDescriptor(typ reflect.Type) *StructDescriptor {
-	if typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
+	typ = refkit.DerefType(typ)
 	if typ.Kind() != reflect.Struct {
 		return nil
 	}
@@ -138,8 +130,7 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 		PathKeys: make(map[string]bool),
 	}
 
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
+	for field := range typ.Fields() {
 		if !field.IsExported() {
 			continue
 		}
@@ -169,109 +160,42 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 
 		var matched bool
 
-		if tag, ok := field.Tag.Lookup("path"); ok {
-			b.Source = SourcePath
-			ParseTagOptions(tag, &b)
-			if b.Key == "" {
-				b.Key = field.Name
+		// Check declarative tag sources in order
+		for _, ts := range tagSources {
+			if raw, ok := field.Tag.Lookup(ts.tag); ok {
+				tag := refkit.ParseTag(raw)
+				b.Source = ts.source
+				populateFieldBinding(tag, &b)
+
+				if b.Key == "" {
+					switch b.Source {
+					case SourceAuth:
+						b.Key = "bearer"
+					case SourceNet:
+						b.Key = "ip"
+					default:
+						b.Key = field.Name
+					}
+				}
+
+				switch b.Source {
+				case SourcePath:
+					b.Required = true
+					desc.PathKeys[b.Key] = true
+				case SourceBodyRaw:
+					if b.Key != "raw" && b.FieldType != bytesSliceType {
+						b.Source = SourceBodyString
+					}
+				}
+
+				matched = true
+				break
 			}
-			b.Required = true
-			matched = true
-			desc.PathKeys[b.Key] = true
-		} else if tag, ok := field.Tag.Lookup("param"); ok {
-			b.Source = SourcePath
-			ParseTagOptions(tag, &b)
-			if b.Key == "" {
-				b.Key = field.Name
-			}
-			b.Required = true
-			matched = true
-			desc.PathKeys[b.Key] = true
-		} else if tag, ok := field.Tag.Lookup("query"); ok {
-			b.Source = SourceQuery
-			ParseTagOptions(tag, &b)
-			if b.Key == "" {
-				b.Key = field.Name
-			}
-			matched = true
-		} else if tag, ok := field.Tag.Lookup("header"); ok {
-			b.Source = SourceHeader
-			ParseTagOptions(tag, &b)
-			if b.Key == "" {
-				b.Key = field.Name
-			}
-			matched = true
-		} else if tag, ok := field.Tag.Lookup("cookie"); ok {
-			b.Source = SourceCookie
-			ParseTagOptions(tag, &b)
-			if b.Key == "" {
-				b.Key = field.Name
-			}
-			matched = true
-		} else if tag, ok := field.Tag.Lookup("auth"); ok {
-			b.Source = SourceAuth
-			ParseTagOptions(tag, &b)
-			if b.Key == "" {
-				b.Key = "bearer"
-			}
-			matched = true
-		} else if tag, ok := field.Tag.Lookup("net"); ok {
-			b.Source = SourceNet
-			ParseTagOptions(tag, &b)
-			if b.Key == "" {
-				b.Key = "ip"
-			}
-			matched = true
-		} else if tag, ok := field.Tag.Lookup("form"); ok {
-			b.Source = SourceForm
-			ParseTagOptions(tag, &b)
-			if b.Key == "" {
-				b.Key = field.Name
-			}
-			matched = true
-		} else if tag, ok := field.Tag.Lookup("file"); ok {
-			b.Source = SourceFile
-			ParseTagOptions(tag, &b)
-			if b.Key == "" {
-				b.Key = field.Name
-			}
-			matched = true
-		} else if tag, ok := field.Tag.Lookup("files"); ok {
-			b.Source = SourceFiles
-			ParseTagOptions(tag, &b)
-			if b.Key == "" {
-				b.Key = field.Name
-			}
-			matched = true
-		} else if tag, ok := field.Tag.Lookup("body"); ok {
-			ParseTagOptions(tag, &b)
-			if b.Key == "raw" || b.FieldType == bytesSliceType {
-				b.Source = SourceBodyRaw
-			} else {
-				b.Source = SourceBodyString
-			}
-			matched = true
-		} else if tag, ok := field.Tag.Lookup("ctx"); ok {
-			b.Source = SourceContext
-			ParseTagOptions(tag, &b)
-			matched = true
-		} else if tag, ok := field.Tag.Lookup("context"); ok {
-			b.Source = SourceContext
-			ParseTagOptions(tag, &b)
-			matched = true
 		}
 
 		if matched {
-			extractor, specialExtractor := CompileExtractor(b.Source, b.Key, b.Required, b.DefaultValue, b.FieldType, b.IsSlice)
-			pipeline := FieldPipeline{
-				Offset:         b.Offset,
-				Extract:        extractor,
-				SpecialExtract: specialExtractor,
-				Transforms:     CompileTransforms(&b),
-				Validators:     CompileValidators(&b),
-				Assign:         CompileAssigner(&b),
-			}
-			desc.Pipelines = append(desc.Pipelines, pipeline)
+			step := CompileFieldStep(&b)
+			desc.Steps = append(desc.Steps, step)
 		}
 
 		if _, ok := field.Tag.Lookup("json"); ok {
@@ -285,17 +209,15 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 
 // ValidateRouteBinding checks at startup that all path variables in routePath have matching fields in typ.
 func ValidateRouteBinding(typ reflect.Type, routePath string) {
-	if typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
+	typ = refkit.DerefType(typ)
 	if typ.Kind() != reflect.Struct {
 		return
 	}
 
 	var pathVars []string
-	for _, seg := range strings.Split(routePath, "/") {
-		if strings.HasPrefix(seg, ":") {
-			pathVars = append(pathVars, strings.TrimPrefix(seg, ":"))
+	for seg := range strings.SplitSeq(routePath, "/") {
+		if after, ok := strings.CutPrefix(seg, ":"); ok  {
+			pathVars = append(pathVars, after)
 		}
 	}
 

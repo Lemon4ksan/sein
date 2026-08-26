@@ -11,11 +11,19 @@ import (
 	"unsafe"
 )
 
-// CompileExtractor builds the optimized extractor rule for a field at startup.
-func CompileExtractor(src ParamSource, key string, required bool, defaultVal string, fieldType reflect.Type, isSlice bool) (ExtractorFunc, SpecialExtractorFunc) {
-	switch src {
+// StringExtractorFunc extracts a raw string representation from a request.
+type StringExtractorFunc func(req RequestView) (raw string, present bool, err error)
+
+// compileSpecialStep checks if the field source is non-string (Context, Files, Raw Body) and returns a FieldStep.
+func compileSpecialStep(b *FieldBinding, offset uintptr) FieldStep {
+	required := b.Required
+	key := b.Key
+	fieldType := b.FieldType
+
+	switch b.Source {
 	case SourceContext:
-		return nil, func(req RequestView, fieldPtr unsafe.Pointer) error {
+		return func(req RequestView, structPtr unsafe.Pointer) error {
+			fieldPtr := unsafe.Add(structPtr, offset)
 			val, ok := req.GetContext(fieldType)
 			if ok {
 				reflect.NewAt(fieldType, fieldPtr).Elem().Set(reflect.ValueOf(val))
@@ -28,7 +36,8 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 		}
 
 	case SourceFile:
-		return nil, func(req RequestView, fieldPtr unsafe.Pointer) error {
+		return func(req RequestView, structPtr unsafe.Pointer) error {
+			fieldPtr := unsafe.Add(structPtr, offset)
 			file, err := req.FormFile(key)
 			if err != nil || file == nil {
 				if required {
@@ -41,7 +50,8 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 		}
 
 	case SourceFiles:
-		return nil, func(req RequestView, fieldPtr unsafe.Pointer) error {
+		return func(req RequestView, structPtr unsafe.Pointer) error {
+			fieldPtr := unsafe.Add(structPtr, offset)
 			files, err := req.FormFiles(key)
 			if err != nil || len(files) == 0 {
 				if required {
@@ -54,7 +64,8 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 		}
 
 	case SourceBodyRaw:
-		return nil, func(req RequestView, fieldPtr unsafe.Pointer) error {
+		return func(req RequestView, structPtr unsafe.Pointer) error {
+			fieldPtr := unsafe.Add(structPtr, offset)
 			data := req.Body()
 			if len(data) == 0 && required {
 				return ErrEmptyRequestBody
@@ -64,7 +75,8 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 		}
 
 	case SourceBodyString:
-		return nil, func(req RequestView, fieldPtr unsafe.Pointer) error {
+		return func(req RequestView, structPtr unsafe.Pointer) error {
+			fieldPtr := unsafe.Add(structPtr, offset)
 			data := req.Body()
 			if len(data) == 0 && required {
 				return ErrEmptyRequestBody
@@ -72,7 +84,19 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 			*(*string)(fieldPtr) = string(data)
 			return nil
 		}
+	}
 
+	return nil
+}
+
+// compileStringExtractor creates a StringExtractorFunc for standard sources.
+func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
+	key := b.Key
+	defaultVal := b.DefaultValue
+	required := b.Required
+	isSlice := b.IsSlice
+
+	switch b.Source {
 	case SourcePath:
 		return func(req RequestView) (string, bool, error) {
 			raw := req.Param(key)
@@ -83,7 +107,7 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 				return "", false, fmt.Errorf("missing path param %q", key)
 			}
 			return raw, true, nil
-		}, nil
+		}
 
 	case SourceQuery:
 		return func(req RequestView) (string, bool, error) {
@@ -102,7 +126,7 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 				return "", false, nil
 			}
 			return raw, true, nil
-		}, nil
+		}
 
 	case SourceHeader:
 		return func(req RequestView) (string, bool, error) {
@@ -117,7 +141,7 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 				return "", false, nil
 			}
 			return raw, true, nil
-		}, nil
+		}
 
 	case SourceCookie:
 		return func(req RequestView) (string, bool, error) {
@@ -132,7 +156,7 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 				return "", false, nil
 			}
 			return c, true, nil
-		}, nil
+		}
 
 	case SourceAuth:
 		if strings.EqualFold(key, "bearer") {
@@ -145,7 +169,7 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 					return "", false, nil
 				}
 				return token, true, nil
-			}, nil
+			}
 		}
 
 	case SourceNet:
@@ -170,7 +194,7 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 				return "", false, nil
 			}
 			return raw, true, nil
-		}, nil
+		}
 
 	case SourceForm:
 		return func(req RequestView) (string, bool, error) {
@@ -185,10 +209,10 @@ func CompileExtractor(src ParamSource, key string, required bool, defaultVal str
 				return "", false, nil
 			}
 			return raw, true, nil
-		}, nil
+		}
 	}
 
 	return func(req RequestView) (string, bool, error) {
 		return "", false, nil
-	}, nil
+	}
 }
