@@ -43,6 +43,23 @@ func resolveMessage(code string, message ...string) string {
 	return code
 }
 
+// Core framework sentinels (exported, customizable, checkable via errors.Is)
+var (
+	ErrMissingBearerToken = Unauthorized("MISSING_BEARER_TOKEN", "Authorization Bearer token is required")
+	ErrInvalidBearerToken = Unauthorized("INVALID_BEARER_TOKEN", "Provided Bearer token is invalid or expired")
+	ErrEmptyRequestBody   = BadRequest("EMPTY_REQUEST_BODY", "Request body cannot be empty")
+	ErrInvalidJSONPayload = BadRequest("INVALID_JSON_PAYLOAD", "Invalid JSON payload structure")
+	ErrValidationFailed   = BadRequest("VALIDATION_FAILED", "Request validation failed")
+	ErrRouteNotFound      = NotFound("ROUTE_NOT_FOUND", "Requested route was not found")
+	ErrInternalPanic      = Internal("INTERNAL_SERVER_PANIC", "An unexpected panic occurred")
+	ErrMissingPathParam   = BadRequest("MISSING_PATH_PARAM", "Required path parameter is missing")
+	ErrInvalidPathParam   = BadRequest("INVALID_PATH_PARAM", "Path parameter value is invalid")
+	ErrMissingQueryParam  = BadRequest("MISSING_QUERY_PARAM", "Required query parameter is missing")
+	ErrInvalidQueryParam  = BadRequest("INVALID_QUERY_PARAM", "Query parameter value is invalid")
+	ErrMissingHeader      = BadRequest("MISSING_HEADER", "Required header is missing")
+	ErrInvalidHeader      = BadRequest("INVALID_HEADER", "Header value is invalid")
+)
+
 func (d DefinedError) Error() string {
 	if d.cause != nil {
 		return fmt.Sprintf("[%s] %s (cause: %v)", d.code, d.message, d.cause)

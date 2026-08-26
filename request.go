@@ -161,18 +161,19 @@ func (r *Request) Body() []byte {
 func (r *Request) BindJSON(dest any) error {
 	body := r.Body()
 	if len(body) == 0 {
-		return BadRequest("EMPTY_REQUEST_BODY", "Request body cannot be empty")
+		return ErrEmptyRequestBody
 	}
 	if err := json.Unmarshal(body, dest); err != nil {
-		return BadRequest("INVALID_JSON_PAYLOAD", "Invalid JSON payload structure").WithCause(err)
+		return ErrInvalidJSONPayload.WithCause(err)
 	}
 
 	if v, ok := dest.(Validatable); ok {
 		if err := v.Validate(); err != nil {
-			if domainErr, ok := errors.AsType[DomainError](err); ok {
+			var domainErr DomainError
+			if errors.As(err, &domainErr) {
 				return domainErr
 			}
-			return BadRequest("VALIDATION_FAILED", err.Error())
+			return ErrValidationFailed.WithMessage(err.Error())
 		}
 	}
 	return nil

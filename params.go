@@ -6,7 +6,6 @@ package sein
 
 import (
 	"errors"
-	"fmt"
 	"reflect"
 	"strconv"
 )
@@ -118,7 +117,7 @@ func (p PathParamDef[T]) Get(req *Request) (T, error) {
 	val := req.Param(p.name)
 	if val.IsEmpty() {
 		var zero T
-		return zero, ErrBadRequest(fmt.Sprintf("missing required path parameter :%s", p.name))
+		return zero, ErrMissingPathParam.WithDetail("param", p.name)
 	}
 	return parseScalar[T](string(val))
 }
@@ -161,7 +160,7 @@ func (q QueryParamDef[T]) Get(req *Request) (T, error) {
 	val := req.Query(q.name)
 	if val.IsEmpty() {
 		var zero T
-		return zero, ErrBadRequest(fmt.Sprintf("missing required query parameter ?%s", q.name))
+		return zero, ErrMissingQueryParam.WithDetail("param", q.name)
 	}
 	return parseScalar[T](string(val))
 }
@@ -199,7 +198,7 @@ func (h HeaderParamDef[T]) Get(req *Request) (T, error) {
 	val := req.Header(h.name)
 	if val == "" {
 		var zero T
-		return zero, ErrBadRequest(fmt.Sprintf("missing required header %s", h.name))
+		return zero, ErrMissingHeader.WithDetail("header", h.name)
 	}
 	return parseScalar[T](val)
 }

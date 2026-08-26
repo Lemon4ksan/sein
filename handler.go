@@ -34,7 +34,7 @@ func bindAndValidate[Req any](req *Request) (Req, error) {
 			if errors.As(err, &domainErr) {
 				return body, domainErr
 			}
-			return body, BadRequest("VALIDATION_FAILED", err.Error())
+			return body, ErrValidationFailed.WithMessage(err.Error())
 		}
 	}
 	return body, nil

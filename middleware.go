@@ -46,7 +46,7 @@ func BearerAuth[T any](validator func(ctx context.Context, token string) (T, err
 		return func(req *Request) (any, error) {
 			token, ok := req.BearerToken()
 			if !ok || token == "" {
-				return nil, Unauthorized("MISSING_BEARER_TOKEN", "Authorization Bearer token is required")
+				return nil, ErrMissingBearerToken
 			}
 
 			session, err := validator(req.Context(), token)
@@ -55,7 +55,7 @@ func BearerAuth[T any](validator func(ctx context.Context, token string) (T, err
 				if errors.As(err, &domainErr) {
 					return nil, domainErr
 				}
-				return nil, Unauthorized("INVALID_BEARER_TOKEN", "Provided Bearer token is invalid or expired").WithCause(err)
+				return nil, ErrInvalidBearerToken.WithCause(err)
 			}
 
 			Set(req, session)
