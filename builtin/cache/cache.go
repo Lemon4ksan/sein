@@ -259,3 +259,9 @@ func New(opts ...Option) (sein.Middleware, Store) {
 
 	return mw, cfg.Store
 }
+
+// Middleware creates a standalone cache middleware discarding the Store return.
+func Middleware(opts ...Option) sein.Middleware {
+	mw, _ := New(opts...)
+	return mw
+}
