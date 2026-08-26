@@ -20,11 +20,13 @@ type routeNode struct {
 type Router struct {
 	mu     sync.RWMutex
 	routes map[string]*routeNode
+	static map[string]map[string]RawHandler
 }
 
 func NewRouter() *Router {
 	return &Router{
 		routes: make(map[string]*routeNode),
+		static: make(map[string]map[string]RawHandler),
 	}
 }
 
@@ -32,6 +34,15 @@ func (r *Router) Add(method, pattern string, handler RawHandler) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// 1. If pattern has no dynamic parameters, register into O(1) static lookup table
+	if !strings.Contains(pattern, ":") && !strings.Contains(pattern, "*") {
+		if r.static[method] == nil {
+			r.static[method] = make(map[string]RawHandler)
+		}
+		r.static[method][pattern] = handler
+	}
+
+	// 2. Also register into Trie for fallback and traversal
 	root, ok := r.routes[method]
 	if !ok {
 		root = &routeNode{}
@@ -82,6 +93,13 @@ func (r *Router) Add(method, pattern string, handler RawHandler) {
 func (r *Router) Match(method, path string) (RawHandler, map[string]string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
+	// Fast Path: Check static route table (0 B/op, O(1) lookup)
+	if m, ok := r.static[method]; ok {
+		if h, ok := m[path]; ok {
+			return h, nil, true
+		}
+	}
 
 	root, ok := r.routes[method]
 	if !ok {

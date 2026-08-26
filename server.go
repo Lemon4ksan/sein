@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/sein/internal/fast/h2engine"
 	"github.com/lemon4ksan/sein/internal/h1"
 )
 
@@ -280,6 +281,151 @@ func (s *Server) writeH1Error(res *h1.Response, err error) {
 		}
 	}
 
+	res.StatusCode = resp.Status
+	res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+	data, _ := json.Marshal(resp)
+	res.Body = data
+}
+
+// DispatchH2 is the native zero-net/http HTTP/2 stream request dispatcher.
+func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.ServerResponse) error {
+	handler, params, found := s.router.Match(h2Req.Method, h2Req.Path)
+	if !found {
+		s.writeH2Error(h2Res, ErrNotFound("route not found"))
+		return nil
+	}
+
+	req := NewH2Request(h2Req.Method, h2Req.Path, h2Req.Authority, h2Req.RemoteAddr, h2Req.Headers, h2Req.Body, params)
+	defer req.Release()
+
+	// Wrap in global middlewares
+	finalHandler := handler
+	for _, v := range slices.Backward(s.middlewares) {
+		finalHandler = v(finalHandler)
+	}
+
+	// Execute handler
+	result, err := finalHandler(req)
+	if err != nil {
+		s.writeH2Error(h2Res, err)
+		return nil
+	}
+
+	return s.serializeH2Result(h2Res, result)
+}
+
+func (s *Server) serializeH2Result(res *h2engine.ServerResponse, result any) error {
+	res.StatusCode = http.StatusOK
+
+	if holder, ok := result.(ResponseHolder); ok {
+		res.StatusCode = holder.StatusCode()
+		if res.StatusCode == 0 {
+			res.StatusCode = http.StatusOK
+		}
+		res.Headers = holder.ResponseHeaders()
+		if res.Headers == nil {
+			res.Headers = make(http.Header)
+		}
+		body := holder.ResponseBody()
+		switch b := body.(type) {
+		case nil:
+			return nil
+		case []byte:
+			res.Body = b
+			return nil
+		case string:
+			res.Body = []byte(b)
+			return nil
+		default:
+			data, err := json.Marshal(b)
+			if err != nil {
+				return err
+			}
+			res.Body = data
+			if res.Headers.Get(header.ContentType) == "" {
+				res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+			}
+			return nil
+		}
+	}
+
+	if res.Headers == nil {
+		res.Headers = make(http.Header)
+	}
+
+	switch v := result.(type) {
+	case nil:
+		return nil
+	case []byte:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMEApplicationOctetStream)
+		}
+		res.Body = append(res.Body, v...)
+		return nil
+	case string:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
+		}
+		res.Body = append(res.Body, v...)
+		return nil
+	default:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+		}
+		data, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		res.Body = append(res.Body, data...)
+		return nil
+	}
+}
+
+func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
+	for _, mapper := range s.errorMappers {
+		if mapped, ok := mapper(err); ok {
+			err = mapped
+			break
+		}
+	}
+
+	var resp errorResponse
+	var definedErr DefinedError
+	var domainErr DomainError
+	var httpErr HTTPError
+
+	switch {
+	case errors.As(err, &definedErr):
+		resp = errorResponse{
+			Status:  definedErr.HTTPStatus(),
+			Code:    definedErr.ErrorCode(),
+			Message: definedErr.Message(),
+			Details: definedErr.Details(),
+		}
+	case errors.As(err, &domainErr):
+		resp = errorResponse{
+			Status:  domainErr.HTTPStatus(),
+			Code:    domainErr.ErrorCode(),
+			Message: domainErr.Error(),
+		}
+	case errors.As(err, &httpErr):
+		resp = errorResponse{
+			Status:  httpErr.HTTPStatus(),
+			Code:    httpErr.ErrorCode(),
+			Message: httpErr.Message,
+			Details: httpErr.Details,
+		}
+	default:
+		resp = errorResponse{
+			Status:  http.StatusInternalServerError,
+			Code:    "INTERNAL_SERVER_ERROR",
+			Message: err.Error(),
+		}
+	}
+
+	if res.Headers == nil {
+		res.Headers = make(http.Header)
+	}
 	res.StatusCode = resp.Status
 	res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
 	data, _ := json.Marshal(resp)

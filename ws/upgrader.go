@@ -45,12 +45,17 @@ func WithSubprotocols(subprotocols ...string) Option {
 	}
 }
 
-// ComputeAcceptKey computes the Sec-WebSocket-Accept hash per RFC 6455 §4.2.2.
+// ComputeAcceptKey computes the Sec-WebSocket-Accept hash per RFC 6455 §4.2.2 with stack allocation.
 func ComputeAcceptKey(challengeKey string) string {
-	h := sha1.New()
-	_, _ = h.Write([]byte(challengeKey))
-	_, _ = h.Write([]byte(MagicGUID))
-	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+	var input [64]byte
+	n := copy(input[:], challengeKey)
+	n += copy(input[n:], MagicGUID)
+
+	sum := sha1.Sum(input[:n])
+
+	var acceptKey [28]byte
+	base64.StdEncoding.Encode(acceptKey[:], sum[:])
+	return string(acceptKey[:])
 }
 
 // Upgrade upgrades the incoming HTTP/1.1 request to a WebSocket connection.

@@ -72,6 +72,20 @@ func BenchmarkServer_PlaintextRoute(b *testing.B) {
 	}
 }
 
+func BenchmarkRouter_StaticMatch(b *testing.B) {
+	router := sein.NewRouter()
+	router.Add("GET", "/api/v1/users/profile", func(req *sein.Request) (any, error) {
+		return "OK", nil
+	})
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, _, _ = router.Match("GET", "/api/v1/users/profile")
+	}
+}
+
 func BenchmarkZstd_Compress_Fastest(b *testing.B) {
 	payload := []byte(`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`)
 

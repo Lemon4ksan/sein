@@ -140,6 +140,7 @@ func New(opts ...Option) sein.Middleware {
 				return resp, nil
 			}
 
+			// 1. Zstandard (highest priority: fastest compression & decompression throughput)
 			if strings.Contains(acceptEncoding, "zstd") {
 				compressed, compErr := compress.CompressZstd(rawBytes, cfg.ZstdLevel)
 				if compErr == nil && len(compressed) < len(rawBytes) {
@@ -147,6 +148,7 @@ func New(opts ...Option) sein.Middleware {
 				}
 			}
 
+			// 2. Brotli (optimal compression ratio for JSON and web text)
 			if strings.Contains(acceptEncoding, "br") {
 				compressed, compErr := compress.CompressBrotli(rawBytes, cfg.BrotliLevel)
 				if compErr == nil && len(compressed) < len(rawBytes) {
@@ -154,6 +156,7 @@ func New(opts ...Option) sein.Middleware {
 				}
 			}
 
+			// 3. Gzip (universal legacy HTTP compatibility)
 			if strings.Contains(acceptEncoding, "gzip") {
 				compressed, compErr := compress.CompressGzip(rawBytes, cfg.GzipLevel)
 				if compErr == nil && len(compressed) < len(rawBytes) {

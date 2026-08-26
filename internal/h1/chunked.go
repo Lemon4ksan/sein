@@ -10,15 +10,62 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 )
 
 var (
 	ErrInvalidChunkSize   = errors.New("h1: invalid chunk size in chunked encoding")
 	ErrChunkBoundaryError = errors.New("h1: missing CRLF at chunk boundary")
+	errEmptyHexNum        = errors.New("h1: empty hex number")
 )
 
-// ChunkedReader decodes an HTTP/1.1 chunked transfer-encoded byte stream.
+func parseHexUintFallback(src []byte) (int, int, error) {
+	if len(src) == 0 {
+		return 0, 0, errEmptyHexNum
+	}
+	var val int
+	var i int
+	for i = 0; i < len(src); i++ {
+		c := src[i]
+		var d int
+		if c >= '0' && c <= '9' {
+			d = int(c - '0')
+		} else if c >= 'a' && c <= 'f' {
+			d = int(c - 'a' + 10)
+		} else if c >= 'A' && c <= 'F' {
+			d = int(c - 'A' + 10)
+		} else {
+			if i == 0 {
+				return 0, 0, errEmptyHexNum
+			}
+			break
+		}
+		val = (val << 4) | d
+	}
+	return val, i, nil
+}
+
+func formatHexUintFallback(buf *[16]byte, val int) int {
+	if val == 0 {
+		buf[0] = '0'
+		return 1
+	}
+	idx := 15
+	for val > 0 {
+		nib := byte(val & 0x0F)
+		if nib < 10 {
+			buf[idx] = '0' + nib
+		} else {
+			buf[idx] = 'a' + (nib - 10)
+		}
+		idx--
+		val >>= 4
+	}
+	count := 15 - idx
+	copy(buf[:count], buf[idx+1:16])
+	return count
+}
+
+// ChunkedReader decodes an HTTP/1.1 chunked transfer-encoded byte stream using SIMD hex parsing.
 type ChunkedReader struct {
 	r         *bufio.Reader
 	remaining int64
@@ -54,7 +101,7 @@ func (cr *ChunkedReader) Read(p []byte) (n int, err error) {
 			return 0, ErrInvalidChunkSize
 		}
 
-		chunkSize, err := strconv.ParseInt(string(line), 16, 64)
+		chunkSize, _, err := vectorParseHexUint(line)
 		if err != nil || chunkSize < 0 {
 			return 0, fmt.Errorf("%w: %v", ErrInvalidChunkSize, err)
 		}
@@ -66,7 +113,7 @@ func (cr *ChunkedReader) Read(p []byte) (n int, err error) {
 			return 0, io.EOF
 		}
 
-		cr.remaining = chunkSize
+		cr.remaining = int64(chunkSize)
 	}
 
 	toRead := min(int64(len(p)), cr.remaining)
@@ -118,10 +165,14 @@ func (cw *ChunkedWriter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	_, _ = cw.w.WriteString(strconv.FormatInt(int64(len(p)), 16))
-	_, _ = cw.w.WriteString("\r\n")
+
+	var hexBuf [16]byte
+	n := vectorFormatHexUint(&hexBuf, len(p))
+
+	_, _ = cw.w.Write(hexBuf[:n])
+	_, _ = cw.w.Write(hdrCRLF)
 	_, _ = cw.w.Write(p)
-	_, _ = cw.w.WriteString("\r\n")
+	_, _ = cw.w.Write(hdrCRLF)
 	return len(p), cw.w.Flush()
 }
 

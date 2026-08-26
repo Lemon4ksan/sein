@@ -18,8 +18,8 @@ import (
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
 	"github.com/lemon4ksan/sein"
+	"github.com/lemon4ksan/sein/builtin/compress"
 	intCompress "github.com/lemon4ksan/sein/internal/compress"
-	"github.com/lemon4ksan/sein/x/compress"
 )
 
 func TestResponseCompression_ZstdBrotliGzip(t *testing.T) {

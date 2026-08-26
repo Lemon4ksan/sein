@@ -100,6 +100,31 @@ func NewH1Request(h1Req *h1.Request, params map[string]string) *Request {
 	}
 }
 
+// NewH2Request creates a Request wrapping a native H2 stream request.
+func NewH2Request(method, path, authority, remoteAddr string, rawHeaders http.Header, body []byte, params map[string]string) *Request {
+	req := &Request{
+		ctx:        context.Background(),
+		method:     method,
+		path:       path,
+		proto:      "HTTP/2.0",
+		host:       authority,
+		remoteAddr: remoteAddr,
+		bodyBuf:    body,
+		params:     params,
+		scope:      borrow.NewScope(),
+	}
+	if rawHeaders != nil {
+		h := h1.NewHeadersWithCapacity(len(rawHeaders))
+		for k, vv := range rawHeaders {
+			for _, v := range vv {
+				h.Set(k, v)
+			}
+		}
+		req.h1Headers = &h
+	}
+	return req
+}
+
 // Hijack takes over the raw underlying TCP connection from the server.
 // Once hijacked, the server will not write any HTTP response and will not close the connection.
 func (r *Request) Hijack() (net.Conn, *bufio.ReadWriter, error) {
