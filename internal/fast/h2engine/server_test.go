@@ -17,13 +17,15 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
-	"github.com/lemon4ksan/sein/internal/fast/h2engine"
 	"golang.org/x/net/http2"
+
+	"github.com/lemon4ksan/sein/internal/fast/h2engine"
 )
 
 func TestH2Server_EndToEnd(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+
 	defer ln.Close()
 
 	handler := func(req *h2engine.ServerRequest, res *h2engine.ServerResponse) error {
@@ -32,12 +34,15 @@ func TestH2Server_EndToEnd(t *testing.T) {
 			res.StatusCode = http.StatusOK
 			res.Headers.Set("Content-Type", "text/plain")
 			res.Body = []byte("Hello HTTP/2 World!")
+
 			return nil
 
 		case "/echo":
 			res.StatusCode = http.StatusOK
 			res.Headers.Set("Content-Type", "application/octet-stream")
+
 			res.Body = append([]byte("Echo: "), req.Body...)
+
 			return nil
 
 		default:
@@ -53,9 +58,11 @@ func TestH2Server_EndToEnd(t *testing.T) {
 			if err != nil {
 				return
 			}
+
 			go func(c net.Conn) {
 				sc := h2engine.NewServerConn(c, handler)
 				defer sc.Release()
+
 				_ = sc.Serve()
 			}(conn)
 		}
@@ -82,6 +89,7 @@ func TestH2Server_EndToEnd(t *testing.T) {
 
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+
 	require.NoError(t, err)
 	assert.Equal(t, "Hello HTTP/2 World!", string(body))
 
@@ -93,6 +101,7 @@ func TestH2Server_EndToEnd(t *testing.T) {
 
 	postBody, err := io.ReadAll(respPost.Body)
 	_ = respPost.Body.Close()
+
 	require.NoError(t, err)
 	assert.Equal(t, "Echo: "+postData, string(postBody))
 
@@ -102,17 +111,21 @@ func TestH2Server_EndToEnd(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
+
 			r, err := client.Get("http://" + addr + "/hello")
 			if err != nil {
 				t.Errorf("stream %d failed: %v", id, err)
 				return
 			}
+
 			b, _ := io.ReadAll(r.Body)
 			_ = r.Body.Close()
+
 			if string(b) != "Hello HTTP/2 World!" {
 				t.Errorf("unexpected body on stream %d: %s", id, string(b))
 			}
 		}(i)
 	}
+
 	wg.Wait()
 }

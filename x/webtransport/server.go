@@ -243,6 +243,7 @@ func readVarintFromStream(r io.Reader) (uint64, int, error) {
 	varintLen := 1 << tag
 
 	var buf [8]byte
+
 	buf[0] = first[0]
 	if varintLen > 1 {
 		if _, err := io.ReadFull(r, buf[1:varintLen]); err != nil {

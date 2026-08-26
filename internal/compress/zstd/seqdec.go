@@ -203,10 +203,9 @@ func (s *sequenceDecs) execute(seqs []seqVals, hist []byte) error {
 				src := out[start : start+seq.ml]
 				dst := out[t:]
 				dst = dst[:len(src)]
+
 				t += len(src)
-				for i := range src {
-					dst[i] = src[i]
-				}
+				copy(dst, src)
 			}
 		}
 	}
@@ -417,14 +416,12 @@ func (s *sequenceDecs) decodeSync(hist []byte) error {
 				out = append(out, out[start:start+ml]...)
 			} else {
 				// Overlapping copy
-				// Extend destination slice and copy one byte at the time.
-				out = out[:len(out)+ml]
-				src := out[start : start+ml]
-				// Destination is the space we just added.
-				dst := out[len(out)-ml:]
+				// Extend destination slice and copy one byte at a time so repeated patterns propagate correctly.
+				oldLen := len(out)
+				out = out[:oldLen+ml]
 
-				for i := range src {
-					dst[i] = src[i]
+				for j := 0; j < ml; j++ {
+					out[oldLen+j] = out[start+j]
 				}
 			}
 		}

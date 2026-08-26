@@ -5,12 +5,14 @@
 package ws
 
 import (
+	// #nosec G505 -- SHA1 is required by RFC 6455
 	"crypto/sha1"
 	"encoding/base64"
 	"strings"
 	"time"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+
 	"github.com/lemon4ksan/sein"
 )
 
@@ -48,13 +50,16 @@ func WithSubprotocols(subprotocols ...string) Option {
 // ComputeAcceptKey computes the Sec-WebSocket-Accept hash per RFC 6455 §4.2.2 with stack allocation.
 func ComputeAcceptKey(challengeKey string) string {
 	var input [64]byte
+
 	n := copy(input[:], challengeKey)
 	n += copy(input[n:], MagicGUID)
 
+	// #nosec G401 -- SHA1 is required by RFC 6455 Section 4.2.2 for WebSocket handshake
 	sum := sha1.Sum(input[:n])
 
 	var acceptKey [28]byte
 	base64.StdEncoding.Encode(acceptKey[:], sum[:])
+
 	return string(acceptKey[:])
 }
 
@@ -95,6 +100,7 @@ func Upgrade(req *sein.Request, opts ...Option) (*Conn, error) {
 	if clientKey == "" {
 		return nil, ErrMissingKey
 	}
+
 	decodedKey, err := base64.StdEncoding.DecodeString(clientKey)
 	if err != nil || len(decodedKey) != 16 {
 		return nil, ErrMissingKey
@@ -136,10 +142,12 @@ func Upgrade(req *sein.Request, opts ...Option) (*Conn, error) {
 						break
 					}
 				}
+
 				if selectedProtocol != "" {
 					break
 				}
 			}
+
 			if selectedProtocol != "" {
 				sb.WriteString("Sec-WebSocket-Protocol: ")
 				sb.WriteString(selectedProtocol)
@@ -155,6 +163,7 @@ func Upgrade(req *sein.Request, opts ...Option) (*Conn, error) {
 		_ = netConn.Close()
 		return nil, err
 	}
+
 	if err := rw.Flush(); err != nil {
 		_ = netConn.Close()
 		return nil, err

@@ -9,10 +9,11 @@ import (
 	"encoding/hex"
 	"net/http"
 	"sync/atomic"
-	"time"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/silicon/rand"
+	"github.com/lemon4ksan/foundation/timekit"
+
 	"github.com/lemon4ksan/sein"
 )
 
@@ -42,7 +43,8 @@ var DefaultConfig = Config{
 
 func generateID() string {
 	var b [16]byte
-	now := time.Now().UnixNano()
+
+	now := timekit.CoarseUnixNano()
 	seq := atomic.AddUint64(&counter, 1)
 
 	b[0] = byte(now >> 56)
@@ -65,6 +67,7 @@ func generateID() string {
 
 	var dst [32]byte
 	hex.Encode(dst[:], b[:])
+
 	return string(dst[:])
 }
 
@@ -81,6 +84,7 @@ func New(config ...Config) sein.Middleware {
 		if cfg.HeaderName == "" {
 			cfg.HeaderName = DefaultConfig.HeaderName
 		}
+
 		if cfg.Generator == nil {
 			cfg.Generator = DefaultConfig.Generator
 		}
@@ -112,9 +116,11 @@ func FromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
+
 	if id, ok := ctx.Value(requestIDKey).(string); ok {
 		return id
 	}
+
 	return ""
 }
 
@@ -123,6 +129,7 @@ func Get(req *sein.Request) string {
 	if req == nil {
 		return ""
 	}
+
 	return FromContext(req.Context())
 }
 
@@ -132,11 +139,14 @@ func attachHeader(result any, headerName, id string) any {
 		if headers == nil {
 			headers = make(http.Header)
 		}
+
 		headers.Set(headerName, id)
+
 		return sein.StatusWith(holder.StatusCode(), holder.ResponseBody(), headers)
 	}
 
 	headers := make(http.Header)
 	headers.Set(headerName, id)
+
 	return sein.StatusWith(http.StatusOK, result, headers)
 }

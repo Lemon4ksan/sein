@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/lemon4ksan/foundation/types/uuid"
+
 	"github.com/lemon4ksan/sein"
 )
 
@@ -23,7 +24,7 @@ type UserRequestDTO struct {
 	Limit    int                 `query:"limit,default=25,positive,multiple_of=5"`
 	TraceID  string              `header:"X-Trace-ID,required"`
 	ClientIP net.IP              `net:"ip"`
-	Password sein.Secret[string] `json:"password,min=8"`
+	Password sein.Secret[string] `json:"password" validate:"min=8"`
 }
 
 func Example() {

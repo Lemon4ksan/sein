@@ -14,9 +14,7 @@ import (
 	"time"
 )
 
-var (
-	ErrServerClosed = errors.New("h1: server is closed")
-)
+var ErrServerClosed = errors.New("h1: server is closed")
 
 // Server is a zero-net/http HTTP/1.1 listener and connection orchestrator.
 type Server struct {
@@ -48,9 +46,11 @@ func NewServer(handler HandlerFunc) *Server {
 func (s *Server) trackConn(c net.Conn, add bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if s.conns == nil {
 		s.conns = make(map[net.Conn]struct{})
 	}
+
 	if add {
 		s.conns[c] = struct{}{}
 	} else {
@@ -65,6 +65,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		s.mu.Unlock()
 		return ErrServerClosed
 	}
+
 	s.listener = ln
 	s.mu.Unlock()
 
@@ -84,27 +85,36 @@ func (s *Server) Serve(ln net.Listener) error {
 			if s.closed.Load() {
 				return ErrServerClosed
 			}
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+
+			var ne net.Error
+			if errors.As(err, &ne) {
 				if tempDelay == 0 {
 					tempDelay = 5 * time.Millisecond
 				} else {
 					tempDelay *= 2
 				}
+
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
+
 				time.Sleep(tempDelay)
+
 				continue
 			}
+
 			return err
 		}
+
 		tempDelay = 0
 
 		s.active.Add(1)
+
 		s.trackConn(conn, true)
 		go func(c net.Conn) {
 			defer s.active.Done()
 			defer s.trackConn(c, false)
+
 			_ = connHandler.ServeConn(c)
 		}(conn)
 	}
@@ -117,7 +127,8 @@ func (s *Server) ListenAndServe() error {
 		addr = ":8080"
 	}
 
-	ln, err := net.Listen("tcp", addr)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return err
 	}
@@ -145,15 +156,16 @@ func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
 	} else {
 		config = config.Clone()
 	}
+
 	config.Certificates = []tls.Certificate{cert}
 
-	ln, err := net.Listen("tcp", addr)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return err
 	}
 
-	tlsListener := tls.NewListener(ln, config)
-	return s.Serve(tlsListener)
+	return s.Serve(tls.NewListener(ln, config))
 }
 
 // Shutdown gracefully stops accepting new connections and waits for active connections to finish.
@@ -166,9 +178,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.listener != nil {
 		_ = s.listener.Close()
 	}
+
 	for c := range s.conns {
 		_ = c.SetDeadline(time.Now())
 	}
+
 	s.mu.Unlock()
 
 	done := make(chan struct{})

@@ -24,5 +24,6 @@ func vectorDecodeQuad(s1, s2 *decoder, dt []decSymbol, tmp []byte, off uint8) ui
 	)
 
 	binary.LittleEndian.PutUint32(tmp[off:], uint32(res))
+
 	return off + 4
 }

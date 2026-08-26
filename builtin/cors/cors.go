@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+
 	"github.com/lemon4ksan/sein"
 )
 
@@ -60,6 +61,7 @@ func New(config ...Config) sein.Middleware {
 		if len(cfg.AllowOrigins) == 0 {
 			cfg.AllowOrigins = DefaultConfig.AllowOrigins
 		}
+
 		if len(cfg.AllowMethods) == 0 {
 			cfg.AllowMethods = DefaultConfig.AllowMethods
 		}
@@ -68,6 +70,7 @@ func New(config ...Config) sein.Middleware {
 	allowMethodsHeader := strings.Join(cfg.AllowMethods, ", ")
 	allowHeadersHeader := strings.Join(cfg.AllowHeaders, ", ")
 	exposeHeadersHeader := strings.Join(cfg.ExposeHeaders, ", ")
+
 	maxAgeHeader := ""
 	if cfg.MaxAge > 0 {
 		maxAgeHeader = strconv.Itoa(cfg.MaxAge)
@@ -109,24 +112,30 @@ func New(config ...Config) sein.Middleware {
 			if req.Method() == http.MethodOptions && req.Header(header.AccessControlRequestMethod) != "" {
 				headers := make(http.Header)
 				headers.Set(header.AccessControlAllowOrigin, matchedOrigin)
+
 				if cfg.AllowCredentials {
 					headers.Set(header.AccessControlAllowCredentials, "true")
 				}
+
 				if allowMethodsHeader != "" {
 					headers.Set(header.AccessControlAllowMethods, allowMethodsHeader)
 				}
+
 				reqHeaders := req.Header(header.AccessControlRequestHeaders)
 				if allowHeadersHeader != "" {
 					headers.Set(header.AccessControlAllowHeaders, allowHeadersHeader)
 				} else if reqHeaders != "" {
 					headers.Set(header.AccessControlAllowHeaders, reqHeaders)
 				}
+
 				if maxAgeHeader != "" {
 					headers.Set(header.AccessControlMaxAge, maxAgeHeader)
 				}
+
 				if exposeHeadersHeader != "" {
 					headers.Set(header.AccessControlExposeHeaders, exposeHeadersHeader)
 				}
+
 				headers.Set(header.Vary, header.Origin)
 
 				return sein.StatusWith[any](http.StatusNoContent, nil, headers), nil
@@ -150,25 +159,33 @@ func attachCORSHeaders(result any, matchedOrigin string, allowCredentials bool, 
 		if headers == nil {
 			headers = make(http.Header)
 		}
+
 		headers.Set(header.AccessControlAllowOrigin, matchedOrigin)
+
 		if allowCredentials {
 			headers.Set(header.AccessControlAllowCredentials, "true")
 		}
+
 		if exposeHeaders != "" {
 			headers.Set(header.AccessControlExposeHeaders, exposeHeaders)
 		}
+
 		headers.Add(header.Vary, header.Origin)
+
 		return sein.StatusWith(holder.StatusCode(), holder.ResponseBody(), headers)
 	}
 
 	headers := make(http.Header)
 	headers.Set(header.AccessControlAllowOrigin, matchedOrigin)
+
 	if allowCredentials {
 		headers.Set(header.AccessControlAllowCredentials, "true")
 	}
+
 	if exposeHeaders != "" {
 		headers.Set(header.AccessControlExposeHeaders, exposeHeaders)
 	}
+
 	headers.Add(header.Vary, header.Origin)
 
 	return sein.StatusWith(http.StatusOK, result, headers)
@@ -178,6 +195,7 @@ func matchOrigin(pattern, origin string) bool {
 	if pattern == "*" || pattern == origin {
 		return true
 	}
+
 	if !strings.Contains(pattern, "*") {
 		return false
 	}
@@ -186,5 +204,6 @@ func matchOrigin(pattern, origin string) bool {
 	if len(parts) != 2 {
 		return false
 	}
+
 	return strings.HasPrefix(origin, parts[0]) && strings.HasSuffix(origin, parts[1])
 }

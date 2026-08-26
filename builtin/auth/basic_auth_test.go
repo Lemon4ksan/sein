@@ -13,6 +13,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/testkit/assert"
+
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/builtin/auth"
 )
@@ -38,6 +39,7 @@ func TestBasicAuth_SuccessAndFailure(t *testing.T) {
 	// 2. Wrong Password -> 401
 	req2 := httptest.NewRequest("GET", "/secret", nil)
 	req2.Header.Set(header.Authorization, "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:wrong_pass")))
+
 	w2 := httptest.NewRecorder()
 	s.ServeHTTP(w2, req2)
 
@@ -46,6 +48,7 @@ func TestBasicAuth_SuccessAndFailure(t *testing.T) {
 	// 3. Valid Credentials -> 200 OK
 	req3 := httptest.NewRequest("GET", "/secret", nil)
 	req3.Header.Set(header.Authorization, "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:secret_pass_123")))
+
 	w3 := httptest.NewRecorder()
 	s.ServeHTTP(w3, req3)
 

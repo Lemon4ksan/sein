@@ -58,23 +58,79 @@ func (o encoderOptions) encoder() encoder {
 	switch o.level {
 	case SpeedFastest:
 		if o.dict != nil {
-			return &fastEncoderDict{fastEncoder: fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}}
+			return &fastEncoderDict{
+				fastEncoder: fastEncoder{
+					fastBase: fastBase{
+						maxMatchOff: int32(o.windowSize),
+						bufferReset: math.MaxInt32 - int32(o.windowSize*2),
+						lowMem:      o.lowMem,
+					},
+				},
+			}
 		}
-		return &fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}
+
+		return &fastEncoder{
+			fastBase: fastBase{
+				maxMatchOff: int32(o.windowSize),
+				bufferReset: math.MaxInt32 - int32(o.windowSize*2),
+				lowMem:      o.lowMem,
+			},
+		}
 
 	case SpeedDefault:
 		if o.dict != nil {
-			return &doubleFastEncoderDict{fastEncoderDict: fastEncoderDict{fastEncoder: fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}}}
+			return &doubleFastEncoderDict{
+				fastEncoderDict: fastEncoderDict{
+					fastEncoder: fastEncoder{
+						fastBase: fastBase{
+							maxMatchOff: int32(o.windowSize),
+							bufferReset: math.MaxInt32 - int32(o.windowSize*2),
+							lowMem:      o.lowMem,
+						},
+					},
+				},
+			}
 		}
-		return &doubleFastEncoder{fastEncoder: fastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}}
+
+		return &doubleFastEncoder{
+			fastEncoder: fastEncoder{
+				fastBase: fastBase{
+					maxMatchOff: int32(o.windowSize),
+					bufferReset: math.MaxInt32 - int32(o.windowSize*2),
+					lowMem:      o.lowMem,
+				},
+			},
+		}
 	case SpeedBetterCompression:
 		if o.dict != nil {
-			return &betterFastEncoderDict{betterFastEncoder: betterFastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}}
+			return &betterFastEncoderDict{
+				betterFastEncoder: betterFastEncoder{
+					fastBase: fastBase{
+						maxMatchOff: int32(o.windowSize),
+						bufferReset: math.MaxInt32 - int32(o.windowSize*2),
+						lowMem:      o.lowMem,
+					},
+				},
+			}
 		}
-		return &betterFastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}
+
+		return &betterFastEncoder{
+			fastBase: fastBase{
+				maxMatchOff: int32(o.windowSize),
+				bufferReset: math.MaxInt32 - int32(o.windowSize*2),
+				lowMem:      o.lowMem,
+			},
+		}
 	case SpeedBestCompression:
-		return &bestFastEncoder{fastBase: fastBase{maxMatchOff: int32(o.windowSize), bufferReset: math.MaxInt32 - int32(o.windowSize*2), lowMem: o.lowMem}}
+		return &bestFastEncoder{
+			fastBase: fastBase{
+				maxMatchOff: int32(o.windowSize),
+				bufferReset: math.MaxInt32 - int32(o.windowSize*2),
+				lowMem:      o.lowMem,
+			},
+		}
 	}
+
 	panic("unknown compression level")
 }
 
@@ -97,13 +153,17 @@ func WithEncoderConcurrency(n int) EOption {
 		if n < 0 {
 			return errors.New("concurrency must at least 0")
 		}
+
 		if n == 0 {
 			n = runtime.GOMAXPROCS(0)
 		}
+
 		if o.resetOpt && n != o.concurrent {
 			return errors.New("WithEncoderConcurrency cannot be changed on Reset")
 		}
+
 		o.concurrent = n
+
 		return nil
 	}
 }
@@ -124,16 +184,19 @@ func WithWindowSize(n int) EOption {
 		case (n & (n - 1)) != 0:
 			return errors.New("window size must be a power of 2")
 		}
+
 		if o.resetOpt && n != o.windowSize {
 			return errors.New("WithWindowSize cannot be changed on Reset")
 		}
 
 		o.windowSize = n
+
 		o.customWindow = true
 		if o.blockSize > o.windowSize {
 			o.blockSize = o.windowSize
 			o.customBlockSize = true
 		}
+
 		return nil
 	}
 }
@@ -148,16 +211,20 @@ func WithWindowSize(n int) EOption {
 func WithEncoderPadding(n int) EOption {
 	return func(o *encoderOptions) error {
 		if n <= 0 {
-			return fmt.Errorf("padding must be at least 1")
+			return errors.New("padding must be at least 1")
 		}
+
 		// No need to waste our time.
 		if n == 1 {
 			n = 0
 		}
+
 		if n > 1<<30 {
-			return fmt.Errorf("padding must less than 1GB (1<<30 bytes) ")
+			return errors.New("padding must less than 1GB (1<<30 bytes) ")
 		}
+
 		o.pad = n
+
 		return nil
 	}
 }
@@ -202,6 +269,7 @@ func EncoderLevelFromString(s string) (bool, EncoderLevel) {
 			return true, l
 		}
 	}
+
 	return false, SpeedDefault
 }
 
@@ -243,11 +311,13 @@ func WithEncoderLevel(l EncoderLevel) EOption {
 	return func(o *encoderOptions) error {
 		switch {
 		case l <= speedNotSet || l >= speedLast:
-			return fmt.Errorf("unknown encoder level")
+			return errors.New("unknown encoder level")
 		}
+
 		if o.resetOpt && l != o.level {
 			return errors.New("WithEncoderLevel cannot be changed on Reset")
 		}
+
 		o.level = l
 		if !o.customWindow {
 			switch o.level {
@@ -264,6 +334,7 @@ func WithEncoderLevel(l EncoderLevel) EOption {
 				o.windowSize = 8 << 20
 			}
 		}
+
 		if !o.customALEntropy {
 			o.allLitEntropy = l > SpeedDefault
 		}
@@ -335,7 +406,9 @@ func WithLowerEncoderMem(b bool) EOption {
 		if o.resetOpt && b != o.lowMem {
 			return errors.New("WithLowerEncoderMem cannot be changed on Reset")
 		}
+
 		o.lowMem = b
+
 		return nil
 	}
 }
@@ -353,7 +426,9 @@ func WithConcurrentBlocks(b bool) EOption {
 		if o.resetOpt && b != o.concurrentBlocks {
 			return errors.New("WithConcurrentBlocks cannot be changed on Reset")
 		}
+
 		o.concurrentBlocks = b
+
 		return nil
 	}
 }
@@ -391,7 +466,9 @@ func WithEncoderDict(dict []byte) EOption {
 		if err != nil {
 			return err
 		}
+
 		o.dict = d
+
 		return nil
 	}
 }
@@ -406,7 +483,9 @@ func WithEncoderDictRaw(id uint32, content []byte) EOption {
 		if bits.UintSize > 32 && uint(len(content)) > dictMaxLength {
 			return fmt.Errorf("dictionary of size %d > 2GiB too large", len(content))
 		}
+
 		o.dict = &dict{id: id, content: content, offsets: [3]int{1, 4, 8}}
+
 		return nil
 	}
 }

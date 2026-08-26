@@ -6,7 +6,7 @@
 
 package h1
 
-const hasVectorChunk = false
+const HasVectorChunk = false
 
 func vectorParseHexUint(src []byte) (int, int, error) {
 	return parseHexUintFallback(src)

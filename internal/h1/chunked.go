@@ -16,16 +16,23 @@ var (
 	ErrInvalidChunkSize   = errors.New("h1: invalid chunk size in chunked encoding")
 	ErrChunkBoundaryError = errors.New("h1: missing CRLF at chunk boundary")
 	errEmptyHexNum        = errors.New("h1: empty hex number")
+
+	_ = parseHexUintFallback
+	_ = formatHexUintFallback
 )
 
 func parseHexUintFallback(src []byte) (int, int, error) {
 	if len(src) == 0 {
 		return 0, 0, errEmptyHexNum
 	}
-	var val int
-	var i int
+
+	var (
+		val int
+		i   int
+	)
 	for i = 0; i < len(src); i++ {
 		c := src[i]
+
 		var d int
 		if c >= '0' && c <= '9' {
 			d = int(c - '0')
@@ -37,10 +44,13 @@ func parseHexUintFallback(src []byte) (int, int, error) {
 			if i == 0 {
 				return 0, 0, errEmptyHexNum
 			}
+
 			break
 		}
+
 		val = (val << 4) | d
 	}
+
 	return val, i, nil
 }
 
@@ -49,6 +59,7 @@ func formatHexUintFallback(buf *[16]byte, val int) int {
 		buf[0] = '0'
 		return 1
 	}
+
 	idx := 15
 	for val > 0 {
 		nib := byte(val & 0x0F)
@@ -57,11 +68,14 @@ func formatHexUintFallback(buf *[16]byte, val int) int {
 		} else {
 			buf[idx] = 'a' + (nib - 10)
 		}
+
 		idx--
 		val >>= 4
 	}
+
 	count := 15 - idx
 	copy(buf[:count], buf[idx+1:16])
+
 	return count
 }
 
@@ -95,6 +109,7 @@ func (cr *ChunkedReader) Read(p []byte) (n int, err error) {
 		if idx := bytes.IndexByte(line, ';'); idx != -1 {
 			line = line[:idx]
 		}
+
 		line = bytes.TrimSpace(line)
 
 		if len(line) == 0 {
@@ -103,13 +118,14 @@ func (cr *ChunkedReader) Read(p []byte) (n int, err error) {
 
 		chunkSize, _, err := vectorParseHexUint(line)
 		if err != nil || chunkSize < 0 {
-			return 0, fmt.Errorf("%w: %v", ErrInvalidChunkSize, err)
+			return 0, fmt.Errorf("%w: %w", ErrInvalidChunkSize, err)
 		}
 
 		if chunkSize == 0 {
 			cr.done = true
 			// Drain trailing CRLF or trailer headers
 			_, _ = cr.r.ReadBytes('\n')
+
 			return 0, io.EOF
 		}
 
@@ -123,6 +139,7 @@ func (cr *ChunkedReader) Read(p []byte) (n int, err error) {
 	if cr.remaining == 0 && err == nil {
 		// Expect CRLF after chunk data
 		b1, err1 := cr.r.ReadByte()
+
 		b2, err2 := cr.r.ReadByte()
 		if err1 != nil || err2 != nil || b1 != '\r' || b2 != '\n' {
 			return n, ErrChunkBoundaryError
@@ -135,7 +152,9 @@ func (cr *ChunkedReader) Read(p []byte) (n int, err error) {
 // ReadAllChunked drains all chunked content into a preallocated byte slice.
 func ReadAllChunked(r *bufio.Reader, maxBodySize int64) ([]byte, error) {
 	cr := NewChunkedReader(r)
+
 	var buf bytes.Buffer
+
 	lr := io.LimitReader(cr, maxBodySize+1)
 
 	_, err := buf.ReadFrom(lr)
@@ -167,12 +186,14 @@ func (cw *ChunkedWriter) Write(p []byte) (int, error) {
 	}
 
 	var hexBuf [16]byte
+
 	n := vectorFormatHexUint(&hexBuf, len(p))
 
 	_, _ = cw.w.Write(hexBuf[:n])
 	_, _ = cw.w.Write(hdrCRLF)
 	_, _ = cw.w.Write(p)
 	_, _ = cw.w.Write(hdrCRLF)
+
 	return len(p), cw.w.Flush()
 }
 

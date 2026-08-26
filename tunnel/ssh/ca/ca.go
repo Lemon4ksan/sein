@@ -55,6 +55,7 @@ func parsePrivateKey(keyPEM []byte, passphrase string) (ssh.Signer, error) {
 	if passphrase != "" {
 		return ssh.ParsePrivateKeyWithPassphrase(keyPEM, []byte(passphrase))
 	}
+
 	return ssh.ParsePrivateKey(keyPEM)
 }
 

@@ -15,7 +15,7 @@ R: requested size
 */
 func brotli_ensure_capacity_uint8_t(a *[]byte, c *uint, r uint) {
 	if *c < r {
-		var new_size uint = *c
+		new_size := *c
 		if new_size == 0 {
 			new_size = r
 		}
@@ -25,7 +25,7 @@ func brotli_ensure_capacity_uint8_t(a *[]byte, c *uint, r uint) {
 		}
 
 		if cap(*a) < int(new_size) {
-			var new_array []byte = make([]byte, new_size)
+			new_array := make([]byte, new_size)
 			if *c != 0 {
 				copy(new_array, (*a)[:*c])
 			}
@@ -42,7 +42,7 @@ func brotli_ensure_capacity_uint8_t(a *[]byte, c *uint, r uint) {
 func brotli_ensure_capacity_uint32_t(a *[]uint32, c *uint, r uint) {
 	var new_array []uint32
 	if *c < r {
-		var new_size uint = *c
+		new_size := *c
 		if new_size == 0 {
 			new_size = r
 		}
@@ -61,6 +61,7 @@ func brotli_ensure_capacity_uint32_t(a *[]uint32, c *uint, r uint) {
 		} else {
 			*a = (*a)[:new_size]
 		}
+
 		*c = new_size
 	}
 }

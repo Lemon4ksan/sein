@@ -26,64 +26,81 @@ func compileSpecialStep(b *FieldBinding, offset uintptr) FieldStep {
 	case SourceContext:
 		return func(req RequestView, structPtr unsafe.Pointer) error {
 			fieldPtr := unsafe.Add(structPtr, offset)
+
 			val, ok := req.GetContext(fieldType)
 			if ok {
 				reflect.NewAt(fieldType, fieldPtr).Elem().Set(reflect.ValueOf(val))
 				return nil
 			}
+
 			if required {
 				return fmt.Errorf("missing context value of type %s", fieldType.String())
 			}
+
 			return nil
 		}
 
 	case SourceFile:
 		return func(req RequestView, structPtr unsafe.Pointer) error {
 			fieldPtr := unsafe.Add(structPtr, offset)
+
 			file, err := req.FormFile(key)
 			if err != nil || file == nil {
 				if required {
 					return fmt.Errorf("required file %q is missing", key)
 				}
+
 				return nil
 			}
+
 			reflect.NewAt(fieldType, fieldPtr).Elem().Set(reflect.ValueOf(file))
+
 			return nil
 		}
 
 	case SourceFiles:
 		return func(req RequestView, structPtr unsafe.Pointer) error {
 			fieldPtr := unsafe.Add(structPtr, offset)
+
 			files, err := req.FormFiles(key)
 			if err != nil || len(files) == 0 {
 				if required {
 					return fmt.Errorf("required files %q are missing", key)
 				}
+
 				return nil
 			}
+
 			reflect.NewAt(fieldType, fieldPtr).Elem().Set(reflect.ValueOf(files))
+
 			return nil
 		}
 
 	case SourceBodyRaw:
 		return func(req RequestView, structPtr unsafe.Pointer) error {
 			fieldPtr := unsafe.Add(structPtr, offset)
+
 			data := req.Body()
 			if len(data) == 0 && required {
 				return ErrEmptyRequestBody
 			}
+
 			*(*[]byte)(fieldPtr) = data
+
 			return nil
 		}
 
 	case SourceBodyString:
 		return func(req RequestView, structPtr unsafe.Pointer) error {
 			fieldPtr := unsafe.Add(structPtr, offset)
+
 			data := req.Body()
 			if len(data) == 0 && required {
 				return ErrEmptyRequestBody
 			}
+
 			*(*string)(fieldPtr) = string(data)
+
 			return nil
 		}
 	}
@@ -105,25 +122,31 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 			if raw == "" {
 				return generic.None[string](), fmt.Errorf("missing path param %q", key)
 			}
+
 			return generic.Some(raw), nil
 		}
 
 	case SourceQuery:
 		return func(req RequestView) (generic.Optional[string], error) {
 			raw := req.Query(key)
+
 			present := raw != ""
 			if isSlice && !present {
 				present = len(req.RawURLQuery()[key]) > 0
 			}
+
 			if !present {
 				if defaultVal != "" {
 					return generic.Some(defaultVal), nil
 				}
+
 				if required {
 					return generic.None[string](), fmt.Errorf("missing query param %q", key)
 				}
+
 				return generic.None[string](), nil
 			}
+
 			return generic.Some(raw), nil
 		}
 
@@ -134,27 +157,34 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 				if required {
 					return generic.None[string](), fmt.Errorf("missing header %q", key)
 				}
+
 				return generic.None[string](), nil
 			}
+
 			return generic.Some(raw), nil
 		}
 
 	case SourceCookie:
 		return func(req RequestView) (generic.Optional[string], error) {
 			c, err := req.Cookie(key)
+
 			raw := generic.Coalesce(c, defaultVal)
 			if err != nil && raw == "" {
 				if required {
 					return generic.None[string](), fmt.Errorf("missing cookie %q", key)
 				}
+
 				return generic.None[string](), nil
 			}
+
 			if raw == "" {
 				if required {
 					return generic.None[string](), fmt.Errorf("missing cookie %q", key)
 				}
+
 				return generic.None[string](), nil
 			}
+
 			return generic.Some(raw), nil
 		}
 
@@ -166,14 +196,17 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 					if required {
 						return generic.None[string](), ErrMissingBearerToken
 					}
+
 					return generic.None[string](), nil
 				}
+
 				return generic.Some(token), nil
 			}
 		}
 
 	case SourceNet:
 		netKey := strings.ToLower(key)
+
 		return func(req RequestView) (generic.Optional[string], error) {
 			var raw string
 			switch netKey {
@@ -190,9 +223,11 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 			case "path":
 				raw = req.Path()
 			}
+
 			if raw == "" {
 				return generic.None[string](), nil
 			}
+
 			return generic.Some(raw), nil
 		}
 
@@ -203,8 +238,10 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 				if required {
 					return generic.None[string](), fmt.Errorf("missing form field %q", key)
 				}
+
 				return generic.None[string](), nil
 			}
+
 			return generic.Some(raw), nil
 		}
 	}

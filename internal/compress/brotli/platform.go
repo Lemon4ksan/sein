@@ -6,7 +6,7 @@ package brotli
    See file LICENSE for detail or copy at https://opensource.org/licenses/MIT
 */
 
-func brotli_min_double(a float64, b float64) float64 {
+func brotli_min_double(a, b float64) float64 {
 	if a < b {
 		return a
 	} else {
@@ -14,7 +14,7 @@ func brotli_min_double(a float64, b float64) float64 {
 	}
 }
 
-func brotli_max_double(a float64, b float64) float64 {
+func brotli_max_double(a, b float64) float64 {
 	if a > b {
 		return a
 	} else {
@@ -22,7 +22,7 @@ func brotli_max_double(a float64, b float64) float64 {
 	}
 }
 
-func brotli_min_float(a float32, b float32) float32 {
+func brotli_min_float(a, b float32) float32 {
 	if a < b {
 		return a
 	} else {
@@ -30,7 +30,7 @@ func brotli_min_float(a float32, b float32) float32 {
 	}
 }
 
-func brotli_max_float(a float32, b float32) float32 {
+func brotli_max_float(a, b float32) float32 {
 	if a > b {
 		return a
 	} else {
@@ -38,7 +38,7 @@ func brotli_max_float(a float32, b float32) float32 {
 	}
 }
 
-func brotli_min_int(a int, b int) int {
+func brotli_min_int(a, b int) int {
 	if a < b {
 		return a
 	} else {
@@ -46,7 +46,7 @@ func brotli_min_int(a int, b int) int {
 	}
 }
 
-func brotli_max_int(a int, b int) int {
+func brotli_max_int(a, b int) int {
 	if a > b {
 		return a
 	} else {
@@ -54,7 +54,7 @@ func brotli_max_int(a int, b int) int {
 	}
 }
 
-func brotli_min_size_t(a uint, b uint) uint {
+func brotli_min_size_t(a, b uint) uint {
 	if a < b {
 		return a
 	} else {
@@ -62,7 +62,7 @@ func brotli_min_size_t(a uint, b uint) uint {
 	}
 }
 
-func brotli_max_size_t(a uint, b uint) uint {
+func brotli_max_size_t(a, b uint) uint {
 	if a > b {
 		return a
 	} else {
@@ -70,7 +70,7 @@ func brotli_max_size_t(a uint, b uint) uint {
 	}
 }
 
-func brotli_min_uint32_t(a uint32, b uint32) uint32 {
+func brotli_min_uint32_t(a, b uint32) uint32 {
 	if a < b {
 		return a
 	} else {
@@ -78,7 +78,7 @@ func brotli_min_uint32_t(a uint32, b uint32) uint32 {
 	}
 }
 
-func brotli_max_uint32_t(a uint32, b uint32) uint32 {
+func brotli_max_uint32_t(a, b uint32) uint32 {
 	if a > b {
 		return a
 	} else {
@@ -86,7 +86,7 @@ func brotli_max_uint32_t(a uint32, b uint32) uint32 {
 	}
 }
 
-func brotli_min_uint8_t(a byte, b byte) byte {
+func brotli_min_uint8_t(a, b byte) byte {
 	if a < b {
 		return a
 	} else {
@@ -94,10 +94,16 @@ func brotli_min_uint8_t(a byte, b byte) byte {
 	}
 }
 
-func brotli_max_uint8_t(a byte, b byte) byte {
+func brotli_max_uint8_t(a, b byte) byte {
 	if a > b {
 		return a
 	} else {
 		return b
 	}
 }
+
+var (
+	_ = brotli_min_double
+	_ = brotli_max_float
+	_ = brotli_min_uint8_t
+)

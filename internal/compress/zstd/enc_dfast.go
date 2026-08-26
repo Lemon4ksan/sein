@@ -51,8 +51,10 @@ func (e *doubleFastEncoder) Encode(blk *blockEnc, src []byte) {
 			e.table = [dFastShortTableSize]tableEntry{}
 			e.longTable = [dFastLongTableSize]tableEntry{}
 			e.cur = e.maxMatchOff
+
 			break
 		}
+
 		// Shift down everything in the table that isn't already too far away.
 		minOff := e.cur + int32(len(e.hist)) - e.maxMatchOff
 		for i := range e.table[:] {
@@ -62,8 +64,10 @@ func (e *doubleFastEncoder) Encode(blk *blockEnc, src []byte) {
 			} else {
 				v = v - e.cur + e.maxMatchOff
 			}
+
 			e.table[i].offset = v
 		}
+
 		for i := range e.longTable[:] {
 			v := e.longTable[i].offset
 			if v < minOff {
@@ -71,18 +75,23 @@ func (e *doubleFastEncoder) Encode(blk *blockEnc, src []byte) {
 			} else {
 				v = v - e.cur + e.maxMatchOff
 			}
+
 			e.longTable[i].offset = v
 		}
+
 		e.cur = e.maxMatchOff
+
 		break
 	}
 
 	s := e.addBlock(src)
+
 	blk.size = len(src)
 	if len(src) < minNonLiteralBlockSize {
 		blk.extraLits = len(src)
 		blk.literals = blk.literals[:len(src)]
 		copy(blk.literals, src)
+
 		return
 	}
 
@@ -107,9 +116,11 @@ func (e *doubleFastEncoder) Encode(blk *blockEnc, src []byte) {
 		if until == nextEmit {
 			return
 		}
+
 		blk.literals = append(blk.literals, src[nextEmit:until]...)
 		s.litLen = uint32(until - nextEmit)
 	}
+
 	if debugEncoder {
 		println("recent offsets:", blk.recentOffsets)
 	}
@@ -131,6 +142,7 @@ encodeLoop:
 			candidateS := e.table[nextHashS]
 
 			const repOff = 1
+
 			repIndex := s - offset1 + repOff
 			entry := tableEntry{offset: s + e.cur, val: uint32(cv)}
 			e.longTable[nextHashL] = entry
@@ -140,6 +152,7 @@ encodeLoop:
 				if repIndex >= 0 && load3232(src, repIndex) == uint32(cv>>(repOff*8)) {
 					// Consider history as well.
 					var seq seq
+
 					length := 4 + e.matchlen(s+4+repOff, repIndex+4, src)
 
 					seq.matchLen = uint32(length - zstdMinMatch)
@@ -157,6 +170,7 @@ encodeLoop:
 						start--
 						seq.matchLen++
 					}
+
 					addLiterals(&seq, start)
 
 					// rep 0
@@ -164,20 +178,25 @@ encodeLoop:
 					if debugSequences {
 						println("repeat sequence", seq, "next s:", s)
 					}
+
 					blk.sequences = append(blk.sequences, seq)
 					s += length + repOff
+
 					nextEmit = s
 					if s >= sLimit {
 						if debugEncoder {
 							println("repeat ended", s, length)
-
 						}
+
 						break encodeLoop
 					}
+
 					cv = load6432(src, s)
+
 					continue
 				}
 			}
+
 			// Find the offsets of our two matches.
 			coffsetL := s - (candidateL.offset - e.cur)
 			coffsetS := s - (candidateS.offset - e.cur)
@@ -191,12 +210,15 @@ encodeLoop:
 				if debugAsserts && s <= t {
 					panic(fmt.Sprintf("s (%d) <= t (%d)", s, t))
 				}
+
 				if debugAsserts && s-t > e.maxMatchOff {
 					panic("s - t >e.maxMatchOff")
 				}
+
 				if debugMatches {
 					println("long match")
 				}
+
 				break
 			}
 
@@ -205,6 +227,7 @@ encodeLoop:
 				// found a regular match
 				// See if we can find a long match at s+1
 				const checkAt = 1
+
 				cv := load6432(src, s+checkAt)
 				nextHashL = hashLen(cv, dFastLongTableBits, dFastLongLen)
 				candidateL = e.longTable[nextHashL]
@@ -218,9 +241,11 @@ encodeLoop:
 					// but the likelihood of both the first 4 bytes and the hash matching should be enough.
 					t = candidateL.offset - e.cur
 					s += checkAt
+
 					if debugMatches {
 						println("long match (after short)")
 					}
+
 					break
 				}
 
@@ -228,15 +253,19 @@ encodeLoop:
 				if debugAsserts && s <= t {
 					panic(fmt.Sprintf("s (%d) <= t (%d)", s, t))
 				}
+
 				if debugAsserts && s-t > e.maxMatchOff {
 					panic("s - t >e.maxMatchOff")
 				}
+
 				if debugAsserts && t < 0 {
 					panic("t<0")
 				}
+
 				if debugMatches {
 					println("short match")
 				}
+
 				break
 			}
 
@@ -245,6 +274,7 @@ encodeLoop:
 			if s >= sLimit {
 				break encodeLoop
 			}
+
 			cv = load6432(src, s)
 		}
 
@@ -274,17 +304,23 @@ encodeLoop:
 
 		// Write our sequence
 		var seq seq
+
 		seq.litLen = uint32(s - nextEmit)
+
 		seq.matchLen = uint32(l - zstdMinMatch)
 		if seq.litLen > 0 {
 			blk.literals = append(blk.literals, src[nextEmit:s]...)
 		}
+
 		seq.offset = uint32(s-t) + 3
+
 		s += l
 		if debugSequences {
 			println("sequence", seq, "next s:", s)
 		}
+
 		blk.sequences = append(blk.sequences, seq)
+
 		nextEmit = s
 		if s >= sLimit {
 			break encodeLoop
@@ -341,18 +377,22 @@ encodeLoop:
 			// Since litlen is always 0, this is offset 1.
 			seq.offset = 1
 			s += l
+
 			nextEmit = s
 			if debugSequences {
 				println("sequence", seq, "next s:", s)
 			}
+
 			blk.sequences = append(blk.sequences, seq)
 
 			// Swap offset 1 and 2.
 			offset1, offset2 = offset2, offset1
+
 			if s >= sLimit {
 				// Finished
 				break encodeLoop
 			}
+
 			cv = load6432(src, s)
 		}
 	}
@@ -361,7 +401,9 @@ encodeLoop:
 		blk.literals = append(blk.literals, src[nextEmit:]...)
 		blk.extraLits = len(src) - int(nextEmit)
 	}
+
 	blk.recentOffsets[0] = uint32(offset1)
+
 	blk.recentOffsets[1] = uint32(offset2)
 	if debugEncoder {
 		println("returning, recent offsets:", blk.recentOffsets, "extra literals:", blk.extraLits)
@@ -384,18 +426,22 @@ func (e *doubleFastEncoder) EncodeNoHist(blk *blockEnc, src []byte) {
 		for i := range e.table[:] {
 			e.table[i] = tableEntry{}
 		}
+
 		for i := range e.longTable[:] {
 			e.longTable[i] = tableEntry{}
 		}
+
 		e.cur = e.maxMatchOff
 	}
 
 	s := int32(0)
+
 	blk.size = len(src)
 	if len(src) < minNonLiteralBlockSize {
 		blk.extraLits = len(src)
 		blk.literals = blk.literals[:len(src)]
 		copy(blk.literals, src)
+
 		return
 	}
 
@@ -419,9 +465,11 @@ func (e *doubleFastEncoder) EncodeNoHist(blk *blockEnc, src []byte) {
 		if until == nextEmit {
 			return
 		}
+
 		blk.literals = append(blk.literals, src[nextEmit:until]...)
 		s.litLen = uint32(until - nextEmit)
 	}
+
 	if debugEncoder {
 		println("recent offsets:", blk.recentOffsets)
 	}
@@ -430,13 +478,13 @@ encodeLoop:
 	for {
 		var t int32
 		for {
-
 			nextHashL := hashLen(cv, dFastLongTableBits, dFastLongLen)
 			nextHashS := hashLen(cv, dFastShortTableBits, dFastShortLen)
 			candidateL := e.longTable[nextHashL]
 			candidateS := e.table[nextHashS]
 
 			const repOff = 1
+
 			repIndex := s - offset1 + repOff
 			entry := tableEntry{offset: s + e.cur, val: uint32(cv)}
 			e.longTable[nextHashL] = entry
@@ -446,7 +494,7 @@ encodeLoop:
 				if load3232(src, repIndex) == uint32(cv>>(repOff*8)) {
 					// Consider history as well.
 					var seq seq
-					//length := 4 + e.matchlen(s+4+repOff, repIndex+4, src)
+					// length := 4 + e.matchlen(s+4+repOff, repIndex+4, src)
 					length := 4 + int32(matchLen(src[s+4+repOff:], src[repIndex+4:]))
 
 					seq.matchLen = uint32(length - zstdMinMatch)
@@ -464,6 +512,7 @@ encodeLoop:
 						start--
 						seq.matchLen++
 					}
+
 					addLiterals(&seq, start)
 
 					// rep 0
@@ -471,20 +520,25 @@ encodeLoop:
 					if debugSequences {
 						println("repeat sequence", seq, "next s:", s)
 					}
+
 					blk.sequences = append(blk.sequences, seq)
 					s += length + repOff
+
 					nextEmit = s
 					if s >= sLimit {
 						if debugEncoder {
 							println("repeat ended", s, length)
-
 						}
+
 						break encodeLoop
 					}
+
 					cv = load6432(src, s)
+
 					continue
 				}
 			}
+
 			// Find the offsets of our two matches.
 			coffsetL := s - (candidateL.offset - e.cur)
 			coffsetS := s - (candidateS.offset - e.cur)
@@ -498,12 +552,15 @@ encodeLoop:
 				if debugAsserts && s <= t {
 					panic(fmt.Sprintf("s (%d) <= t (%d). cur: %d", s, t, e.cur))
 				}
+
 				if debugAsserts && s-t > e.maxMatchOff {
 					panic("s - t >e.maxMatchOff")
 				}
+
 				if debugMatches {
 					println("long match")
 				}
+
 				break
 			}
 
@@ -512,6 +569,7 @@ encodeLoop:
 				// found a regular match
 				// See if we can find a long match at s+1
 				const checkAt = 1
+
 				cv := load6432(src, s+checkAt)
 				nextHashL = hashLen(cv, dFastLongTableBits, dFastLongLen)
 				candidateL = e.longTable[nextHashL]
@@ -525,9 +583,11 @@ encodeLoop:
 					// but the likelihood of both the first 4 bytes and the hash matching should be enough.
 					t = candidateL.offset - e.cur
 					s += checkAt
+
 					if debugMatches {
 						println("long match (after short)")
 					}
+
 					break
 				}
 
@@ -535,15 +595,19 @@ encodeLoop:
 				if debugAsserts && s <= t {
 					panic(fmt.Sprintf("s (%d) <= t (%d)", s, t))
 				}
+
 				if debugAsserts && s-t > e.maxMatchOff {
 					panic("s - t >e.maxMatchOff")
 				}
+
 				if debugAsserts && t < 0 {
 					panic("t<0")
 				}
+
 				if debugMatches {
 					println("short match")
 				}
+
 				break
 			}
 
@@ -552,6 +616,7 @@ encodeLoop:
 			if s >= sLimit {
 				break encodeLoop
 			}
+
 			cv = load6432(src, s)
 		}
 
@@ -565,7 +630,7 @@ encodeLoop:
 		}
 
 		// Extend the 4-byte match as long as possible.
-		//l := e.matchlen(s+4, t+4, src) + 4
+		// l := e.matchlen(s+4, t+4, src) + 4
 		l := int32(matchLen(src[s+4:], src[t+4:])) + 4
 
 		// Extend backwards
@@ -578,17 +643,23 @@ encodeLoop:
 
 		// Write our sequence
 		var seq seq
+
 		seq.litLen = uint32(s - nextEmit)
+
 		seq.matchLen = uint32(l - zstdMinMatch)
 		if seq.litLen > 0 {
 			blk.literals = append(blk.literals, src[nextEmit:s]...)
 		}
+
 		seq.offset = uint32(s-t) + 3
+
 		s += l
 		if debugSequences {
 			println("sequence", seq, "next s:", s)
 		}
+
 		blk.sequences = append(blk.sequences, seq)
+
 		nextEmit = s
 		if s >= sLimit {
 			break encodeLoop
@@ -634,7 +705,7 @@ encodeLoop:
 
 			// We have at least 4 byte match.
 			// No need to check backwards. We come straight from a match
-			//l := 4 + e.matchlen(s+4, o2+4, src)
+			// l := 4 + e.matchlen(s+4, o2+4, src)
 			l := 4 + int32(matchLen(src[s+4:], src[o2+4:]))
 
 			entry := tableEntry{offset: s + e.cur, val: uint32(cv)}
@@ -646,18 +717,22 @@ encodeLoop:
 			// Since litlen is always 0, this is offset 1.
 			seq.offset = 1
 			s += l
+
 			nextEmit = s
 			if debugSequences {
 				println("sequence", seq, "next s:", s)
 			}
+
 			blk.sequences = append(blk.sequences, seq)
 
 			// Swap offset 1 and 2.
 			offset1, offset2 = offset2, offset1
+
 			if s >= sLimit {
 				// Finished
 				break encodeLoop
 			}
+
 			cv = load6432(src, s)
 		}
 	}
@@ -666,6 +741,7 @@ encodeLoop:
 		blk.literals = append(blk.literals, src[nextEmit:]...)
 		blk.extraLits = len(src) - int(nextEmit)
 	}
+
 	if debugEncoder {
 		println("returning, recent offsets:", blk.recentOffsets, "extra literals:", blk.extraLits)
 	}
@@ -691,13 +767,17 @@ func (e *doubleFastEncoderDict) Encode(blk *blockEnc, src []byte) {
 			for i := range e.table[:] {
 				e.table[i] = tableEntry{}
 			}
+
 			for i := range e.longTable[:] {
 				e.longTable[i] = tableEntry{}
 			}
+
 			e.markAllShardsDirty()
 			e.cur = e.maxMatchOff
+
 			break
 		}
+
 		// Shift down everything in the table that isn't already too far away.
 		minOff := e.cur + int32(len(e.hist)) - e.maxMatchOff
 		for i := range e.table[:] {
@@ -707,8 +787,10 @@ func (e *doubleFastEncoderDict) Encode(blk *blockEnc, src []byte) {
 			} else {
 				v = v - e.cur + e.maxMatchOff
 			}
+
 			e.table[i].offset = v
 		}
+
 		for i := range e.longTable[:] {
 			v := e.longTable[i].offset
 			if v < minOff {
@@ -716,19 +798,24 @@ func (e *doubleFastEncoderDict) Encode(blk *blockEnc, src []byte) {
 			} else {
 				v = v - e.cur + e.maxMatchOff
 			}
+
 			e.longTable[i].offset = v
 		}
+
 		e.markAllShardsDirty()
 		e.cur = e.maxMatchOff
+
 		break
 	}
 
 	s := e.addBlock(src)
+
 	blk.size = len(src)
 	if len(src) < minNonLiteralBlockSize {
 		blk.extraLits = len(src)
 		blk.literals = blk.literals[:len(src)]
 		copy(blk.literals, src)
+
 		return
 	}
 
@@ -753,9 +840,11 @@ func (e *doubleFastEncoderDict) Encode(blk *blockEnc, src []byte) {
 		if until == nextEmit {
 			return
 		}
+
 		blk.literals = append(blk.literals, src[nextEmit:until]...)
 		s.litLen = uint32(until - nextEmit)
 	}
+
 	if debugEncoder {
 		println("recent offsets:", blk.recentOffsets)
 	}
@@ -777,6 +866,7 @@ encodeLoop:
 			candidateS := e.table[nextHashS]
 
 			const repOff = 1
+
 			repIndex := s - offset1 + repOff
 			entry := tableEntry{offset: s + e.cur, val: uint32(cv)}
 			e.longTable[nextHashL] = entry
@@ -788,6 +878,7 @@ encodeLoop:
 				if repIndex >= 0 && load3232(src, repIndex) == uint32(cv>>(repOff*8)) {
 					// Consider history as well.
 					var seq seq
+
 					length := 4 + e.matchlen(s+4+repOff, repIndex+4, src)
 
 					seq.matchLen = uint32(length - zstdMinMatch)
@@ -805,6 +896,7 @@ encodeLoop:
 						start--
 						seq.matchLen++
 					}
+
 					addLiterals(&seq, start)
 
 					// rep 0
@@ -812,20 +904,25 @@ encodeLoop:
 					if debugSequences {
 						println("repeat sequence", seq, "next s:", s)
 					}
+
 					blk.sequences = append(blk.sequences, seq)
 					s += length + repOff
+
 					nextEmit = s
 					if s >= sLimit {
 						if debugEncoder {
 							println("repeat ended", s, length)
-
 						}
+
 						break encodeLoop
 					}
+
 					cv = load6432(src, s)
+
 					continue
 				}
 			}
+
 			// Find the offsets of our two matches.
 			coffsetL := s - (candidateL.offset - e.cur)
 			coffsetS := s - (candidateS.offset - e.cur)
@@ -839,12 +936,15 @@ encodeLoop:
 				if debugAsserts && s <= t {
 					panic(fmt.Sprintf("s (%d) <= t (%d)", s, t))
 				}
+
 				if debugAsserts && s-t > e.maxMatchOff {
 					panic("s - t >e.maxMatchOff")
 				}
+
 				if debugMatches {
 					println("long match")
 				}
+
 				break
 			}
 
@@ -853,6 +953,7 @@ encodeLoop:
 				// found a regular match
 				// See if we can find a long match at s+1
 				const checkAt = 1
+
 				cv := load6432(src, s+checkAt)
 				nextHashL = hashLen(cv, dFastLongTableBits, dFastLongLen)
 				candidateL = e.longTable[nextHashL]
@@ -861,15 +962,18 @@ encodeLoop:
 				// We can store it, since we have at least a 4 byte match.
 				e.longTable[nextHashL] = tableEntry{offset: s + checkAt + e.cur, val: uint32(cv)}
 				e.markLongShardDirty(nextHashL)
+
 				if coffsetL < e.maxMatchOff && uint32(cv) == candidateL.val {
 					// Found a long match, likely at least 8 bytes.
 					// Reference encoder checks all 8 bytes, we only check 4,
 					// but the likelihood of both the first 4 bytes and the hash matching should be enough.
 					t = candidateL.offset - e.cur
 					s += checkAt
+
 					if debugMatches {
 						println("long match (after short)")
 					}
+
 					break
 				}
 
@@ -877,15 +981,19 @@ encodeLoop:
 				if debugAsserts && s <= t {
 					panic(fmt.Sprintf("s (%d) <= t (%d)", s, t))
 				}
+
 				if debugAsserts && s-t > e.maxMatchOff {
 					panic("s - t >e.maxMatchOff")
 				}
+
 				if debugAsserts && t < 0 {
 					panic("t<0")
 				}
+
 				if debugMatches {
 					println("short match")
 				}
+
 				break
 			}
 
@@ -894,6 +1002,7 @@ encodeLoop:
 			if s >= sLimit {
 				break encodeLoop
 			}
+
 			cv = load6432(src, s)
 		}
 
@@ -923,17 +1032,23 @@ encodeLoop:
 
 		// Write our sequence
 		var seq seq
+
 		seq.litLen = uint32(s - nextEmit)
+
 		seq.matchLen = uint32(l - zstdMinMatch)
 		if seq.litLen > 0 {
 			blk.literals = append(blk.literals, src[nextEmit:s]...)
 		}
+
 		seq.offset = uint32(s-t) + 3
+
 		s += l
 		if debugSequences {
 			println("sequence", seq, "next s:", s)
 		}
+
 		blk.sequences = append(blk.sequences, seq)
+
 		nextEmit = s
 		if s >= sLimit {
 			break encodeLoop
@@ -954,6 +1069,7 @@ encodeLoop:
 		e.longTable[longHash2] = te1
 		e.markLongShardDirty(longHash1)
 		e.markLongShardDirty(longHash2)
+
 		cv0 >>= 8
 		cv1 >>= 8
 		te0.offset++
@@ -994,24 +1110,29 @@ encodeLoop:
 			e.markLongShardDirty(nextHashL)
 			e.table[nextHashS] = entry
 			e.markShardDirty(nextHashS)
+
 			seq.matchLen = uint32(l) - zstdMinMatch
 			seq.litLen = 0
 
 			// Since litlen is always 0, this is offset 1.
 			seq.offset = 1
 			s += l
+
 			nextEmit = s
 			if debugSequences {
 				println("sequence", seq, "next s:", s)
 			}
+
 			blk.sequences = append(blk.sequences, seq)
 
 			// Swap offset 1 and 2.
 			offset1, offset2 = offset2, offset1
+
 			if s >= sLimit {
 				// Finished
 				break encodeLoop
 			}
+
 			cv = load6432(src, s)
 		}
 	}
@@ -1020,11 +1141,14 @@ encodeLoop:
 		blk.literals = append(blk.literals, src[nextEmit:]...)
 		blk.extraLits = len(src) - int(nextEmit)
 	}
+
 	blk.recentOffsets[0] = uint32(offset1)
+
 	blk.recentOffsets[1] = uint32(offset2)
 	if debugEncoder {
 		println("returning, recent offsets:", blk.recentOffsets, "extra literals:", blk.extraLits)
 	}
+
 	// If we encoded more than 64K mark all dirty.
 	if len(src) > 64<<10 {
 		e.markAllShardsDirty()
@@ -1034,6 +1158,7 @@ encodeLoop:
 // ResetDict will reset and set a dictionary if not nil
 func (e *doubleFastEncoder) Reset(d *dict, singleBlock bool) {
 	e.fastEncoder.Reset(d, singleBlock)
+
 	if d != nil {
 		panic("doubleFastEncoder: Reset with dict not supported")
 	}
@@ -1041,9 +1166,11 @@ func (e *doubleFastEncoder) Reset(d *dict, singleBlock bool) {
 
 func (e *doubleFastEncoder) ResetPrefix(prefix []byte) {
 	e.fastEncoder.ResetPrefix(prefix)
+
 	if len(prefix) < 8 {
 		return
 	}
+
 	end := e.cur + int32(len(prefix)) - 8
 	for i := e.cur + 1; i < end; i += 2 {
 		cv := load6432(prefix, i-e.cur)
@@ -1056,6 +1183,7 @@ func (e *doubleFastEncoderDict) Reset(d *dict, singleBlock bool) {
 	allDirty := e.allDirty
 	dictChanged := d != e.lastDict
 	e.fastEncoderDict.Reset(d, singleBlock)
+
 	if d == nil {
 		return
 	}
@@ -1067,12 +1195,14 @@ func (e *doubleFastEncoderDict) Reset(d *dict, singleBlock bool) {
 		} else {
 			clear(e.dictLongTable)
 		}
+
 		if len(d.content) >= 8 {
 			cv := load6432(d.content, 0)
 			e.dictLongTable[hashLen(cv, dFastLongTableBits, dFastLongLen)] = tableEntry{
 				val:    uint32(cv),
 				offset: e.maxMatchOff,
 			}
+
 			end := int32(len(d.content)) - 8 + e.maxMatchOff
 			for i := e.maxMatchOff + 1; i < end; i++ {
 				cv = cv>>8 | (uint64(d.content[i-e.maxMatchOff+7]) << 56)
@@ -1082,8 +1212,10 @@ func (e *doubleFastEncoderDict) Reset(d *dict, singleBlock bool) {
 				}
 			}
 		}
+
 		allDirty = true
 	}
+
 	// Reset table to initial state
 	e.cur = e.maxMatchOff
 
@@ -1097,13 +1229,15 @@ func (e *doubleFastEncoderDict) Reset(d *dict, singleBlock bool) {
 	}
 
 	if allDirty || dirtyShardCnt > dLongTableShardCnt/2 {
-		//copy(e.longTable[:], e.dictLongTable)
+		// copy(e.longTable[:], e.dictLongTable)
 		e.longTable = *(*[dFastLongTableSize]tableEntry)(e.dictLongTable)
 		for i := range e.longTableShardDirty {
 			e.longTableShardDirty[i] = false
 		}
+
 		return
 	}
+
 	for i := range e.longTableShardDirty {
 		if !e.longTableShardDirty[i] {
 			continue

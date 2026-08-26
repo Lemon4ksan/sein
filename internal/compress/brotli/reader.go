@@ -11,8 +11,10 @@ func (err decodeError) Error() string {
 	return "brotli: " + string(decoderErrorString(int(err)))
 }
 
-var errExcessiveInput = errors.New("brotli: excessive input")
-var errInvalidState = errors.New("brotli: invalid state")
+var (
+	errExcessiveInput = errors.New("brotli: excessive input")
+	errInvalidState   = errors.New("brotli: invalid state")
+)
 
 // readBufSize is a "good" buffer size that avoids excessive round-trips
 // between C and Go but doesn't waste too much memory on buffering.
@@ -22,7 +24,8 @@ const readBufSize = 32 * 1024
 // NewReader creates a new Reader reading the given reader.
 func NewReader(src io.Reader) *Reader {
 	r := new(Reader)
-	r.Reset(src)
+	_ = r.Reset(src)
+
 	return r
 }
 
@@ -36,27 +39,16 @@ func (r *Reader) Reset(src io.Reader) error {
 		// undefined. Clear out everything but the buffers.
 		*r = Reader{
 			buf:              r.buf,
-			block_type_trees: r.block_type_trees,
-			literal_hgroup: huffmanTreeGroup{
-				htrees: r.literal_hgroup.htrees,
-				codes:  r.literal_hgroup.codes,
-			},
-			distance_hgroup: huffmanTreeGroup{
-				htrees: r.distance_hgroup.htrees,
-				codes:  r.distance_hgroup.codes,
-			},
-			insert_copy_hgroup: huffmanTreeGroup{
-				htrees: r.insert_copy_hgroup.htrees,
-				codes:  r.insert_copy_hgroup.codes,
-			},
+			customDictionary: r.customDictionary,
 		}
+	} else {
+		decoderStateCleanup(r)
+		decoderStateInit(r)
 	}
 
-	decoderStateInit(r)
 	r.src = src
-	if r.buf == nil {
-		r.buf = make([]byte, readBufSize)
-	}
+	r.in = nil
+
 	return nil
 }
 
@@ -67,9 +59,11 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 			if readErr == io.EOF && r.state != stateDone {
 				readErr = io.ErrUnexpectedEOF
 			}
+
 			// If readErr is `nil`, we just proxy underlying stream behavior.
 			return 0, readErr
 		}
+
 		r.in = r.buf[:m]
 	}
 
@@ -79,6 +73,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 
 	for {
 		var written uint
+
 		in_len := uint(len(r.in))
 		out_len := uint(len(p))
 		in_remaining := in_len
@@ -92,6 +87,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 			if len(r.in) > 0 {
 				return n, errExcessiveInput
 			}
+
 			return n, nil
 		case decoderResultError:
 			return n, decodeError(decoderGetErrorCode(r))
@@ -99,6 +95,7 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 			if n == 0 {
 				return 0, io.ErrShortBuffer
 			}
+
 			return n, nil
 		case decoderNeedsMoreInput:
 		}
@@ -119,8 +116,10 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 			if err == io.EOF {
 				return 0, io.ErrUnexpectedEOF
 			}
+
 			return 0, err
 		}
+
 		r.in = r.buf[:encN]
 	}
 }

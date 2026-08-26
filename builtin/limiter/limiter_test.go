@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/foundation/testkit/assert"
+
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/builtin/limiter"
 )

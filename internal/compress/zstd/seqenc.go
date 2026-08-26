@@ -26,8 +26,18 @@ func (s seq) String() string {
 		if s.offset == 0 {
 			return fmt.Sprint("litLen:", s.litLen, ", matchLen:", s.matchLen+zstdMinMatch, ", offset: INVALID (0)")
 		}
-		return fmt.Sprint("litLen:", s.litLen, ", matchLen:", s.matchLen+zstdMinMatch, ", offset:", s.offset, " (repeat)")
+
+		return fmt.Sprint(
+			"litLen:",
+			s.litLen,
+			", matchLen:",
+			s.matchLen+zstdMinMatch,
+			", offset:",
+			s.offset,
+			" (repeat)",
+		)
 	}
+
 	return fmt.Sprint("litLen:", s.litLen, ", matchLen:", s.matchLen+zstdMinMatch, ", offset:", s.offset-3, " (new)")
 }
 
@@ -52,11 +62,14 @@ func (s *seqCoders) setPrev(ll, ml, of *fseEncoder) {
 			p := *prev
 			c.reUsed = false
 			p.reUsed = true
+
 			return
 		}
+
 		if used == *prev {
 			return
 		}
+
 		// Ensure we cannot reuse by accident
 		prevEnc := *prev
 		prevEnc.symbolLen = 0
@@ -96,9 +109,11 @@ var llBitsTable = [maxLLCode + 1]byte{
 // llCode returns the code that represents the literal length requested.
 func llCode(litLength uint32) uint8 {
 	const llDeltaCode = 19
+
 	if litLength <= 63 {
 		return llCodeTable[litLength&63]
 	}
+
 	return uint8(highBit(litLength)) + llDeltaCode
 }
 
@@ -131,9 +146,11 @@ var mlBitsTable = [maxMLCode + 1]byte{
 // because it's the format it's stored in seqStore->sequences
 func mlCode(mlBase uint32) uint8 {
 	const mlDeltaCode = 36
+
 	if mlBase <= 127 {
 		return mlCodeTable[mlBase&127]
 	}
+
 	return uint8(highBit(mlBase)) + mlDeltaCode
 }
 

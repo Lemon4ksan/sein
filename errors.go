@@ -40,6 +40,7 @@ func resolveMessage(code string, message ...string) string {
 	if len(message) > 0 && message[0] != "" {
 		return message[0]
 	}
+
 	return code
 }
 
@@ -67,6 +68,7 @@ func (d DefinedError) Error() string {
 	if d.cause != nil {
 		return fmt.Sprintf("[%s] %s (cause: %v)", d.code, d.message, d.cause)
 	}
+
 	return fmt.Sprintf("[%s] %s", d.code, d.message)
 }
 
@@ -74,6 +76,7 @@ func (d DefinedError) HTTPStatus() int {
 	if d.status == 0 {
 		return http.StatusInternalServerError
 	}
+
 	return d.status
 }
 
@@ -104,7 +107,9 @@ func (d DefinedError) WithDetail(key string, val any) DefinedError {
 	if d.details == nil {
 		d.details = make(map[string]any)
 	}
+
 	d.details[key] = val
+
 	return d
 }
 
@@ -127,6 +132,7 @@ func (e HTTPError) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("HTTP %d [%s]: %s (cause: %v)", e.Status, e.Code, e.Message, e.Cause)
 	}
+
 	return fmt.Sprintf("HTTP %d [%s]: %s", e.Status, e.Code, e.Message)
 }
 
@@ -134,6 +140,7 @@ func (e HTTPError) HTTPStatus() int {
 	if e.Status == 0 {
 		return http.StatusInternalServerError
 	}
+
 	return e.Status
 }
 
@@ -155,6 +162,7 @@ func NewError(status int, message string, cause ...error) HTTPError {
 	if len(cause) > 0 {
 		c = cause[0]
 	}
+
 	return HTTPError{
 		Status:  status,
 		Code:    http.StatusText(status),
@@ -217,9 +225,11 @@ func AsHTTPError(err error) (HTTPError, bool) {
 	if err == nil {
 		return HTTPError{}, false
 	}
+
 	var httpErr HTTPError
 	if errors.As(err, &httpErr) {
 		return httpErr, true
 	}
+
 	return HTTPError{}, false
 }

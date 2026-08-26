@@ -10,7 +10,7 @@ import (
 	"unsafe"
 )
 
-const hasVectorWS = true
+const HasVectorWS = true
 
 // VectorApplyFastMask applies the 4-byte WebSocket XOR mask key to payload using AVX2/NEON SIMD.
 func VectorApplyFastMask(payload []byte, mask [4]byte) {

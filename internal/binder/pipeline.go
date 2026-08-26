@@ -34,7 +34,12 @@ func CompileFieldStep(b *FieldBinding) FieldStep {
 	}
 }
 
-func compileScalarStep(b *FieldBinding, extract StringExtractorFunc, transforms []TransformFunc, validators []ValidatorFunc) FieldStep {
+func compileScalarStep(
+	b *FieldBinding,
+	extract StringExtractorFunc,
+	transforms []TransformFunc,
+	validators []ValidatorFunc,
+) FieldStep {
 	setter := CompileSetter(b.FieldType, b.Kind, b.Source, b.Key, b.Format, b.IsHex, b.IsBase64)
 	offset := b.Offset
 
@@ -43,15 +48,22 @@ func compileScalarStep(b *FieldBinding, extract StringExtractorFunc, transforms 
 		if err != nil || !opt.IsPresent() {
 			return err
 		}
+
 		raw, err := processRaw(opt.MustValue(), transforms, validators)
 		if err != nil {
 			return err
 		}
+
 		return setter(unsafe.Add(structPtr, offset), raw)
 	}
 }
 
-func compilePointerStep(b *FieldBinding, extract StringExtractorFunc, transforms []TransformFunc, validators []ValidatorFunc) FieldStep {
+func compilePointerStep(
+	b *FieldBinding,
+	extract StringExtractorFunc,
+	transforms []TransformFunc,
+	validators []ValidatorFunc,
+) FieldStep {
 	elemType := b.FieldType.Elem()
 	setter := CompileSetter(elemType, b.ElemKind, b.Source, b.Key, b.Format, b.IsHex, b.IsBase64)
 	offset := b.Offset
@@ -61,6 +73,7 @@ func compilePointerStep(b *FieldBinding, extract StringExtractorFunc, transforms
 		if err != nil || !opt.IsPresent() {
 			return err
 		}
+
 		raw, err := processRaw(opt.MustValue(), transforms, validators)
 		if err != nil {
 			return err
@@ -69,6 +82,7 @@ func compilePointerStep(b *FieldBinding, extract StringExtractorFunc, transforms
 		fieldPtr := unsafe.Add(structPtr, offset)
 		valPtr := reflect.New(elemType).UnsafePointer()
 		*(*unsafe.Pointer)(fieldPtr) = valPtr
+
 		return setter(valPtr, raw)
 	}
 }
@@ -93,6 +107,7 @@ func compileSliceStep(b *FieldBinding, extract StringExtractorFunc, transforms [
 		if hasMin && float64(len(vals)) < minVal {
 			return ValidationError{Message: fmt.Sprintf("%s slice length must be at least %v", key, minVal)}
 		}
+
 		if hasMax && float64(len(vals)) > maxVal {
 			return ValidationError{Message: fmt.Sprintf("%s slice length must be at most %v", key, maxVal)}
 		}
@@ -102,6 +117,7 @@ func compileSliceStep(b *FieldBinding, extract StringExtractorFunc, transforms [
 			for _, t := range transforms {
 				v = t(v)
 			}
+
 			elemPtr := sliceVal.Index(i).Addr().UnsafePointer()
 			if err := elemSetter(elemPtr, v); err != nil {
 				return err
@@ -109,6 +125,7 @@ func compileSliceStep(b *FieldBinding, extract StringExtractorFunc, transforms [
 		}
 
 		reflect.NewAt(sliceType, unsafe.Add(structPtr, offset)).Elem().Set(sliceVal)
+
 		return nil
 	}
 }
@@ -117,11 +134,13 @@ func processRaw(raw string, transforms []TransformFunc, validators []ValidatorFu
 	for _, t := range transforms {
 		raw = t(raw)
 	}
+
 	for _, v := range validators {
 		if err := v(raw); err != nil {
 			return "", err
 		}
 	}
+
 	return raw, nil
 }
 
@@ -136,6 +155,7 @@ func extractSliceValues(req RequestView, source ParamSource, key, raw, sep strin
 			}
 		}
 	}
+
 	if len(vals) == 0 && raw != "" {
 		for item := range strings.SplitSeq(raw, sep) {
 			if item = strings.TrimSpace(item); item != "" {
@@ -143,5 +163,6 @@ func extractSliceValues(req RequestView, source ParamSource, key, raw, sep strin
 			}
 		}
 	}
+
 	return generic.Map(vals, strings.TrimSpace)
 }

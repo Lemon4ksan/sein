@@ -25,6 +25,7 @@ func TestRequestParsing_BasicGET(t *testing.T) {
 		"\r\n"
 
 	br := bufio.NewReader(stringsReader(rawReq))
+
 	var req h1.Request
 
 	err := req.ReadRequest(br, nil, 1024*1024)
@@ -35,18 +36,23 @@ func TestRequestParsing_BasicGET(t *testing.T) {
 	if req.Method != "GET" {
 		t.Errorf("expected Method GET, got %q", req.Method)
 	}
+
 	if req.Path != "/api/v1/users" {
 		t.Errorf("expected Path /api/v1/users, got %q", req.Path)
 	}
+
 	if req.Query != "page=2&limit=50" {
 		t.Errorf("expected Query page=2&limit=50, got %q", req.Query)
 	}
+
 	if req.Proto != "HTTP/1.1" {
 		t.Errorf("expected Proto HTTP/1.1, got %q", req.Proto)
 	}
+
 	if req.Host != "api.vlhl.tf" {
 		t.Errorf("expected Host api.vlhl.tf, got %q", req.Host)
 	}
+
 	if req.Headers.Get("User-Agent") != "test-agent" {
 		t.Errorf("expected User-Agent test-agent, got %q", req.Headers.Get("User-Agent"))
 	}
@@ -62,6 +68,7 @@ func TestRequestParsing_POSTWithBody(t *testing.T) {
 		body
 
 	br := bufio.NewReader(stringsReader(rawReq))
+
 	var req h1.Request
 
 	err := req.ReadRequest(br, nil, 1024*1024)
@@ -72,6 +79,7 @@ func TestRequestParsing_POSTWithBody(t *testing.T) {
 	if req.Method != "POST" {
 		t.Errorf("expected Method POST, got %q", req.Method)
 	}
+
 	if string(req.Body) != body {
 		t.Errorf("expected body %q, got %q", body, string(req.Body))
 	}
@@ -88,6 +96,7 @@ func TestRequestParsing_ChunkedBody(t *testing.T) {
 		"0\r\n\r\n"
 
 	br := bufio.NewReader(stringsReader(rawReq))
+
 	var req h1.Request
 
 	err := req.ReadRequest(br, nil, 1024*1024)
@@ -103,6 +112,7 @@ func TestRequestParsing_ChunkedBody(t *testing.T) {
 
 func TestResponseSerialization(t *testing.T) {
 	var res h1.Response
+
 	res.StatusCode = 201
 	res.Headers.Set("Content-Type", "application/json")
 	res.Cookies = append(res.Cookies, &http.Cookie{
@@ -113,6 +123,7 @@ func TestResponseSerialization(t *testing.T) {
 	res.Body = []byte(`{"created":true}`)
 
 	var buf bytes.Buffer
+
 	bw := bufio.NewWriter(&buf)
 
 	err := res.WriteTo(bw, true)
@@ -124,15 +135,19 @@ func TestResponseSerialization(t *testing.T) {
 	if !bytes.Contains([]byte(out), []byte("HTTP/1.1 201 Created\r\n")) {
 		t.Errorf("missing status line in response: %s", out)
 	}
+
 	if !bytes.Contains([]byte(out), []byte("Connection: keep-alive\r\n")) {
 		t.Errorf("missing keep-alive in response: %s", out)
 	}
+
 	if !bytes.Contains([]byte(out), []byte("Content-Length: 16\r\n")) {
 		t.Errorf("missing content-length in response: %s", out)
 	}
+
 	if !bytes.Contains([]byte(out), []byte("Set-Cookie: token=secret123; Path=/\r\n")) {
 		t.Errorf("missing set-cookie in response: %s", out)
 	}
+
 	if !bytes.Contains([]byte(out), []byte(`{"created":true}`)) {
 		t.Errorf("missing body in response: %s", out)
 	}
@@ -147,6 +162,7 @@ func TestConnHandler_EndToEndKeepAlive(t *testing.T) {
 			res.StatusCode = 200
 			res.Headers.Set("Content-Type", "text/plain")
 			res.Body = []byte("Hello, " + req.Path)
+
 			return nil
 		},
 	}
@@ -159,6 +175,7 @@ func TestConnHandler_EndToEndKeepAlive(t *testing.T) {
 	_, _ = clientConn.Write([]byte("GET /first HTTP/1.1\r\nHost: localhost\r\n\r\n"))
 
 	br := bufio.NewReader(clientConn)
+
 	line1, err := br.ReadString('\n')
 	if err != nil || line1 != "HTTP/1.1 200 OK\r\n" {
 		t.Fatalf("expected 200 OK, got line: %q, err: %v", line1, err)
@@ -171,7 +188,9 @@ func TestConnHandler_EndToEndKeepAlive(t *testing.T) {
 			break
 		}
 	}
+
 	body1 := make([]byte, len("Hello, /first"))
+
 	_, _ = io.ReadFull(br, body1)
 	if string(body1) != "Hello, /first" {
 		t.Errorf("expected body 'Hello, /first', got %q", string(body1))
@@ -184,13 +203,16 @@ func TestConnHandler_EndToEndKeepAlive(t *testing.T) {
 	if err != nil || line2 != "HTTP/1.1 200 OK\r\n" {
 		t.Fatalf("expected 200 OK on 2nd req, got line: %q, err: %v", line2, err)
 	}
+
 	for {
 		l, _ := br.ReadString('\n')
 		if l == "\r\n" {
 			break
 		}
 	}
+
 	body2 := make([]byte, len("Hello, /second"))
+
 	_, _ = io.ReadFull(br, body2)
 	if string(body2) != "Hello, /second" {
 		t.Errorf("expected body 'Hello, /second', got %q", string(body2))
@@ -244,7 +266,9 @@ func TestRequest_Expect100Continue(t *testing.T) {
 
 	// 1. Client sends headers with Expect: 100-continue
 	go func() {
-		_, _ = clientConn.Write([]byte("POST /upload HTTP/1.1\r\nHost: localhost\r\nExpect: 100-continue\r\nContent-Length: 12\r\n\r\n"))
+		_, _ = clientConn.Write(
+			[]byte("POST /upload HTTP/1.1\r\nHost: localhost\r\nExpect: 100-continue\r\nContent-Length: 12\r\n\r\n"),
+		)
 	}()
 
 	br := bufio.NewReader(clientConn)
@@ -253,6 +277,7 @@ func TestRequest_Expect100Continue(t *testing.T) {
 	if err != nil || line1 != "HTTP/1.1 100 Continue\r\n" {
 		t.Fatalf("expected 100 Continue, got line: %q, err: %v", line1, err)
 	}
+
 	line2, err := br.ReadString('\n')
 	if err != nil || line2 != "\r\n" {
 		t.Fatalf("expected CRLF after 100 Continue, got: %q", line2)
@@ -280,11 +305,14 @@ func TestRequest_Hijack(t *testing.T) {
 			if err != nil {
 				return err
 			}
+
 			go func() {
 				defer conn.Close()
+
 				_, _ = rw.WriteString("CUSTOM_BINARY_PROTOCOL_OK\n")
 				_ = rw.Flush()
 			}()
+
 			return nil
 		},
 	}
@@ -296,6 +324,7 @@ func TestRequest_Hijack(t *testing.T) {
 	_, _ = clientConn.Write([]byte("GET /upgrade HTTP/1.1\r\nHost: localhost\r\nUpgrade: custom\r\n\r\n"))
 
 	br := bufio.NewReader(clientConn)
+
 	msg, err := br.ReadString('\n')
 	if err != nil {
 		t.Fatalf("failed reading hijacked connection: %v", err)
@@ -312,12 +341,14 @@ func TestRequestParsing_RFC9112_LeadingCRLF(t *testing.T) {
 	// RFC 9112 §2.2: Server SHOULD ignore empty lines before request-line
 	rawReq := "\r\n\r\nGET /ping HTTP/1.1\r\nHost: localhost\r\n\r\n"
 	br := bufio.NewReader(stringsReader(rawReq))
+
 	var req h1.Request
 
 	err := req.ReadRequest(br, nil, 1024)
 	if err != nil {
 		t.Fatalf("unexpected error parsing request with leading CRLFs: %v", err)
 	}
+
 	if req.Path != "/ping" {
 		t.Errorf("expected Path /ping, got %q", req.Path)
 	}
@@ -327,6 +358,7 @@ func TestRequestParsing_RFC9112_MissingHost(t *testing.T) {
 	// RFC 9112 §3.2: HTTP/1.1 request MUST include Host header
 	rawReq := "GET /ping HTTP/1.1\r\nUser-Agent: test\r\n\r\n"
 	br := bufio.NewReader(stringsReader(rawReq))
+
 	var req h1.Request
 
 	err := req.ReadRequest(br, nil, 1024)

@@ -15,6 +15,7 @@ import (
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/builtin/static"
 )
@@ -63,7 +64,7 @@ func TestStatic_DiskFolder_And_ByteRange(t *testing.T) {
 	tempDir := t.TempDir()
 	testData := []byte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	filePath := filepath.Join(tempDir, "data.txt")
-	err := os.WriteFile(filePath, testData, 0644)
+	err := os.WriteFile(filePath, testData, 0o644)
 	require.NoError(t, err)
 
 	s := sein.New()
@@ -76,6 +77,7 @@ func TestStatic_DiskFolder_And_ByteRange(t *testing.T) {
 	// Range request: bytes=10-19
 	req := httptest.NewRequest("GET", "/data.txt", nil)
 	req.Header.Set(header.Range, "bytes=10-19")
+
 	w := httptest.NewRecorder()
 
 	s.ServeHTTP(w, req)

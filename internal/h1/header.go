@@ -43,6 +43,7 @@ func (h *Headers) Set(key, val string) {
 			return
 		}
 	}
+
 	h.entries = append(h.entries, HeaderEntry{Key: key, Value: val})
 }
 
@@ -58,6 +59,7 @@ func (h *Headers) Get(key string) string {
 			return h.entries[i].Value
 		}
 	}
+
 	return ""
 }
 
@@ -68,6 +70,7 @@ func (h *Headers) Has(key string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -80,6 +83,7 @@ func (h *Headers) Del(key string) {
 			n++
 		}
 	}
+
 	h.entries = h.entries[:n]
 }
 
@@ -99,6 +103,7 @@ func (h *Headers) ParseHeaderLine(line []byte) bool {
 	val := strings.TrimSpace(bytesconv.B2S(line[colonIdx+1:]))
 
 	h.entries = append(h.entries, HeaderEntry{Key: key, Value: val})
+
 	return true
 }
 
@@ -108,6 +113,7 @@ func (h *Headers) IsKeepAlive(proto string) bool {
 	if proto == "HTTP/1.0" {
 		return bytesconv.EqualFoldASCII(connHeader, header.ValueKeepAlive)
 	}
+
 	// HTTP/1.1 is keep-alive by default unless explicitly closed
 	return !bytesconv.EqualFoldASCII(connHeader, header.ValueClose)
 }

@@ -46,6 +46,7 @@ func (res *Response) WriteTo(bw *bufio.Writer, keepAlive bool) error {
 		if statusText == "" {
 			statusText = "Unknown"
 		}
+
 		_, _ = bw.WriteString("HTTP/1.1 ")
 		_, _ = bw.WriteString(strconv.Itoa(status))
 		_ = bw.WriteByte(' ')
@@ -109,9 +110,11 @@ func (res *Response) WriteTo(bw *bufio.Writer, keepAlive bool) error {
 		cw := NewChunkedWriter(bw)
 		err := res.StreamWriter(cw)
 		closeErr := cw.Close()
+
 		if err != nil {
 			return err
 		}
+
 		return closeErr
 	}
 

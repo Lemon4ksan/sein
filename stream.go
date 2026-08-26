@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+
 	"github.com/lemon4ksan/sein/internal/h1"
 )
 
@@ -38,7 +39,9 @@ func (s StreamWriterResponse) WithHeader(key, val string) StreamWriterResponse {
 	if s.Headers == nil {
 		s.Headers = make(http.Header)
 	}
+
 	s.Headers.Set(key, val)
+
 	return s
 }
 
@@ -54,11 +57,13 @@ func (s StreamWriterResponse) WriteToH1(res *h1.Response) error {
 	if status == 0 {
 		status = http.StatusOK
 	}
+
 	res.StatusCode = status
 
 	if s.ContentType != "" {
 		res.Headers.Set(header.ContentType, s.ContentType)
 	}
+
 	for k, vv := range s.Headers {
 		for _, v := range vv {
 			res.Headers.Add(k, v)
@@ -66,6 +71,7 @@ func (s StreamWriterResponse) WriteToH1(res *h1.Response) error {
 	}
 
 	res.StreamWriter = s.WriterFunc
+
 	return nil
 }
 
@@ -79,6 +85,7 @@ func (s StreamWriterResponse) WriteResponse(w http.ResponseWriter) error {
 	if s.ContentType != "" {
 		w.Header().Set(header.ContentType, s.ContentType)
 	}
+
 	for k, vv := range s.Headers {
 		for _, v := range vv {
 			w.Header().Add(k, v)
@@ -93,6 +100,7 @@ func (s StreamWriterResponse) WriteResponse(w http.ResponseWriter) error {
 	if s.WriterFunc != nil {
 		return s.WriterFunc(fw)
 	}
+
 	return nil
 }
 
@@ -106,6 +114,7 @@ func (fw *flushingWriter) Write(p []byte) (n int, err error) {
 	if fw.flusher != nil {
 		fw.flusher.Flush()
 	}
+
 	return n, err
 }
 
@@ -122,13 +131,15 @@ func NewSSESender(w io.Writer) *SSESender {
 // Send emits a simple data-only SSE message.
 func (s *SSESender) Send(data string) error {
 	var sb strings.Builder
-	for _, line := range strings.Split(data, "\n") {
+	for line := range strings.SplitSeq(data, "\n") {
 		sb.WriteString("data: ")
 		sb.WriteString(line)
 		sb.WriteString("\n")
 	}
+
 	sb.WriteString("\n")
 	_, err := io.WriteString(s.w, sb.String())
+
 	return err
 }
 
@@ -140,13 +151,16 @@ func (s *SSESender) SendEvent(event, data string) error {
 		sb.WriteString(event)
 		sb.WriteString("\n")
 	}
-	for _, line := range strings.Split(data, "\n") {
+
+	for line := range strings.SplitSeq(data, "\n") {
 		sb.WriteString("data: ")
 		sb.WriteString(line)
 		sb.WriteString("\n")
 	}
+
 	sb.WriteString("\n")
 	_, err := io.WriteString(s.w, sb.String())
+
 	return err
 }
 
@@ -156,6 +170,7 @@ func (s *SSESender) SendJSON(event string, payload any) error {
 	if err != nil {
 		return err
 	}
+
 	return s.SendEvent(event, string(data))
 }
 
@@ -191,7 +206,9 @@ func (r SSEResponse) WithHeader(key, val string) SSEResponse {
 	if r.Headers == nil {
 		r.Headers = make(http.Header)
 	}
+
 	r.Headers.Set(key, val)
+
 	return r
 }
 
@@ -201,17 +218,21 @@ func (r SSEResponse) WriteToH1(res *h1.Response) error {
 	res.Headers.Set(header.ContentType, "text/event-stream")
 	res.Headers.Set(header.CacheControl, "no-cache")
 	res.Headers.Set(header.Connection, "keep-alive")
+
 	for k, vv := range r.Headers {
 		for _, v := range vv {
 			res.Headers.Add(k, v)
 		}
 	}
+
 	res.StreamWriter = func(w io.Writer) error {
 		if r.StreamFunc != nil {
 			return r.StreamFunc(NewSSESender(w))
 		}
+
 		return nil
 	}
+
 	return nil
 }
 
@@ -220,11 +241,13 @@ func (r SSEResponse) WriteResponse(w http.ResponseWriter) error {
 	w.Header().Set(header.ContentType, "text/event-stream")
 	w.Header().Set(header.CacheControl, "no-cache")
 	w.Header().Set(header.Connection, "keep-alive")
+
 	for k, vv := range r.Headers {
 		for _, v := range vv {
 			w.Header().Add(k, v)
 		}
 	}
+
 	w.WriteHeader(http.StatusOK)
 
 	flusher, _ := w.(http.Flusher)
@@ -234,5 +257,6 @@ func (r SSEResponse) WriteResponse(w http.ResponseWriter) error {
 	if r.StreamFunc != nil {
 		return r.StreamFunc(sse)
 	}
+
 	return nil
 }

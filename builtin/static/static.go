@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/foundation/timekit"
+
 	"github.com/lemon4ksan/sein"
 )
 
@@ -62,7 +64,9 @@ func New(root string, config ...Config) sein.RawHandler {
 	if len(config) > 0 {
 		cfg = config[0]
 	}
+
 	cfg.Root = root
+
 	return createStaticServer(cfg)
 }
 
@@ -72,7 +76,9 @@ func NewFS(fileSystem fs.FS, config ...Config) sein.RawHandler {
 	if len(config) > 0 {
 		cfg = config[0]
 	}
+
 	cfg.FS = fileSystem
+
 	return createStaticServer(cfg)
 }
 
@@ -104,6 +110,7 @@ func createStaticServer(cfg Config) sein.RawHandler {
 				return nil, sein.ErrNotFound("file not found")
 			}
 		}
+
 		defer f.Close()
 
 		// Compute ETag from ModTime and Size
@@ -118,7 +125,7 @@ func createStaticServer(cfg Config) sein.RawHandler {
 		// Check If-Modified-Since
 		ifModSince := req.Header(header.IfModifiedSince)
 		if ifModSince != "" {
-			t, err := http.ParseTime(ifModSince)
+			t, err := timekit.ParseHTTPDate(ifModSince)
 			if err == nil && !modTime.After(t.Add(1*time.Second)) {
 				return sein.NotModified(), nil
 			}
@@ -126,6 +133,7 @@ func createStaticServer(cfg Config) sein.RawHandler {
 
 		// Determine Content-Type
 		ext := filepath.Ext(resolvedPath)
+
 		contentType := mime.TypeByExtension(ext)
 		if contentType == "" {
 			contentType = "application/octet-stream"
@@ -134,10 +142,12 @@ func createStaticServer(cfg Config) sein.RawHandler {
 		headers := make(http.Header)
 		headers.Set(header.ContentType, contentType)
 		headers.Set(header.ETag, etag)
-		headers.Set(header.LastModified, modTime.UTC().Format(http.TimeFormat))
+		headers.Set(header.LastModified, timekit.FormatHTTPDate(modTime))
+
 		if cfg.CacheControl != "" {
 			headers.Set(header.CacheControl, cfg.CacheControl)
 		}
+
 		if cfg.ByteRange {
 			headers.Set(header.AcceptRanges, "bytes")
 		}
@@ -155,43 +165,67 @@ func createStaticServer(cfg Config) sein.RawHandler {
 		}
 
 		headers.Set(header.ContentLength, strconv.FormatInt(int64(len(data)), 10))
+
 		return sein.StatusWith(http.StatusOK, data, headers), nil
 	}
 }
 
 func serveRange(f io.ReadSeeker, totalSize int64, rangeHdr string, headers http.Header) (any, error) {
 	ranges := strings.TrimPrefix(rangeHdr, "bytes=")
+
 	parts := strings.Split(ranges, "-")
 	if len(parts) != 2 {
-		return nil, sein.NewHTTPError(http.StatusRequestedRangeNotSatisfiable, "RANGE_NOT_SATISFIABLE", "invalid range header")
+		return nil, sein.NewHTTPError(
+			http.StatusRequestedRangeNotSatisfiable,
+			"RANGE_NOT_SATISFIABLE",
+			"invalid range header",
+		)
 	}
 
-	var start, end int64
-	var err error
+	var (
+		start, end int64
+		err        error
+	)
 
 	if parts[0] == "" {
 		// Suffix range: bytes=-500 (last 500 bytes)
 		suffixLen, err := strconv.ParseInt(parts[1], 10, 64)
 		if err != nil || suffixLen <= 0 {
-			return nil, sein.NewHTTPError(http.StatusRequestedRangeNotSatisfiable, "RANGE_NOT_SATISFIABLE", "invalid range suffix")
+			return nil, sein.NewHTTPError(
+				http.StatusRequestedRangeNotSatisfiable,
+				"RANGE_NOT_SATISFIABLE",
+				"invalid range suffix",
+			)
 		}
+
 		start = totalSize - suffixLen
 		if start < 0 {
 			start = 0
 		}
+
 		end = totalSize - 1
 	} else {
 		start, err = strconv.ParseInt(parts[0], 10, 64)
 		if err != nil || start < 0 || start >= totalSize {
-			return nil, sein.NewHTTPError(http.StatusRequestedRangeNotSatisfiable, "RANGE_NOT_SATISFIABLE", "range start out of bounds")
+			return nil, sein.NewHTTPError(
+				http.StatusRequestedRangeNotSatisfiable,
+				"RANGE_NOT_SATISFIABLE",
+				"range start out of bounds",
+			)
 		}
+
 		if parts[1] == "" {
 			end = totalSize - 1
 		} else {
 			end, err = strconv.ParseInt(parts[1], 10, 64)
 			if err != nil || end < start {
-				return nil, sein.NewHTTPError(http.StatusRequestedRangeNotSatisfiable, "RANGE_NOT_SATISFIABLE", "invalid range end")
+				return nil, sein.NewHTTPError(
+					http.StatusRequestedRangeNotSatisfiable,
+					"RANGE_NOT_SATISFIABLE",
+					"invalid range end",
+				)
 			}
+
 			if end >= totalSize {
 				end = totalSize - 1
 			}
@@ -233,6 +267,7 @@ func openFile(cfg Config, requestPath string) (fileReadSeeker, time.Time, int64,
 		if err != nil {
 			return nil, time.Time{}, 0, "", false
 		}
+
 		st, err := f.Stat()
 		if err != nil || st.IsDir() {
 			_ = f.Close()
@@ -246,6 +281,7 @@ func openFile(cfg Config, requestPath string) (fileReadSeeker, time.Time, int64,
 		// Buffer into memory reader
 		data, err := io.ReadAll(f)
 		_ = f.Close()
+
 		if err != nil {
 			return nil, time.Time{}, 0, "", false
 		}
@@ -255,10 +291,12 @@ func openFile(cfg Config, requestPath string) (fileReadSeeker, time.Time, int64,
 
 	if cfg.Root != "" {
 		fullPath := filepath.Join(cfg.Root, filepath.FromSlash(relPath))
+
 		f, err := os.Open(fullPath)
 		if err != nil {
 			return nil, time.Time{}, 0, "", false
 		}
+
 		st, err := f.Stat()
 		if err != nil || st.IsDir() {
 			_ = f.Close()

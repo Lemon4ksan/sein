@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/internal/compress"
 	"github.com/lemon4ksan/sein/internal/compress/zstd"
@@ -79,17 +80,21 @@ func New(opts ...Option) sein.Middleware {
 			}
 
 			// Extract raw response bytes and existing headers
-			var rawBytes []byte
-			var contentType string
-			var status int
-			var existingHeaders http.Header
+			var (
+				rawBytes        []byte
+				contentType     string
+				status          int
+				existingHeaders http.Header
+			)
 
 			if holder, ok := res.(sein.ResponseHolder); ok {
 				status = holder.StatusCode()
+
 				existingHeaders = holder.ResponseHeaders()
 				if existingHeaders != nil {
 					contentType = existingHeaders.Get(header.ContentType)
 				}
+
 				body := holder.ResponseBody()
 				switch b := body.(type) {
 				case nil:
@@ -100,6 +105,7 @@ func New(opts ...Option) sein.Middleware {
 					rawBytes = []byte(b)
 				default:
 					rawBytes, _ = json.Marshal(b)
+
 					if contentType == "" {
 						contentType = header.MIMEApplicationJSONCharsetUTF8
 					}
@@ -127,16 +133,20 @@ func New(opts ...Option) sein.Middleware {
 				if status != 0 {
 					resp = resp.WithStatus(status)
 				}
+
 				if contentType != "" {
 					resp = resp.WithHeader(header.ContentType, contentType)
 				}
+
 				for k, vv := range existingHeaders {
-					if !strings.EqualFold(k, header.ContentEncoding) && !strings.EqualFold(k, header.Vary) && !strings.EqualFold(k, header.ContentLength) {
+					if !strings.EqualFold(k, header.ContentEncoding) && !strings.EqualFold(k, header.Vary) &&
+						!strings.EqualFold(k, header.ContentLength) {
 						for _, v := range vv {
 							resp = resp.WithHeader(k, v)
 						}
 					}
 				}
+
 				return resp, nil
 			}
 

@@ -31,10 +31,12 @@ func Ingest[T any](req RequestView, dest *T) error {
 		if err := ing.IngestAny(req); err != nil {
 			return err
 		}
+
 		return RunValidation(dest)
 	}
 
 	typ := reflect.TypeFor[T]()
+
 	desc := GetDescriptor(typ)
 	if desc == nil {
 		if len(req.Body()) > 0 {
@@ -42,6 +44,7 @@ func Ingest[T any](req RequestView, dest *T) error {
 				return err
 			}
 		}
+
 		return RunValidation(dest)
 	}
 

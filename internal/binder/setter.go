@@ -49,19 +49,29 @@ func (e ScalarError) Unwrap() error {
 }
 
 // CompileSetter precompiles a typed, non-branching memory writer for typ and kind at startup.
-func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key string, format string, isHex, isBase64 bool) TypedSetter {
+func CompileSetter(
+	typ reflect.Type,
+	kind reflect.Kind,
+	src ParamSource,
+	key, format string,
+	isHex, isBase64 bool,
+) TypedSetter {
 	if s := compileBinarySetter(typ, isHex, isBase64, src, key); s != nil {
 		return s
 	}
+
 	if s := compileUnmarshalerSetter(typ, src, key); s != nil {
 		return s
 	}
+
 	if s := compileSpecialTypeSetter(typ, src, key, format); s != nil {
 		return s
 	}
+
 	if s := compileNumericSetter(kind, src, key); s != nil {
 		return s
 	}
+
 	if s := compilePrimitiveSetter(kind, src, key); s != nil {
 		return s
 	}
@@ -82,7 +92,9 @@ func compileBinarySetter(typ reflect.Type, isHex, isBase64 bool, src ParamSource
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*[]byte)(ptr) = data
+
 			return nil
 		}
 	}
@@ -93,7 +105,9 @@ func compileBinarySetter(typ reflect.Type, isHex, isBase64 bool, src ParamSource
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*[]byte)(ptr) = data
+
 			return nil
 		}
 	}
@@ -108,6 +122,7 @@ func compileUnmarshalerSetter(typ reflect.Type, src ParamSource, key string) Typ
 			if err := val.UnmarshalText([]byte(raw)); err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			return nil
 		}
 	}
@@ -123,7 +138,9 @@ func compileSpecialTypeSetter(typ reflect.Type, src ParamSource, key, format str
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*uuid.UUID)(ptr) = u
+
 			return nil
 		}
 
@@ -133,7 +150,9 @@ func compileSpecialTypeSetter(typ reflect.Type, src ParamSource, key, format str
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*time.Time)(ptr) = t
+
 			return nil
 		}
 
@@ -143,7 +162,9 @@ func compileSpecialTypeSetter(typ reflect.Type, src ParamSource, key, format str
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*time.Duration)(ptr) = d
+
 			return nil
 		}
 
@@ -153,7 +174,9 @@ func compileSpecialTypeSetter(typ reflect.Type, src ParamSource, key, format str
 			if ip == nil {
 				return ScalarError{Source: src, Key: key, Cause: errors.New("invalid IP address")}
 			}
+
 			*(*net.IP)(ptr) = ip
+
 			return nil
 		}
 
@@ -163,7 +186,9 @@ func compileSpecialTypeSetter(typ reflect.Type, src ParamSource, key, format str
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*netip.Addr)(ptr) = addr
+
 			return nil
 		}
 
@@ -180,7 +205,9 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*uint64)(ptr) = v
+
 			return nil
 		}
 
@@ -190,7 +217,9 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*uint32)(ptr) = uint32(v)
+
 			return nil
 		}
 
@@ -200,7 +229,9 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*uint16)(ptr) = uint16(v)
+
 			return nil
 		}
 
@@ -210,7 +241,9 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*uint8)(ptr) = uint8(v)
+
 			return nil
 		}
 
@@ -220,7 +253,9 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*int64)(ptr) = v
+
 			return nil
 		}
 
@@ -230,7 +265,9 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*int32)(ptr) = int32(v)
+
 			return nil
 		}
 
@@ -240,7 +277,9 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*int16)(ptr) = int16(v)
+
 			return nil
 		}
 
@@ -250,7 +289,9 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*int8)(ptr) = int8(v)
+
 			return nil
 		}
 
@@ -260,7 +301,9 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*float64)(ptr) = v
+
 			return nil
 		}
 
@@ -270,7 +313,9 @@ func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedS
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*float32)(ptr) = float32(v)
+
 			return nil
 		}
 
@@ -293,7 +338,9 @@ func compilePrimitiveSetter(kind reflect.Kind, src ParamSource, key string) Type
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+
 			*(*bool)(ptr) = v
+
 			return nil
 		}
 
@@ -303,25 +350,31 @@ func compilePrimitiveSetter(kind reflect.Kind, src ParamSource, key string) Type
 }
 
 // ParseTime parses a timestamp string using optional custom layout, RFC3339, DateOnly, or Unix millis.
-func ParseTime(s string, customFormat string) (time.Time, error) {
+func ParseTime(s, customFormat string) (time.Time, error) {
 	if customFormat != "" {
 		return time.Parse(customFormat, s)
 	}
+
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil
 	}
+
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
 	}
+
 	if t, err := time.Parse(time.DateOnly, s); err == nil {
 		return t, nil
 	}
+
 	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
 		if n > 1e11 {
 			return time.UnixMilli(n), nil
 		}
+
 		return time.Unix(n, 0), nil
 	}
+
 	return time.Time{}, errors.New("invalid date/time format")
 }
 

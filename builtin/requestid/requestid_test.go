@@ -13,6 +13,7 @@ import (
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/builtin/requestid"
 )
@@ -51,6 +52,7 @@ func TestRequestID_PreserveIncoming(t *testing.T) {
 	req := httptest.NewRequest("GET", "/id", nil)
 	incomingID := "custom-trace-uuid-12345"
 	req.Header.Set(header.XRequestID, incomingID)
+
 	w := httptest.NewRecorder()
 
 	s.ServeHTTP(w, req)

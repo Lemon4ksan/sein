@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+
 	"github.com/lemon4ksan/sein/internal/fast/h2engine"
 	"github.com/lemon4ksan/sein/internal/fast/h3engine"
 	"github.com/lemon4ksan/sein/internal/h1"
@@ -80,6 +81,7 @@ func New(opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(s)
 	}
+
 	return s
 }
 
@@ -87,12 +89,15 @@ func New(opts ...Option) *Server {
 func (s *Server) MapError(target error, domainErr DomainError) *Server {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.errorMappers = append(s.errorMappers, func(err error) (DomainError, bool) {
 		if errors.Is(err, target) {
 			return domainErr, true
 		}
+
 		return nil, false
 	})
+
 	return s
 }
 
@@ -100,7 +105,9 @@ func (s *Server) MapError(target error, domainErr DomainError) *Server {
 func (s *Server) MapErrorFunc(fn ErrorMapper) *Server {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.errorMappers = append(s.errorMappers, fn)
+
 	return s
 }
 
@@ -108,6 +115,7 @@ func (s *Server) MapErrorFunc(fn ErrorMapper) *Server {
 func (s *Server) Use(mw ...Middleware) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.middlewares = append(s.middlewares, mw...)
 }
 
@@ -132,6 +140,7 @@ func (s *Server) registerRoute(method, path string, handler RawHandler, mw ...Mi
 func (s *Server) NoRoute(handler RawHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.noRouteHandler = handler
 }
 
@@ -148,6 +157,7 @@ func (s *Server) NoRoute(handler RawHandler) {
 func (s *Server) NoMethod(handler RawHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.noMethodHandler = handler
 }
 
@@ -174,22 +184,27 @@ func (s *Server) SetTrustedProxies(proxies []string) error {
 			if err != nil {
 				return err
 			}
+
 			parsed = append(parsed, ipNet)
 		} else {
 			ip := net.ParseIP(p)
 			if ip == nil {
 				return fmt.Errorf("sein: invalid trusted proxy IP %q", p)
 			}
+
 			var mask net.IPMask
 			if ip.To4() != nil {
 				mask = net.CIDRMask(32, 32)
 			} else {
 				mask = net.CIDRMask(128, 128)
 			}
+
 			parsed = append(parsed, &net.IPNet{IP: ip, Mask: mask})
 		}
 	}
+
 	s.trustedProxies = parsed
+
 	return nil
 }
 
@@ -202,6 +217,7 @@ func (s *Server) SetTrustedProxies(proxies []string) error {
 func (s *Server) SetTrustedPlatform(platformHeader string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.trustedPlatform = platformHeader
 }
 
@@ -290,7 +306,9 @@ func (s *Server) DeleteReq[Res any](path string, fn func(*Request) (Res, error),
 	routeDeleteReq(s, path, fn, mw...)
 }
 
-func (s *Server) resolveRoute(method, path string) (handler RawHandler, params map[string]string, allowHeader string, redirectURL string, redirectCode int, status int) {
+func (s *Server) resolveRoute(
+	method, path string,
+) (handler RawHandler, params map[string]string, allowHeader, redirectURL string, redirectCode, status int) {
 	h, p, found := s.router.Match(method, path)
 	if found {
 		return h, p, "", "", 0, http.StatusOK
@@ -303,6 +321,7 @@ func (s *Server) resolveRoute(method, path string) (handler RawHandler, params m
 			if method != http.MethodGet && method != http.MethodHead {
 				code = http.StatusTemporaryRedirect
 			}
+
 			return nil, nil, "", altPath, code, code
 		}
 	}
@@ -322,6 +341,7 @@ func (s *Server) resolveRoute(method, path string) (handler RawHandler, params m
 			if s.noMethodHandler != nil {
 				return s.noMethodHandler, nil, allowHdr, "", 0, http.StatusMethodNotAllowed
 			}
+
 			return nil, nil, allowHdr, "", 0, http.StatusMethodNotAllowed
 		}
 	}
@@ -341,15 +361,20 @@ func (s *Server) dispatchH1(h1Req *h1.Request, h1Res *h1.Response) error {
 		res := Redirect(redirectURL, redirectCode)
 		return s.serializeH1Result(h1Res, res)
 	}
+
 	if handler == nil {
 		if status == http.StatusMethodNotAllowed {
 			if allowHeader != "" {
 				h1Res.Headers.Set(header.Allow, allowHeader)
 			}
+
 			s.writeH1Error(h1Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+
 			return nil
 		}
+
 		s.writeH1Error(h1Res, ErrNotFound("route not found"))
+
 		return nil
 	}
 
@@ -386,23 +411,32 @@ func (s *Server) serializeH1Result(res *h1.Response, result any) error {
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMEApplicationOctetStream)
 		}
+
 		res.Body = append(res.Body, v...)
+
 		return nil
+
 	case string:
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
 		}
+
 		res.Body = append(res.Body, v...)
+
 		return nil
+
 	default:
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
 		}
+
 		data, err := json.Marshal(v)
 		if err != nil {
 			return err
 		}
+
 		res.Body = append(res.Body, data...)
+
 		return nil
 	}
 }
@@ -422,10 +456,12 @@ func (s *Server) writeH1Error(res *h1.Response, err error) {
 		}
 	}
 
-	var resp errorResponse
-	var definedErr DefinedError
-	var domainErr DomainError
-	var httpErr HTTPError
+	var (
+		resp       errorResponse
+		definedErr DefinedError
+		domainErr  DomainError
+		httpErr    HTTPError
+	)
 
 	switch {
 	case errors.As(err, &definedErr):
@@ -435,12 +471,14 @@ func (s *Server) writeH1Error(res *h1.Response, err error) {
 			Message: definedErr.Message(),
 			Details: definedErr.Details(),
 		}
+
 	case errors.As(err, &domainErr):
 		resp = errorResponse{
 			Status:  domainErr.HTTPStatus(),
 			Code:    domainErr.ErrorCode(),
 			Message: domainErr.Error(),
 		}
+
 	case errors.As(err, &httpErr):
 		resp = errorResponse{
 			Status:  httpErr.HTTPStatus(),
@@ -448,6 +486,7 @@ func (s *Server) writeH1Error(res *h1.Response, err error) {
 			Message: httpErr.Message,
 			Details: httpErr.Details,
 		}
+
 	default:
 		resp = errorResponse{
 			Status:  http.StatusInternalServerError,
@@ -458,6 +497,7 @@ func (s *Server) writeH1Error(res *h1.Response, err error) {
 
 	res.StatusCode = resp.Status
 	res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+
 	data, _ := json.Marshal(resp)
 	res.Body = data
 }
@@ -469,18 +509,24 @@ func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.Serve
 		res := Redirect(redirectURL, redirectCode)
 		return s.serializeH2Result(h2Res, res)
 	}
+
 	if handler == nil {
 		if status == http.StatusMethodNotAllowed {
 			if h2Res.Headers == nil {
 				h2Res.Headers = make(http.Header)
 			}
+
 			if allowHeader != "" {
 				h2Res.Headers.Set(header.Allow, allowHeader)
 			}
+
 			s.writeH2Error(h2Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+
 			return nil
 		}
+
 		s.writeH2Error(h2Res, ErrNotFound("route not found"))
+
 		return nil
 	}
 
@@ -511,10 +557,12 @@ func (s *Server) serializeH2Result(res *h2engine.ServerResponse, result any) err
 		if res.StatusCode == 0 {
 			res.StatusCode = http.StatusOK
 		}
+
 		res.Headers = holder.ResponseHeaders()
 		if res.Headers == nil {
 			res.Headers = make(http.Header)
 		}
+
 		body := holder.ResponseBody()
 		switch b := body.(type) {
 		case nil:
@@ -530,10 +578,12 @@ func (s *Server) serializeH2Result(res *h2engine.ServerResponse, result any) err
 			if err != nil {
 				return err
 			}
+
 			res.Body = data
 			if res.Headers.Get(header.ContentType) == "" {
 				res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
 			}
+
 			return nil
 		}
 	}
@@ -549,23 +599,32 @@ func (s *Server) serializeH2Result(res *h2engine.ServerResponse, result any) err
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMEApplicationOctetStream)
 		}
+
 		res.Body = append(res.Body, v...)
+
 		return nil
+
 	case string:
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
 		}
+
 		res.Body = append(res.Body, v...)
+
 		return nil
+
 	default:
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
 		}
+
 		data, err := json.Marshal(v)
 		if err != nil {
 			return err
 		}
+
 		res.Body = append(res.Body, data...)
+
 		return nil
 	}
 }
@@ -578,10 +637,12 @@ func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
 		}
 	}
 
-	var resp errorResponse
-	var definedErr DefinedError
-	var domainErr DomainError
-	var httpErr HTTPError
+	var (
+		resp       errorResponse
+		definedErr DefinedError
+		domainErr  DomainError
+		httpErr    HTTPError
+	)
 
 	switch {
 	case errors.As(err, &definedErr):
@@ -591,12 +652,14 @@ func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
 			Message: definedErr.Message(),
 			Details: definedErr.Details(),
 		}
+
 	case errors.As(err, &domainErr):
 		resp = errorResponse{
 			Status:  domainErr.HTTPStatus(),
 			Code:    domainErr.ErrorCode(),
 			Message: domainErr.Error(),
 		}
+
 	case errors.As(err, &httpErr):
 		resp = errorResponse{
 			Status:  httpErr.HTTPStatus(),
@@ -604,6 +667,7 @@ func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
 			Message: httpErr.Message,
 			Details: httpErr.Details,
 		}
+
 	default:
 		resp = errorResponse{
 			Status:  http.StatusInternalServerError,
@@ -615,8 +679,10 @@ func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
 	if res.Headers == nil {
 		res.Headers = make(http.Header)
 	}
+
 	res.StatusCode = resp.Status
 	res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+
 	data, _ := json.Marshal(resp)
 	res.Body = data
 }
@@ -628,18 +694,24 @@ func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.Serve
 		res := Redirect(redirectURL, redirectCode)
 		return s.serializeH3Result(h3Res, res)
 	}
+
 	if handler == nil {
 		if status == http.StatusMethodNotAllowed {
 			if h3Res.Headers == nil {
 				h3Res.Headers = make(http.Header)
 			}
+
 			if allowHeader != "" {
 				h3Res.Headers.Set(header.Allow, allowHeader)
 			}
+
 			s.writeH3Error(h3Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+
 			return nil
 		}
+
 		s.writeH3Error(h3Res, ErrNotFound("route not found"))
+
 		return nil
 	}
 
@@ -670,10 +742,12 @@ func (s *Server) serializeH3Result(res *h3engine.ServerResponse, result any) err
 		if res.StatusCode == 0 {
 			res.StatusCode = http.StatusOK
 		}
+
 		res.Headers = holder.ResponseHeaders()
 		if res.Headers == nil {
 			res.Headers = make(http.Header)
 		}
+
 		body := holder.ResponseBody()
 		switch b := body.(type) {
 		case nil:
@@ -689,10 +763,12 @@ func (s *Server) serializeH3Result(res *h3engine.ServerResponse, result any) err
 			if err != nil {
 				return err
 			}
+
 			res.Body = data
 			if res.Headers.Get(header.ContentType) == "" {
 				res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
 			}
+
 			return nil
 		}
 	}
@@ -708,23 +784,32 @@ func (s *Server) serializeH3Result(res *h3engine.ServerResponse, result any) err
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMEApplicationOctetStream)
 		}
+
 		res.Body = append(res.Body, v...)
+
 		return nil
+
 	case string:
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
 		}
+
 		res.Body = append(res.Body, v...)
+
 		return nil
+
 	default:
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
 		}
+
 		data, err := json.Marshal(v)
 		if err != nil {
 			return err
 		}
+
 		res.Body = append(res.Body, data...)
+
 		return nil
 	}
 }
@@ -737,10 +822,12 @@ func (s *Server) writeH3Error(res *h3engine.ServerResponse, err error) {
 		}
 	}
 
-	var resp errorResponse
-	var definedErr DefinedError
-	var domainErr DomainError
-	var httpErr HTTPError
+	var (
+		resp       errorResponse
+		definedErr DefinedError
+		domainErr  DomainError
+		httpErr    HTTPError
+	)
 
 	switch {
 	case errors.As(err, &definedErr):
@@ -750,12 +837,14 @@ func (s *Server) writeH3Error(res *h3engine.ServerResponse, err error) {
 			Message: definedErr.Message(),
 			Details: definedErr.Details(),
 		}
+
 	case errors.As(err, &domainErr):
 		resp = errorResponse{
 			Status:  domainErr.HTTPStatus(),
 			Code:    domainErr.ErrorCode(),
 			Message: domainErr.Error(),
 		}
+
 	case errors.As(err, &httpErr):
 		resp = errorResponse{
 			Status:  httpErr.HTTPStatus(),
@@ -763,6 +852,7 @@ func (s *Server) writeH3Error(res *h3engine.ServerResponse, err error) {
 			Message: httpErr.Message,
 			Details: httpErr.Details,
 		}
+
 	default:
 		resp = errorResponse{
 			Status:  http.StatusInternalServerError,
@@ -774,8 +864,10 @@ func (s *Server) writeH3Error(res *h3engine.ServerResponse, err error) {
 	if res.Headers == nil {
 		res.Headers = make(http.Header)
 	}
+
 	res.StatusCode = resp.Status
 	res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+
 	data, _ := json.Marshal(resp)
 	res.Body = data
 }
@@ -788,15 +880,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(redirectCode)
 		return
 	}
+
 	if handler == nil {
 		if status == http.StatusMethodNotAllowed {
 			if allowHeader != "" {
 				w.Header().Set(header.Allow, allowHeader)
 			}
+
 			s.writeError(w, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+
 			return
 		}
+
 		s.writeError(w, ErrNotFound("route not found"))
+
 		return
 	}
 
@@ -818,6 +915,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := responder.WriteResponse(w); err != nil {
 			s.writeError(w, ErrInternal("failed to write response", err))
 		}
+
 		return
 	}
 
@@ -832,10 +930,12 @@ func (s *Server) writeError(w http.ResponseWriter, err error) {
 		}
 	}
 
-	var resp errorResponse
-	var definedErr DefinedError
-	var domainErr DomainError
-	var httpErr HTTPError
+	var (
+		resp       errorResponse
+		definedErr DefinedError
+		domainErr  DomainError
+		httpErr    HTTPError
+	)
 
 	switch {
 	case errors.As(err, &definedErr):
@@ -845,12 +945,14 @@ func (s *Server) writeError(w http.ResponseWriter, err error) {
 			Message: definedErr.Message(),
 			Details: definedErr.Details(),
 		}
+
 	case errors.As(err, &domainErr):
 		resp = errorResponse{
 			Status:  domainErr.HTTPStatus(),
 			Code:    domainErr.ErrorCode(),
 			Message: domainErr.Error(),
 		}
+
 	case errors.As(err, &httpErr):
 		resp = errorResponse{
 			Status:  httpErr.HTTPStatus(),
@@ -858,6 +960,7 @@ func (s *Server) writeError(w http.ResponseWriter, err error) {
 			Message: httpErr.Message,
 			Details: httpErr.Details,
 		}
+
 	default:
 		resp = errorResponse{
 			Status:  http.StatusInternalServerError,
@@ -912,7 +1015,7 @@ func (s *Server) Listen(addr string) error {
 }
 
 // ListenAndServeQUIC starts the native HTTP/3 server over UDP using TLS.
-func (s *Server) ListenAndServeQUIC(addr string, certFile, keyFile string) error {
+func (s *Server) ListenAndServeQUIC(addr, certFile, keyFile string) error {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return err
@@ -938,6 +1041,7 @@ func (s *Server) ListenAndServeQUIC(addr string, certFile, keyFile string) error
 		if err != nil {
 			return err
 		}
+
 		sc := h3engine.NewServerConn(conn, s.DispatchH3)
 		go func() {
 			_ = sc.Serve()
@@ -947,7 +1051,7 @@ func (s *Server) ListenAndServeQUIC(addr string, certFile, keyFile string) error
 
 // ListenAndServeUniversal starts the unified multi-protocol engine on port addr (e.g. :443)
 // serving HTTP/1.1, HTTP/2, and WebSockets over TCP, and HTTP/3 over UDP.
-func (s *Server) ListenAndServeUniversal(addr string, certFile, keyFile string) error {
+func (s *Server) ListenAndServeUniversal(addr, certFile, keyFile string) error {
 	errCh := make(chan error, 2)
 
 	// 1. Start HTTP/3 over UDP
@@ -967,9 +1071,11 @@ func (s *Server) ListenAndServeUniversal(addr string, certFile, keyFile string) 
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if s.h1Server != nil {
 		return s.h1Server.Shutdown(ctx)
 	}
+
 	return nil
 }
 

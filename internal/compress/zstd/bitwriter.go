@@ -53,6 +53,7 @@ func (b *bitWriter) addBits64NC(value uint64, bits uint8) {
 		b.addBits32Clean(uint32(value), bits)
 		return
 	}
+
 	b.addBits32Clean(uint32(value), 32)
 	b.flush32()
 	b.addBits32Clean(uint32(value>>32), bits-32)
@@ -78,6 +79,7 @@ func (b *bitWriter) flush32() {
 	if b.nBits < 32 {
 		return
 	}
+
 	b.out = append(b.out,
 		byte(b.bitContainer),
 		byte(b.bitContainer>>8),
@@ -93,6 +95,7 @@ func (b *bitWriter) flushAlign() {
 	for i := range nbBytes {
 		b.out = append(b.out, byte(b.bitContainer>>(i*8)))
 	}
+
 	b.nBits = 0
 	b.bitContainer = 0
 }

@@ -6,7 +6,7 @@ import (
 	"unsafe"
 )
 
-const hasVectorChunk = true
+const HasVectorChunk = true
 
 func vectorParseHexUint(src []byte) (int, int, error) {
 	n := len(src)
@@ -15,6 +15,7 @@ func vectorParseHexUint(src []byte) (int, int, error) {
 	}
 
 	var outVal uint64
+
 	res := int(h1_parse_hex_uint(
 		uint64(uintptr(unsafe.Pointer(&src[0]))),
 		uint64(n),

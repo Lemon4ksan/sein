@@ -35,6 +35,7 @@ func NewGroup(parent RouteBuilder, prefix string, mw ...Middleware) *Group {
 func (g *Group) Group(prefix string, mw ...Middleware) *Group {
 	combinedPrefix := joinPaths(g.prefix, prefix)
 	combinedMW := append(slices.Clone(g.middlewares), mw...)
+
 	return &Group{
 		parent:      g.parent,
 		prefix:      combinedPrefix,
@@ -137,9 +138,11 @@ func cleanPrefix(prefix string) string {
 	if prefix == "" || prefix == "/" {
 		return ""
 	}
+
 	if !strings.HasPrefix(prefix, "/") {
 		prefix = "/" + prefix
 	}
+
 	return strings.TrimSuffix(prefix, "/")
 }
 
@@ -148,16 +151,21 @@ func joinPaths(base, path string) string {
 		if path == "" {
 			return "/"
 		}
+
 		if !strings.HasPrefix(path, "/") {
 			return "/" + path
 		}
+
 		return path
 	}
+
 	if path == "" || path == "/" {
 		return base
 	}
+
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
+
 	return strings.TrimSuffix(base, "/") + path
 }

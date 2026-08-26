@@ -61,20 +61,27 @@ func (e *Encoder) startJobWorkers() {
 
 	for range n {
 		js.workerWg.Add(1)
+
 		go e.jobWorker()
 	}
+
 	js.flusherWg.Add(1)
+
 	go e.jobFlusher()
+
 	js.started = true
 }
 
 func (e *Encoder) jobWorker() {
 	js := &e.state.jobs
 	defer js.workerWg.Done()
+
 	for job := range js.jobCh {
 		enc := <-e.encoders
 		e.compressJob(enc, job)
+
 		e.encoders <- enc
+
 		close(job.done)
 	}
 }
@@ -83,6 +90,7 @@ func (e *Encoder) compressJob(enc encoder, job *encJob) {
 	defer func() {
 		if r := recover(); r != nil {
 			job.err = fmt.Errorf("panic in parallel job: %v", r)
+
 			rdebug.PrintStack()
 		}
 	}()
@@ -100,6 +108,7 @@ func (e *Encoder) compressJob(enc encoder, job *encJob) {
 		blk.last = true
 		blk.encodeRaw(nil)
 		job.output = append(job.output, blk.output...)
+
 		return
 	}
 
@@ -109,6 +118,7 @@ func (e *Encoder) compressJob(enc encoder, job *encJob) {
 		if len(todo) > e.o.blockSize {
 			todo = todo[:e.o.blockSize]
 		}
+
 		data = data[len(todo):]
 
 		blk.pushOffsets()
@@ -120,6 +130,7 @@ func (e *Encoder) compressJob(enc encoder, job *encJob) {
 			job.err = err
 			return
 		}
+
 		job.output = append(job.output, blk.output...)
 		blk.reset(nil)
 	}
@@ -128,11 +139,13 @@ func (e *Encoder) compressJob(enc encoder, job *encJob) {
 func (js *jobState) getInputBuf(size int) []byte {
 	if v := js.inputPool.Get(); v != nil {
 		bp := v.(*[]byte)
+
 		b := *bp
 		if cap(b) >= size {
 			return b[:0]
 		}
 	}
+
 	return make([]byte, 0, size)
 }
 
@@ -146,11 +159,13 @@ func (js *jobState) putInputBuf(b []byte) {
 func (js *jobState) getOutputBuf(size int) []byte {
 	if v := js.outputPool.Get(); v != nil {
 		bp := v.(*[]byte)
+
 		b := *bp
 		if cap(b) >= size {
 			return b[:0]
 		}
 	}
+
 	return make([]byte, 0, size)
 }
 
@@ -164,11 +179,13 @@ func (js *jobState) putOutputBuf(b []byte) {
 func (js *jobState) getOverlapBuf(size int) []byte {
 	if v := js.overlapPool.Get(); v != nil {
 		bp := v.(*[]byte)
+
 		b := *bp
 		if cap(b) >= size {
 			return b[:size]
 		}
 	}
+
 	return make([]byte, size)
 }
 
@@ -182,6 +199,7 @@ func (js *jobState) putOverlapBuf(b []byte) {
 func (e *Encoder) jobFlusher() {
 	js := &e.state.jobs
 	defer js.flusherWg.Done()
+
 	for job := range js.resultCh {
 		<-job.done
 		// Worker has fully exited compressJob, so the prefix is no longer
@@ -190,15 +208,19 @@ func (e *Encoder) jobFlusher() {
 			js.putOverlapBuf(job.prefix)
 			job.prefix = nil
 		}
+
 		if job.err != nil {
 			js.mu.Lock()
 			js.flusherErr = job.err
 			js.cond.Broadcast()
 			js.mu.Unlock()
+
 			for range js.resultCh {
 			}
+
 			return
 		}
+
 		if len(job.output) > 0 {
 			_, err := e.state.w.Write(job.output)
 			if err != nil {
@@ -206,12 +228,16 @@ func (e *Encoder) jobFlusher() {
 				js.flusherErr = err
 				js.cond.Broadcast()
 				js.mu.Unlock()
+
 				for range js.resultCh {
 				}
+
 				return
 			}
+
 			e.state.nWritten += int64(len(job.output))
 		}
+
 		// Return buffers to pools.
 		js.putInputBuf(job.input)
 		js.putOutputBuf(job.output)
@@ -230,6 +256,7 @@ func (e *Encoder) shutdownJobWorkers() {
 	if !js.started {
 		return
 	}
+
 	close(js.jobCh)
 	js.workerWg.Wait()
 	close(js.resultCh)
@@ -243,10 +270,12 @@ func (e *Encoder) waitAllJobs() {
 	if !js.started {
 		return
 	}
+
 	js.mu.Lock()
 	for js.flushedSeq < js.jobSeq && js.flusherErr == nil {
 		js.cond.Wait()
 	}
+
 	js.mu.Unlock()
 }
 
@@ -257,6 +286,7 @@ func (e *Encoder) dispatchJob(final bool) error {
 	js.mu.Lock()
 	fErr := js.flusherErr
 	js.mu.Unlock()
+
 	if fErr != nil {
 		return fErr
 	}
@@ -265,11 +295,14 @@ func (e *Encoder) dispatchJob(final bool) error {
 		// Single-block optimization: fall through to encodeAll path.
 		if final && len(js.filling) > 0 && len(js.filling) <= e.o.blockSize {
 			s.current = e.encodeAll(s.encoder, js.filling, s.current[:0])
+
 			var n2 int
+
 			n2, s.err = s.w.Write(s.current)
 			if s.err != nil {
 				return s.err
 			}
+
 			s.nWritten += int64(n2)
 			s.nInput += int64(len(js.filling))
 			s.current = s.current[:0]
@@ -277,16 +310,20 @@ func (e *Encoder) dispatchJob(final bool) error {
 			s.headerWritten = true
 			s.fullFrameWritten = true
 			s.eofWritten = true
+
 			return nil
 		}
+
 		if final && len(js.filling) == 0 && !e.o.fullZero {
 			s.headerWritten = true
 			s.fullFrameWritten = true
 			s.eofWritten = true
+
 			return nil
 		}
 
 		var tmp [maxHeaderSize]byte
+
 		fh := frameHeader{
 			ContentSize:   uint64(s.frameContentSize),
 			WindowSize:    uint32(s.encoder.WindowSize(s.frameContentSize)),
@@ -295,11 +332,14 @@ func (e *Encoder) dispatchJob(final bool) error {
 			DictID:        0,
 		}
 		dst := fh.appendTo(tmp[:0])
+
 		var n2 int
+
 		n2, s.err = s.w.Write(dst)
 		if s.err != nil {
 			return s.err
 		}
+
 		s.nWritten += int64(n2)
 		s.headerWritten = true
 	}
@@ -348,6 +388,7 @@ func (e *Encoder) dispatchJob(final bool) error {
 	}
 
 	js.resultCh <- job
+
 	js.jobCh <- job
 
 	return nil

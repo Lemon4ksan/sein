@@ -12,9 +12,9 @@ package quic
 import (
 	reflect "reflect"
 
+	gomock "github.com/lemon4ksan/foundation/testkit/gomock"
 	ackhandler "github.com/lemon4ksan/sein/internal/quic/internal/ackhandler"
 	monotime "github.com/lemon4ksan/sein/internal/quic/internal/monotime"
-	gomock "github.com/lemon4ksan/foundation/testkit/gomock"
 )
 
 // MockStreamControlFrameGetter is a mock of StreamControlFrameGetter interface.

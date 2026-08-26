@@ -39,14 +39,14 @@ const (
 const MagicGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 var (
-	ErrNotWebSocket          = errors.New("ws: not a websocket upgrade request")
-	ErrMissingKey            = errors.New("ws: missing Sec-WebSocket-Key header")
-	ErrUnsupportedVersion    = errors.New("ws: unsupported Sec-WebSocket-Version (expected 13)")
-	ErrConnectionClosed      = errors.New("ws: connection closed")
-	ErrMaskRequired         = errors.New("ws: client frame must be masked (RFC 6455 §5.1)")
-	ErrReservedBits         = errors.New("ws: RSV bits must be 0 (RFC 6455 §5.2)")
-	ErrControlFrameTooLarge = errors.New("ws: control frame payload exceeds 125 octets (RFC 6455 §5.5)")
-	ErrFragmentedControl    = errors.New("ws: control frame must not be fragmented (RFC 6455 §5.5)")
+	ErrNotWebSocket            = errors.New("ws: not a websocket upgrade request")
+	ErrMissingKey              = errors.New("ws: missing Sec-WebSocket-Key header")
+	ErrUnsupportedVersion      = errors.New("ws: unsupported Sec-WebSocket-Version (expected 13)")
+	ErrConnectionClosed        = errors.New("ws: connection closed")
+	ErrMaskRequired            = errors.New("ws: client frame must be masked (RFC 6455 §5.1)")
+	ErrReservedBits            = errors.New("ws: RSV bits must be 0 (RFC 6455 §5.2)")
+	ErrControlFrameTooLarge    = errors.New("ws: control frame payload exceeds 125 octets (RFC 6455 §5.5)")
+	ErrFragmentedControl       = errors.New("ws: control frame must not be fragmented (RFC 6455 §5.5)")
 	ErrInvalidUTF8             = errors.New("ws: invalid UTF-8 payload in text frame (RFC 6455 §5.6)")
 	ErrPayloadTooLarge         = errors.New("ws: message payload exceeds max size (RFC 6455 §7.4.1)")
 	ErrNonMinimalPayloadLength = errors.New("ws: payload length not encoded in minimal bytes (RFC 6455 §5.2)")

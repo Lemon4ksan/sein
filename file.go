@@ -28,6 +28,7 @@ func NewFile(fh *multipart.FileHeader) *File {
 	if fh.Header != nil {
 		ct = fh.Header.Get("Content-Type")
 	}
+
 	return &File{
 		Filename:    fh.Filename,
 		Size:        fh.Size,
@@ -42,6 +43,7 @@ func (f *File) Open() (io.ReadCloser, error) {
 	if f.header == nil {
 		return nil, ErrBadRequest("file stream is not available")
 	}
+
 	return f.header.Open()
 }
 
@@ -61,7 +63,9 @@ func (f *File) Bytes() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	f.cachedBytes = data
+
 	return data, nil
 }
 
@@ -80,7 +84,7 @@ func (f *File) Bytes() ([]byte, error) {
 // loading the entire payload into heap memory (0 B buffer allocations).
 func (f *File) SaveTo(dstPath string) error {
 	if dir := filepath.Dir(dstPath); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0750); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return ErrInternal("failed to create destination directory", err)
 		}
 	}
@@ -91,7 +95,7 @@ func (f *File) SaveTo(dstPath string) error {
 	}
 	defer rc.Close()
 
-	out, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	out, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return ErrInternal("failed to create destination file", err)
 	}
@@ -101,5 +105,6 @@ func (f *File) SaveTo(dstPath string) error {
 	if err != nil {
 		return ErrInternal("failed to copy file payload", err)
 	}
+
 	return nil
 }

@@ -5,7 +5,6 @@
 package sse
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lemon4ksan/foundation/codec/json"
 	"github.com/lemon4ksan/foundation/net/http/header"
+
 	"github.com/lemon4ksan/sein/internal/h1"
 )
 
@@ -44,6 +45,7 @@ type Writer struct {
 // NewWriter creates an SSE Writer wrapping w.
 func NewWriter(w io.Writer) *Writer {
 	flusher, _ := w.(http.Flusher)
+
 	return &Writer{
 		w:       w,
 		flusher: flusher,
@@ -75,6 +77,7 @@ func (w *Writer) SendEvent(event string, data any) error {
 			buf = append(buf, line...)
 			buf = append(buf, '\n')
 		}
+
 	case []byte:
 		lines := strings.Split(string(v), "\n")
 		for _, line := range lines {
@@ -82,17 +85,20 @@ func (w *Writer) SendEvent(event string, data any) error {
 			buf = append(buf, line...)
 			buf = append(buf, '\n')
 		}
+
 	default:
 		encoded, err := json.Marshal(v)
 		if err != nil {
 			return err
 		}
+
 		buf = append(buf, "data: "...)
 		buf = append(buf, encoded...)
 		buf = append(buf, '\n')
 	}
 
 	buf = append(buf, '\n')
+
 	_, err := w.w.Write(buf)
 	if err != nil {
 		return err
@@ -104,10 +110,12 @@ func (w *Writer) SendEvent(event string, data any) error {
 // SendComment sends a comment line (e.g. ": heartbeat\n\n") to keep the connection alive.
 func (w *Writer) SendComment(comment string) error {
 	msg := fmt.Sprintf(": %s\n\n", comment)
+
 	_, err := w.w.Write([]byte(msg))
 	if err != nil {
 		return err
 	}
+
 	return w.Flush()
 }
 
@@ -119,6 +127,7 @@ func (w *Writer) SendID(id string, data any) error {
 		buf = append(buf, id...)
 		buf = append(buf, '\n')
 	}
+
 	if data != nil {
 		buf = append(buf, "data: "...)
 		switch v := data.(type) {
@@ -130,13 +139,17 @@ func (w *Writer) SendID(id string, data any) error {
 			enc, _ := json.Marshal(v)
 			buf = append(buf, enc...)
 		}
+
 		buf = append(buf, '\n')
 	}
+
 	buf = append(buf, '\n')
+
 	_, err := w.w.Write(buf)
 	if err != nil {
 		return err
 	}
+
 	return w.Flush()
 }
 
@@ -144,10 +157,12 @@ func (w *Writer) SendID(id string, data any) error {
 func (w *Writer) SendRetry(duration time.Duration) error {
 	millis := strconv.FormatInt(duration.Milliseconds(), 10)
 	msg := fmt.Sprintf("retry: %s\n\n", millis)
+
 	_, err := w.w.Write([]byte(msg))
 	if err != nil {
 		return err
 	}
+
 	return w.Flush()
 }
 
@@ -156,6 +171,7 @@ func (w *Writer) Flush() error {
 	if w.flusher != nil {
 		w.flusher.Flush()
 	}
+
 	return nil
 }
 
@@ -180,6 +196,7 @@ func (s SSEStreamResponse) WriteResponse(w http.ResponseWriter) error {
 	}
 
 	writer := NewWriter(w)
+
 	return s.handler(writer)
 }
 
@@ -212,6 +229,7 @@ func (s SSEStreamResponse) ResponseHeaders() http.Header {
 	h.Set(header.CacheControl, "no-cache")
 	h.Set(header.Connection, "keep-alive")
 	h.Set(header.XAccelBuffering, "no")
+
 	return h
 }
 

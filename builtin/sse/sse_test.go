@@ -14,6 +14,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/builtin/sse"
 )
@@ -28,6 +29,7 @@ func TestSSE_StreamingEvents(t *testing.T) {
 			_ = w.SendEvent("chunk", map[string]string{"delta": "world"})
 			_ = w.SendID("msg-42", "done")
 			_ = w.SendRetry(5 * time.Second)
+
 			return nil
 		}), nil
 	})

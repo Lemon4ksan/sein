@@ -64,6 +64,7 @@ func (r *Request) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if r.HijackFn == nil {
 		return nil, nil, ErrHijackNotSupported
 	}
+
 	return r.HijackFn()
 }
 
@@ -88,6 +89,7 @@ func (r *Request) ReadRequest(br *bufio.Reader, bw *bufio.Writer, maxBodySize in
 				if err := r.parseHeaderBlock(headerBlock); err != nil {
 					return err
 				}
+
 				return r.finishRequestRead(br, bw, maxBodySize)
 			}
 		}
@@ -109,6 +111,7 @@ func (r *Request) ReadRequest(br *bufio.Reader, bw *bufio.Writer, maxBodySize in
 		if err := r.parseRequestLine(line); err != nil {
 			return err
 		}
+
 		break
 	}
 
@@ -147,6 +150,7 @@ func (r *Request) parseHeaderBlock(headerBlock []byte) error {
 	rest := headerBlock[crlfIdx+1:]
 	for len(rest) > 0 {
 		nextLF := simd.ScanByteVector(rest, '\n')
+
 		var line []byte
 		if nextLF == -1 {
 			line = rest
@@ -159,6 +163,7 @@ func (r *Request) parseHeaderBlock(headerBlock []byte) error {
 		if len(line) > 0 && line[len(line)-1] == '\r' {
 			line = line[:len(line)-1]
 		}
+
 		if len(line) == 0 {
 			break
 		}
@@ -179,6 +184,7 @@ func (r *Request) parseRequestLine(line []byte) error {
 	if sp2 <= 0 {
 		return ErrMalformedRequestLine
 	}
+
 	secondSpace := sp1 + 1 + sp2
 
 	r.Method = bytesconv.B2S(line[:sp1])
@@ -192,6 +198,7 @@ func (r *Request) parseRequestLine(line []byte) error {
 		r.Path = r.URI
 		r.Query = ""
 	}
+
 	return nil
 }
 
@@ -225,10 +232,12 @@ func (r *Request) finishRequestRead(br *bufio.Reader, bw *bufio.Writer, maxBodyS
 		if !strings.HasSuffix(strings.ToLower(teVal), header.ValueChunked) {
 			return ErrUnsupportedTransferEncoding
 		}
+
 		chunkedBody, err := ReadAllChunked(br, maxBodySize)
 		if err != nil {
 			return err
 		}
+
 		r.Body = chunkedBody
 	} else if clStr := r.Headers.Get(header.ContentLength); clStr != "" {
 		// RFC 9112 §6.3 Item 5 & 6: Validate Content-Length decimal representation
@@ -236,15 +245,18 @@ func (r *Request) finishRequestRead(br *bufio.Reader, bw *bufio.Writer, maxBodyS
 		if err != nil || contentLength < 0 {
 			return fmt.Errorf("h1: invalid content-length %q (RFC 9112 §6.3)", clStr)
 		}
+
 		if contentLength > maxBodySize {
 			return ErrBodyTooLarge
 		}
+
 		if contentLength > 0 {
 			if cap(r.Body) < int(contentLength) {
 				r.Body = make([]byte, contentLength)
 			} else {
 				r.Body = r.Body[:contentLength]
 			}
+
 			if _, err := io.ReadFull(br, r.Body); err != nil {
 				return err
 			}
@@ -260,5 +272,6 @@ func (r *Request) ClientIP() string {
 	if err == nil {
 		return host
 	}
+
 	return r.RemoteAddr
 }

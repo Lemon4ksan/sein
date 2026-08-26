@@ -65,8 +65,10 @@ func (c *Conn) ReadMessage() (int, []byte, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
 
-	var messageType int
-	var messageBuf []byte
+	var (
+		messageType int
+		messageBuf  []byte
+	)
 
 	for {
 		if c.isClosed.Load() {
@@ -103,6 +105,7 @@ func (c *Conn) ReadMessage() (int, []byte, error) {
 				_ = c.CloseWithStatus(StatusProtocolError, "control frame must not be fragmented")
 				return 0, nil, ErrFragmentedControl
 			}
+
 			if payloadLen > 125 {
 				_ = c.CloseWithStatus(StatusProtocolError, "control frame payload exceeds 125 octets")
 				return 0, nil, ErrControlFrameTooLarge
@@ -110,27 +113,31 @@ func (c *Conn) ReadMessage() (int, []byte, error) {
 		}
 
 		// 2. Read extended payload length
-		if payloadLen == 126 {
+		switch payloadLen {
+		case 126:
 			var ext [2]byte
 			if _, err := io.ReadFull(c.br, ext[:]); err != nil {
 				return 0, nil, err
 			}
+
 			payloadLen = int64(binary.BigEndian.Uint16(ext[:]))
 			// RFC 6455 §5.2: Minimal encoding rule
 			if payloadLen < 126 {
 				_ = c.CloseWithStatus(StatusProtocolError, "payload length not minimally encoded")
 				return 0, nil, ErrNonMinimalPayloadLength
 			}
-		} else if payloadLen == 127 {
+		case 127:
 			var ext [8]byte
 			if _, err := io.ReadFull(c.br, ext[:]); err != nil {
 				return 0, nil, err
 			}
+
 			// RFC 6455 §5.2: Most significant bit MUST be 0
 			if (ext[0] & 0x80) != 0 {
 				_ = c.CloseWithStatus(StatusProtocolError, "invalid 64-bit payload length MSB")
 				return 0, nil, ErrNonMinimalPayloadLength
 			}
+
 			payloadLen = int64(binary.BigEndian.Uint64(ext[:]))
 			// RFC 6455 §5.2: Minimal encoding rule
 			if payloadLen <= 65535 {
@@ -171,29 +178,35 @@ func (c *Conn) ReadMessage() (int, []byte, error) {
 			continue
 
 		case OpClose:
-			var code int = StatusNormalClosure
-			var reason string
+			var (
+				code   int = StatusNormalClosure
+				reason string
+			)
 			if payloadLen >= 2 {
 				code = int(binary.BigEndian.Uint16(payload[:2]))
 				if payloadLen > 2 {
 					reason = string(payload[2:])
 				}
 			}
+
 			_ = c.writeCloseFrame(code, reason)
 			c.isClosed.Store(true)
 			_ = c.conn.Close()
+
 			return 0, nil, io.EOF
 
 		case OpContinuation:
 			if messageType == 0 {
 				return 0, nil, ErrNotWebSocket
 			}
+
 			messageBuf = append(messageBuf, payload...)
 			if fin {
 				if messageType == OpText && !utf8.Valid(messageBuf) {
 					_ = c.CloseWithStatus(StatusInvalidPayload, "invalid utf-8")
 					return 0, nil, ErrInvalidUTF8
 				}
+
 				return messageType, messageBuf, nil
 			}
 
@@ -201,13 +214,16 @@ func (c *Conn) ReadMessage() (int, []byte, error) {
 			if messageType == 0 {
 				messageType = opcode
 			}
+
 			if fin {
 				if opcode == OpText && !utf8.Valid(payload) {
 					_ = c.CloseWithStatus(StatusInvalidPayload, "invalid utf-8")
 					return 0, nil, ErrInvalidUTF8
 				}
+
 				return opcode, payload, nil
 			}
+
 			messageBuf = append(messageBuf, payload...)
 
 		default:
@@ -228,11 +244,13 @@ func (c *Conn) WriteMessage(messageType int, data []byte) error {
 	}
 
 	var hdrBuf [10]byte
+
 	n := vectorBuildFrameHeader(hdrBuf[:], byte(messageType), len(data), false, false)
 
 	if _, err := c.bw.Write(hdrBuf[:n]); err != nil {
 		return err
 	}
+
 	if len(data) > 0 {
 		if _, err := c.bw.Write(data); err != nil {
 			return err
@@ -253,6 +271,7 @@ func (c *Conn) WriteJSON(v any) error {
 	if err != nil {
 		return err
 	}
+
 	return c.WriteMessage(OpText, data)
 }
 
@@ -262,6 +281,7 @@ func (c *Conn) ReadJSON(dest any) error {
 	if err != nil {
 		return err
 	}
+
 	return json.Unmarshal(data, dest)
 }
 
@@ -275,15 +295,18 @@ func (c *Conn) WritePing(data []byte) error {
 	}
 
 	var hdrBuf [10]byte
+
 	n := vectorBuildFrameHeader(hdrBuf[:], OpPing, len(data), false, false)
 	if _, err := c.bw.Write(hdrBuf[:n]); err != nil {
 		return err
 	}
+
 	if len(data) > 0 {
 		if _, err := c.bw.Write(data); err != nil {
 			return err
 		}
 	}
+
 	return c.bw.Flush()
 }
 
@@ -297,15 +320,18 @@ func (c *Conn) WritePong(data []byte) error {
 	}
 
 	var hdrBuf [10]byte
+
 	n := vectorBuildFrameHeader(hdrBuf[:], OpPong, len(data), false, false)
 	if _, err := c.bw.Write(hdrBuf[:n]); err != nil {
 		return err
 	}
+
 	if len(data) > 0 {
 		if _, err := c.bw.Write(data); err != nil {
 			return err
 		}
 	}
+
 	return c.bw.Flush()
 }
 
@@ -314,7 +340,8 @@ func (c *Conn) writeCloseFrame(code int, reason string) error {
 	defer c.writeMu.Unlock()
 
 	// RFC 6455 §7.4.1: Reserved status codes MUST NOT be set on the wire
-	if code == StatusNoStatusRcvd || code == StatusAbnormalClosure || code == StatusTLSHandshake || code < 1000 || code > 4999 {
+	if code == StatusNoStatusRcvd || code == StatusAbnormalClosure || code == StatusTLSHandshake || code < 1000 ||
+		code > 4999 {
 		code = StatusNormalClosure
 	}
 
@@ -324,9 +351,11 @@ func (c *Conn) writeCloseFrame(code int, reason string) error {
 	copy(payload[2:], reason)
 
 	var hdrBuf [10]byte
+
 	n := vectorBuildFrameHeader(hdrBuf[:], OpClose, payloadLen, false, false)
 	_, _ = c.bw.Write(hdrBuf[:n])
 	_, _ = c.bw.Write(payload)
+
 	return c.bw.Flush()
 }
 
@@ -340,6 +369,8 @@ func (c *Conn) CloseWithStatus(code int, reason string) error {
 	if c.isClosed.Swap(true) {
 		return nil
 	}
+
 	_ = c.writeCloseFrame(code, reason)
+
 	return c.conn.Close()
 }

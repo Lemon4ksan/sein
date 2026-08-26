@@ -72,20 +72,25 @@ type encoderState struct {
 // If the encoder will be used for encoding blocks a nil writer can be used.
 func NewWriter(w io.Writer, opts ...EOption) (*Encoder, error) {
 	initPredefined()
+
 	var e Encoder
 	e.o.setDefault()
+
 	for _, o := range opts {
 		err := o(&e.o)
 		if err != nil {
 			return nil, err
 		}
 	}
+
 	if e.o.concurrentBlocks && (e.o.dict != nil || e.o.concurrent <= 1) {
 		e.o.concurrentBlocks = false
 	}
+
 	if w != nil {
 		e.Reset(w)
 	}
+
 	return &e, nil
 }
 
@@ -93,6 +98,7 @@ func (e *Encoder) initialize() {
 	if e.o.concurrent == 0 {
 		e.o.setDefault()
 	}
+
 	e.encoders = make(chan encoder, e.o.concurrent)
 	for i := 0; i < e.o.concurrent; i++ {
 		enc := e.o.encoder()
@@ -107,6 +113,7 @@ func (e *Encoder) Reset(w io.Writer) {
 
 	if e.o.concurrentBlocks {
 		e.shutdownJobWorkers()
+
 		js := &s.jobs
 		js.jobSize = e.o.jobSize()
 		js.overlapSize = e.o.overlapSize()
@@ -117,6 +124,7 @@ func (e *Encoder) Reset(w io.Writer) {
 			js.putOverlapBuf(js.nextPrefix)
 			js.nextPrefix = nil
 		}
+
 		js.jobSeq = 0
 		js.flushedSeq = 0
 		js.flusherErr = nil
@@ -125,27 +133,35 @@ func (e *Encoder) Reset(w io.Writer) {
 
 	s.wg.Wait()
 	s.wWg.Wait()
+
 	if cap(s.filling) == 0 {
 		s.filling = make([]byte, 0, e.o.blockSize)
 	}
+
 	if e.o.concurrent > 1 && !e.o.concurrentBlocks {
 		if cap(s.current) == 0 {
 			s.current = make([]byte, 0, e.o.blockSize)
 		}
+
 		if cap(s.previous) == 0 {
 			s.previous = make([]byte, 0, e.o.blockSize)
 		}
+
 		s.current = s.current[:0]
+
 		s.previous = s.previous[:0]
 		if s.writing == nil {
 			s.writing = &blockEnc{lowMem: e.o.lowMem}
 			s.writing.init()
 		}
+
 		s.writing.initNewEncode()
 	}
+
 	if s.encoder == nil {
 		s.encoder = e.o.encoder()
 	}
+
 	s.filling = s.filling[:0]
 	s.encoder.Reset(e.o.dict, false)
 	s.headerWritten = false
@@ -166,22 +182,27 @@ func (e *Encoder) Reset(w io.Writer) {
 func (e *Encoder) ResetWithOptions(w io.Writer, opts ...EOption) error {
 	e.o.resetOpt = true
 	defer func() { e.o.resetOpt = false }()
+
 	hadDict := e.o.dict != nil
 	for _, o := range opts {
 		if err := o(&e.o); err != nil {
 			return err
 		}
 	}
+
 	hasDict := e.o.dict != nil
 	if e.o.concurrentBlocks && hasDict {
 		e.o.concurrentBlocks = false
 	}
+
 	if hadDict != hasDict {
 		// Dict presence changed — encoder type must be recreated.
 		e.state.encoder = nil
 		e.init = sync.Once{}
 	}
+
 	e.Reset(w)
+
 	return nil
 }
 
@@ -192,6 +213,7 @@ func (e *Encoder) ResetWithOptions(w io.Writer, opts ...EOption) error {
 // Sizes <= 0 results in no content size set.
 func (e *Encoder) ResetContentSize(w io.Writer, size int64) {
 	e.Reset(w)
+
 	if size >= 0 {
 		e.state.frameContentSize = size
 	}
@@ -207,44 +229,56 @@ func (e *Encoder) Write(p []byte) (n int, err error) {
 	if s.eofWritten {
 		return 0, ErrEncoderClosed
 	}
+
 	if e.o.concurrentBlocks {
 		return e.writeJobs(p)
 	}
+
 	return e.writeBlocks(p)
 }
 
 func (e *Encoder) writeJobs(p []byte) (n int, err error) {
 	s := &e.state
 	js := &s.jobs
+
 	jobSize := js.jobSize
 	if cap(js.filling) == 0 && len(p) > 0 {
 		js.filling = make([]byte, 0, jobSize)
 	}
+
 	for len(p) > 0 {
 		if len(p)+len(js.filling) < jobSize {
 			if e.o.crc {
 				_, _ = s.encoder.CRC().Write(p)
 			}
+
 			js.filling = append(js.filling, p...)
+
 			return n + len(p), nil
 		}
+
 		add := p
 		if len(p)+len(js.filling) > jobSize {
 			add = add[:jobSize-len(js.filling)]
 		}
+
 		if e.o.crc {
 			_, _ = s.encoder.CRC().Write(add)
 		}
+
 		js.filling = append(js.filling, add...)
 		p = p[len(add):]
+
 		n += len(add)
 		if len(js.filling) < jobSize {
 			return n, nil
 		}
+
 		if err := e.dispatchJob(false); err != nil {
 			return n, err
 		}
 	}
+
 	return n, nil
 }
 
@@ -255,30 +289,39 @@ func (e *Encoder) writeBlocks(p []byte) (n int, err error) {
 			if e.o.crc {
 				_, _ = s.encoder.CRC().Write(p)
 			}
+
 			s.filling = append(s.filling, p...)
+
 			return n + len(p), nil
 		}
+
 		add := p
 		if len(p)+len(s.filling) > e.o.blockSize {
 			add = add[:e.o.blockSize-len(s.filling)]
 		}
+
 		if e.o.crc {
 			_, _ = s.encoder.CRC().Write(add)
 		}
+
 		s.filling = append(s.filling, add...)
 		p = p[len(add):]
+
 		n += len(add)
 		if len(s.filling) < e.o.blockSize {
 			return n, nil
 		}
+
 		err := e.nextBlock(false)
 		if err != nil {
 			return n, err
 		}
+
 		if debugAsserts && len(s.filling) > 0 {
 			panic(len(s.filling))
 		}
 	}
+
 	return n, nil
 }
 
@@ -288,27 +331,35 @@ func (e *Encoder) nextBlock(final bool) error {
 	s := &e.state
 	// Wait for current block.
 	s.wg.Wait()
+
 	if s.err != nil {
 		return s.err
 	}
+
 	if len(s.filling) > e.o.blockSize {
-		return fmt.Errorf("block > maxStoreBlockSize")
+		return errors.New("block > maxStoreBlockSize")
 	}
+
 	if !s.headerWritten {
 		// If we have a single block encode, do a sync compression.
 		if final && len(s.filling) == 0 && !e.o.fullZero {
 			s.headerWritten = true
 			s.fullFrameWritten = true
 			s.eofWritten = true
+
 			return nil
 		}
+
 		if final && len(s.filling) > 0 {
 			s.current = e.encodeAll(s.encoder, s.filling, s.current[:0])
+
 			var n2 int
+
 			n2, s.err = s.w.Write(s.current)
 			if s.err != nil {
 				return s.err
 			}
+
 			s.nWritten += int64(n2)
 			s.nInput += int64(len(s.filling))
 			s.current = s.current[:0]
@@ -316,10 +367,12 @@ func (e *Encoder) nextBlock(final bool) error {
 			s.headerWritten = true
 			s.fullFrameWritten = true
 			s.eofWritten = true
+
 			return nil
 		}
 
 		var tmp [maxHeaderSize]byte
+
 		fh := frameHeader{
 			ContentSize:   uint64(s.frameContentSize),
 			WindowSize:    uint32(s.encoder.WindowSize(s.frameContentSize)),
@@ -331,13 +384,17 @@ func (e *Encoder) nextBlock(final bool) error {
 		dst := fh.appendTo(tmp[:0])
 		s.headerWritten = true
 		s.wWg.Wait()
+
 		var n2 int
+
 		n2, s.err = s.w.Write(dst)
 		if s.err != nil {
 			return s.err
 		}
+
 		s.nWritten += int64(n2)
 	}
+
 	if s.eofWritten {
 		// Ensure we only write it once.
 		final = false
@@ -356,20 +413,24 @@ func (e *Encoder) nextBlock(final bool) error {
 			s.nWritten += int64(len(blk.output))
 			s.eofWritten = true
 		}
+
 		return s.err
 	}
 
 	// SYNC:
 	if e.o.concurrent == 1 {
 		src := s.filling
+
 		s.nInput += int64(len(s.filling))
 		if debugEncoder {
 			println("Adding sync block,", len(src), "bytes, final:", final)
 		}
+
 		enc := s.encoder
 		blk := enc.Block()
 		blk.reset(nil)
 		enc.Encode(blk, src)
+
 		blk.last = final
 		if final {
 			s.eofWritten = true
@@ -379,9 +440,11 @@ func (e *Encoder) nextBlock(final bool) error {
 		if s.err != nil {
 			return s.err
 		}
+
 		_, s.err = s.w.Write(blk.output)
 		s.nWritten += int64(len(blk.output))
 		s.filling = s.filling[:0]
+
 		return s.err
 	}
 
@@ -389,52 +452,66 @@ func (e *Encoder) nextBlock(final bool) error {
 	s.filling, s.current, s.previous = s.previous[:0], s.filling, s.current
 	s.nInput += int64(len(s.current))
 	s.wg.Add(1)
+
 	if final {
 		s.eofWritten = true
 	}
+
 	go func(src []byte) {
 		if debugEncoder {
 			println("Adding block,", len(src), "bytes, final:", final)
 		}
+
 		defer func() {
 			if r := recover(); r != nil {
 				s.err = fmt.Errorf("panic while encoding: %v", r)
+
 				rdebug.PrintStack()
 			}
+
 			s.wg.Done()
 		}()
+
 		enc := s.encoder
 		blk := enc.Block()
 		enc.Encode(blk, src)
 		blk.last = final
 		// Wait for pending writes.
 		s.wWg.Wait()
+
 		if s.writeErr != nil {
 			s.err = s.writeErr
 			return
 		}
+
 		// Transfer encoders from previous write block.
 		blk.swapEncoders(s.writing)
 		// Transfer recent offsets to next.
 		enc.UseBlock(s.writing)
 		s.writing = blk
+
 		s.wWg.Add(1)
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
 					s.writeErr = fmt.Errorf("panic while encoding/writing: %v", r)
+
 					rdebug.PrintStack()
 				}
+
 				s.wWg.Done()
 			}()
+
 			s.writeErr = blk.encode(src, e.o.noEntropy, !e.o.allLitEntropy)
 			if s.writeErr != nil {
 				return
 			}
+
 			_, s.writeErr = s.w.Write(blk.output)
 			s.nWritten += int64(len(blk.output))
 		}()
 	}(s.current)
+
 	return nil
 }
 
@@ -458,14 +535,18 @@ func (e *Encoder) ReadFrom(r io.Reader) (n int64, err error) {
 			return 0, err
 		}
 	}
+
 	e.state.filling = e.state.filling[:e.o.blockSize]
+
 	src := e.state.filling
 	for {
 		n2, err := r.Read(src)
 		if e.o.crc {
 			_, _ = e.state.encoder.CRC().Write(src[:n2])
 		}
+
 		src = src[n2:]
+
 		n += int64(n2)
 		switch err {
 		case io.EOF:
@@ -473,25 +554,33 @@ func (e *Encoder) ReadFrom(r io.Reader) (n int64, err error) {
 			if debugEncoder {
 				println("ReadFrom: got EOF final block:", len(e.state.filling))
 			}
+
 			return n, nil
+
 		case nil:
 		default:
 			if debugEncoder {
 				println("ReadFrom: got error:", err)
 			}
+
 			e.state.err = err
+
 			return n, err
 		}
+
 		if len(src) > 0 {
 			if debugEncoder {
 				println("ReadFrom: got space left in source:", len(src))
 			}
+
 			continue
 		}
+
 		err = e.nextBlock(false)
 		if err != nil {
 			return n, err
 		}
+
 		e.state.filling = e.state.filling[:e.o.blockSize]
 		src = e.state.filling
 	}
@@ -511,14 +600,18 @@ func (e *Encoder) readFromJobs(r io.Reader) (n int64, err error) {
 	if cap(js.filling) < jobSize {
 		js.filling = make([]byte, 0, jobSize)
 	}
+
 	js.filling = js.filling[:jobSize]
+
 	src := js.filling
 	for {
 		n2, err := r.Read(src)
 		if e.o.crc {
 			_, _ = e.state.encoder.CRC().Write(src[:n2])
 		}
+
 		src = src[n2:]
+
 		n += int64(n2)
 		switch err {
 		case io.EOF:
@@ -529,15 +622,19 @@ func (e *Encoder) readFromJobs(r io.Reader) (n int64, err error) {
 			e.state.err = err
 			return n, err
 		}
+
 		if len(src) > 0 {
 			continue
 		}
+
 		if err = e.dispatchJob(false); err != nil {
 			return n, err
 		}
+
 		if cap(js.filling) < jobSize {
 			js.filling = make([]byte, 0, jobSize)
 		}
+
 		js.filling = js.filling[:jobSize]
 		src = js.filling
 	}
@@ -551,23 +648,29 @@ func (e *Encoder) Flush() error {
 	if e.o.concurrentBlocks {
 		return e.flushJobs()
 	}
+
 	if len(s.filling) > 0 {
 		err := e.nextBlock(false)
 		if err != nil {
 			if errors.Is(s.err, ErrEncoderClosed) {
 				return nil
 			}
+
 			return err
 		}
 	}
+
 	s.wg.Wait()
 	s.wWg.Wait()
+
 	if s.err != nil {
 		if errors.Is(s.err, ErrEncoderClosed) {
 			return nil
 		}
+
 		return s.err
 	}
+
 	return s.writeErr
 }
 
@@ -578,10 +681,12 @@ func (e *Encoder) flushJobs() error {
 			return err
 		}
 	}
+
 	e.waitAllJobs()
 	js.mu.Lock()
 	fErr := js.flusherErr
 	js.mu.Unlock()
+
 	return fErr
 }
 
@@ -593,13 +698,16 @@ func (e *Encoder) Close() error {
 	if s.encoder == nil {
 		return nil
 	}
+
 	if e.o.concurrentBlocks {
 		return e.closeJobs()
 	}
+
 	if s.w == nil {
 		if len(s.filling) == 0 && !s.headerWritten && !s.eofWritten && s.nInput == 0 {
 			return nil
 		}
+
 		return errors.New("zstd: encoder has no writer")
 	}
 
@@ -608,22 +716,27 @@ func (e *Encoder) Close() error {
 		if errors.Is(s.err, ErrEncoderClosed) {
 			return nil
 		}
+
 		return err
 	}
+
 	if s.frameContentSize > 0 {
 		if s.nInput != s.frameContentSize {
 			return fmt.Errorf("frame content size %d given, but %d bytes was written", s.frameContentSize, s.nInput)
 		}
 	}
+
 	if e.state.fullFrameWritten {
 		return s.err
 	}
+
 	s.wg.Wait()
 	s.wWg.Wait()
 
 	if s.err != nil {
 		return s.err
 	}
+
 	if s.writeErr != nil {
 		return s.writeErr
 	}
@@ -632,6 +745,7 @@ func (e *Encoder) Close() error {
 	if e.o.crc && s.err == nil {
 		// heap alloc.
 		var tmp [4]byte
+
 		_, s.err = s.w.Write(s.encoder.AppendCRC(tmp[:0]))
 		s.nWritten += 4
 	}
@@ -639,12 +753,15 @@ func (e *Encoder) Close() error {
 	// Add padding with content from crypto/rand.Reader
 	if s.err == nil && e.o.pad > 0 {
 		add := calcSkippableFrame(s.nWritten, int64(e.o.pad))
+
 		frame, err := skippableFrame(s.filling[:0], add, rand.Reader)
 		if err != nil {
 			return err
 		}
+
 		_, s.err = s.w.Write(frame)
 	}
+
 	if s.err == nil {
 		s.err = ErrEncoderClosed
 		return nil
@@ -665,14 +782,17 @@ func (e *Encoder) closeJobs() error {
 		if len(js.filling) == 0 && !s.headerWritten && !s.eofWritten && s.nInput == 0 {
 			return nil
 		}
+
 		return errors.New("zstd: encoder has no writer")
 	}
 
 	if err := e.dispatchJob(true); err != nil {
 		e.shutdownJobWorkers()
+
 		if errors.Is(s.err, ErrEncoderClosed) {
 			return nil
 		}
+
 		return err
 	}
 
@@ -683,11 +803,13 @@ func (e *Encoder) closeJobs() error {
 
 	if s.fullFrameWritten {
 		e.shutdownJobWorkers()
+
 		s.err = ErrEncoderClosed
 		return nil
 	}
 
 	e.shutdownJobWorkers()
+
 	if js.flusherErr != nil {
 		return js.flusherErr
 	}
@@ -695,6 +817,7 @@ func (e *Encoder) closeJobs() error {
 	// Write CRC
 	if e.o.crc {
 		var tmp [4]byte
+
 		_, s.err = s.w.Write(s.encoder.AppendCRC(tmp[:0]))
 		s.nWritten += 4
 	}
@@ -702,16 +825,20 @@ func (e *Encoder) closeJobs() error {
 	// Add padding
 	if s.err == nil && e.o.pad > 0 {
 		add := calcSkippableFrame(s.nWritten, int64(e.o.pad))
+
 		frame, err := skippableFrame(js.filling[:0], add, rand.Reader)
 		if err != nil {
 			return err
 		}
+
 		_, s.err = s.w.Write(frame)
 	}
+
 	if s.err == nil {
 		s.err = ErrEncoderClosed
 		return nil
 	}
+
 	return s.err
 }
 
@@ -723,10 +850,12 @@ func (e *Encoder) closeJobs() error {
 // using either a stream or DecodeAll.
 func (e *Encoder) EncodeAll(src, dst []byte) []byte {
 	e.init.Do(e.initialize)
+
 	enc := <-e.encoders
 	defer func() {
 		e.encoders <- enc
 	}()
+
 	return e.encodeAll(enc, src, dst)
 }
 
@@ -751,6 +880,7 @@ func (e *Encoder) encodeAll(enc encoder, src, dst []byte) []byte {
 			blk.setLast(true)
 			dst = blk.appendTo(dst)
 		}
+
 		return dst
 	}
 
@@ -759,6 +889,7 @@ func (e *Encoder) encodeAll(enc encoder, src, dst []byte) []byte {
 	if e.o.single != nil {
 		single = *e.o.single
 	}
+
 	fh := frameHeader{
 		ContentSize:   uint64(len(src)),
 		WindowSize:    uint32(enc.WindowSize(int64(len(src)))),
@@ -771,6 +902,7 @@ func (e *Encoder) encodeAll(enc encoder, src, dst []byte) []byte {
 	if len(dst) == 0 && cap(dst) == 0 && len(src) < 1<<20 && !e.o.lowMem {
 		dst = make([]byte, 0, len(src))
 	}
+
 	dst = fh.appendTo(dst)
 
 	// If we can do everything in one block, prefer that.
@@ -780,7 +912,9 @@ func (e *Encoder) encodeAll(enc encoder, src, dst []byte) []byte {
 		if e.o.crc {
 			_, _ = enc.CRC().Write(src)
 		}
+
 		blk := enc.Block()
+
 		blk.last = true
 		if e.o.dict == nil {
 			enc.EncodeNoHist(blk, src)
@@ -798,45 +932,57 @@ func (e *Encoder) encodeAll(enc encoder, src, dst []byte) []byte {
 		if err != nil {
 			panic(err)
 		}
+
 		dst = blk.output
 		blk.output = oldout
 	} else {
 		enc.Reset(e.o.dict, false)
+
 		blk := enc.Block()
 		for len(src) > 0 {
 			todo := src
 			if len(todo) > e.o.blockSize {
 				todo = todo[:e.o.blockSize]
 			}
+
 			src = src[len(todo):]
 			if e.o.crc {
 				_, _ = enc.CRC().Write(todo)
 			}
+
 			blk.pushOffsets()
 			enc.Encode(blk, todo)
+
 			if len(src) == 0 {
 				blk.last = true
 			}
+
 			err := blk.encode(todo, e.o.noEntropy, !e.o.allLitEntropy)
 			if err != nil {
 				panic(err)
 			}
+
 			dst = append(dst, blk.output...)
 			blk.reset(nil)
 		}
 	}
+
 	if e.o.crc {
 		dst = enc.AppendCRC(dst)
 	}
+
 	// Add padding with content from crypto/rand.Reader
 	if e.o.pad > 0 {
 		add := calcSkippableFrame(int64(len(dst)), int64(e.o.pad))
+
 		var err error
+
 		dst, err = skippableFrame(dst, add, rand.Reader)
 		if err != nil {
 			panic(err)
 		}
 	}
+
 	return dst
 }
 
@@ -847,6 +993,7 @@ func (e *Encoder) MaxEncodedSize(size int) int {
 	if e.o.dict != nil {
 		frameHeader += 4
 	}
+
 	// Frame content size:
 	if size < 256 {
 		frameHeader++
@@ -857,6 +1004,7 @@ func (e *Encoder) MaxEncodedSize(size int) int {
 	} else {
 		frameHeader += 8
 	}
+
 	// Final crc
 	if e.o.crc {
 		frameHeader += 4
@@ -871,5 +1019,6 @@ func (e *Encoder) MaxEncodedSize(size int) int {
 	if e.o.pad > 1 {
 		maxSz += calcSkippableFrame(int64(maxSz), int64(e.o.pad))
 	}
+
 	return maxSz
 }

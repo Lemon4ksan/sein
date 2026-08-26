@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/lemon4ksan/foundation/silicon/pool"
+
 	"github.com/lemon4ksan/sein/internal/compress/brotli"
 	"github.com/lemon4ksan/sein/internal/compress/zstd"
 )
@@ -79,32 +80,40 @@ func CompressBrotli(src []byte, level int) ([]byte, error) {
 		return nil, nil
 	}
 
-	var buf bytes.Buffer
-	var w *brotli.Writer
+	var (
+		buf bytes.Buffer
+		w   *brotli.Writer
+	)
 
-	if level == BrotliBestSpeed {
+	switch level {
+	case BrotliBestSpeed:
 		w = brotliFastWriterStorage.Get()
 		defer brotliFastWriterStorage.Put(w)
-	} else if level == BrotliDefaultCompression {
+	case BrotliDefaultCompression:
 		w = brotliWriterStorage.Get()
 		defer brotliWriterStorage.Put(w)
-	} else {
+	default:
 		w = brotli.NewWriterLevel(&buf, level)
 		defer w.Close()
+
 		_, err := w.Write(src)
 		if err != nil {
 			return nil, err
 		}
+
 		if err := w.Close(); err != nil {
 			return nil, err
 		}
+
 		return buf.Bytes(), nil
 	}
 
 	w.Reset(&buf)
+
 	if _, err := w.Write(src); err != nil {
 		return nil, err
 	}
+
 	if err := w.Close(); err != nil {
 		return nil, err
 	}
@@ -139,15 +148,19 @@ func CompressGzip(src []byte, level int) ([]byte, error) {
 		return nil, nil
 	}
 
-	var buf bytes.Buffer
-	var w *gzip.Writer
+	var (
+		buf bytes.Buffer
+		w   *gzip.Writer
+	)
 
 	if level == gzip.DefaultCompression {
 		w = gzipWriterStorage.Get()
 		defer gzipWriterStorage.Put(w)
+
 		w.Reset(&buf)
 	} else {
 		var err error
+
 		w, err = gzip.NewWriterLevel(&buf, level)
 		if err != nil {
 			return nil, err
@@ -157,6 +170,7 @@ func CompressGzip(src []byte, level int) ([]byte, error) {
 	if _, err := w.Write(src); err != nil {
 		return nil, err
 	}
+
 	if err := w.Close(); err != nil {
 		return nil, err
 	}
@@ -176,6 +190,7 @@ func DecompressGzip(src []byte) ([]byte, error) {
 	if err := r.Reset(bytes.NewReader(src)); err != nil {
 		return nil, err
 	}
+
 	defer r.Close()
 
 	var buf bytes.Buffer
@@ -193,14 +208,16 @@ func CompressZstd(src []byte, level zstd.EncoderLevel) ([]byte, error) {
 	}
 
 	var enc *zstd.Encoder
-	if level == ZstdSpeedFastest {
+	switch level {
+	case ZstdSpeedFastest:
 		enc = zstdFastEncoderStorage.Get()
 		defer zstdFastEncoderStorage.Put(enc)
-	} else if level == ZstdSpeedDefault {
+	case ZstdSpeedDefault:
 		enc = zstdDefaultEncoderStorage.Get()
 		defer zstdDefaultEncoderStorage.Put(enc)
-	} else {
+	default:
 		var err error
+
 		enc, err = zstd.NewWriter(nil, zstd.WithEncoderLevel(level), zstd.WithEncoderConcurrency(1))
 		if err != nil {
 			return nil, err
@@ -223,6 +240,28 @@ func DecompressZstd(src []byte) ([]byte, error) {
 	return dec.DecodeAll(src, nil)
 }
 
+// CompressDeflate encodes src into raw DEFLATE format.
+func CompressDeflate(src []byte) ([]byte, error) {
+	if len(src) == 0 {
+		return nil, nil
+	}
+
+	var buf bytes.Buffer
+	w := flateWriterStorage.Get()
+	defer flateWriterStorage.Put(w)
+
+	w.Reset(&buf)
+	if _, err := w.Write(src); err != nil {
+		return nil, err
+	}
+
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
 // Decompress automatically decodes src based on Content-Encoding header value.
 func Decompress(encoding string, src []byte) ([]byte, error) {
 	if len(src) == 0 {
@@ -240,11 +279,15 @@ func Decompress(encoding string, src []byte) ([]byte, error) {
 	case "deflate":
 		zr := flate.NewReader(bytes.NewReader(src))
 		defer zr.Close()
+
 		var buf bytes.Buffer
-		if _, err := io.Copy(&buf, zr); err != nil {
+		// #nosec G110 -- Capped buffer read protects against decompression bombs
+		if _, err := io.Copy(&buf, io.LimitReader(zr, 64<<20)); err != nil {
 			return nil, err
 		}
+
 		return buf.Bytes(), nil
+
 	case "", "identity":
 		return src, nil
 	default:
@@ -259,8 +302,10 @@ func NewBrotliWriter(w io.Writer, level int) *brotli.Writer {
 		bw.Reset(w)
 		return bw
 	}
+
 	bw := brotliWriterStorage.Get()
 	bw.Reset(w)
+
 	return bw
 }
 
@@ -269,6 +314,7 @@ func ReleaseBrotliWriter(bw *brotli.Writer, level int) {
 	if bw == nil {
 		return
 	}
+
 	_ = bw.Close()
 	if level == BrotliBestSpeed {
 		brotliFastWriterStorage.Put(bw)
@@ -285,7 +331,9 @@ func NewZstdWriter(w io.Writer, level zstd.EncoderLevel) *zstd.Encoder {
 	} else {
 		enc = zstdDefaultEncoderStorage.Get()
 	}
+
 	enc.Reset(w)
+
 	return enc
 }
 
@@ -294,6 +342,7 @@ func ReleaseZstdWriter(zw *zstd.Encoder, level zstd.EncoderLevel) {
 	if zw == nil {
 		return
 	}
+
 	_ = zw.Close()
 	if level == ZstdSpeedFastest {
 		zstdFastEncoderStorage.Put(zw)
@@ -301,4 +350,3 @@ func ReleaseZstdWriter(zw *zstd.Encoder, level zstd.EncoderLevel) {
 		zstdDefaultEncoderStorage.Put(zw)
 	}
 }
-

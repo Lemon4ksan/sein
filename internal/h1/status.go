@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/lemon4ksan/foundation/timekit"
 )
 
 var (
@@ -40,8 +42,11 @@ func init() {
 }
 
 func updateDateHeader() {
-	nowBytes := []byte("Date: " + time.Now().UTC().Format(http.TimeFormat) + "\r\n")
-	cachedDateHeader.Store(&nowBytes)
+	buf := make([]byte, 0, 6+timekit.HTTPDateLength+2)
+	buf = append(buf, "Date: "...)
+	buf = timekit.AppendHTTPDate(buf, timekit.CoarseNow())
+	buf = append(buf, "\r\n"...)
+	cachedDateHeader.Store(&buf)
 }
 
 func initDateHeader() {

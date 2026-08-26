@@ -143,30 +143,37 @@ func populateFieldBinding(tag refkit.Tag, b *FieldBinding) {
 		b.HasGT = true
 		b.GTVal = v
 	}
+
 	if v, ok := tag.GetFloat("ge"); ok {
 		b.HasGE = true
 		b.GEVal = v
 	}
+
 	if v, ok := tag.GetFloat("lt"); ok {
 		b.HasLT = true
 		b.LTVal = v
 	}
+
 	if v, ok := tag.GetFloat("le"); ok {
 		b.HasLE = true
 		b.LEVal = v
 	}
+
 	if tag.Has("positive") {
 		b.HasGT = true
 		b.GTVal = 0
 	}
+
 	if tag.Has("negative") {
 		b.HasLT = true
 		b.LTVal = 0
 	}
+
 	if tag.Has("non_negative") {
 		b.HasGE = true
 		b.GEVal = 0
 	}
+
 	if v, ok := tag.GetFloat("multiple_of"); ok {
 		b.HasMultipleOf = true
 		b.MultipleOfVal = v
@@ -195,12 +202,14 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 
 		ft := field.Type
 		isPtr := ft.Kind() == reflect.Pointer
+
 		elemKind := ft.Kind()
 		if isPtr {
 			elemKind = ft.Elem().Kind()
 		}
 
 		isSlice := ft.Kind() == reflect.Slice && ft != netIPType && ft != bytesSliceType
+
 		sliceElemKind := reflect.Invalid
 		if isSlice {
 			sliceElemKind = ft.Elem().Kind()
@@ -232,6 +241,7 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 				case SourceNet:
 					defaultName = "ip"
 				}
+
 				b.Key = generic.Coalesce(b.Key, defaultName)
 
 				switch b.Source {
@@ -244,6 +254,7 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 					} else if b.FieldType.String() == "[]*sein.File" || (isSlice && ft.Elem().Kind() == reflect.Pointer && ft.Elem().Elem().Name() == "File") {
 						b.Source = SourceFiles
 					}
+
 				case SourceBodyRaw:
 					if b.Key != "raw" && b.FieldType != bytesSliceType {
 						b.Source = SourceBodyString
@@ -251,6 +262,7 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 				}
 
 				matched = true
+
 				break
 			}
 		}
@@ -266,6 +278,7 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 	}
 
 	descriptorCache.Store(typ, desc)
+
 	return desc
 }
 
@@ -289,13 +302,27 @@ func ValidateRouteBinding(typ reflect.Type, routePath string) {
 
 	desc := GetDescriptor(typ)
 	if desc == nil {
-		panic(fmt.Sprintf("sein: route %q declares path params %v, but DTO %s is not a struct", routePath, pathVars, typ.Name()))
+		panic(
+			fmt.Sprintf(
+				"sein: route %q declares path params %v, but DTO %s is not a struct",
+				routePath,
+				pathVars,
+				typ.Name(),
+			),
+		)
 	}
 
 	for _, pv := range pathVars {
 		if !desc.PathKeys.Has(pv) {
-			panic(fmt.Sprintf("sein: route %q declares path param :%s, but DTO %s has no matching field with `path:%q` tag",
-				routePath, pv, typ.Name(), pv))
+			panic(
+				fmt.Sprintf(
+					"sein: route %q declares path param :%s, but DTO %s has no matching field with `path:%q` tag",
+					routePath,
+					pv,
+					typ.Name(),
+					pv,
+				),
+			)
 		}
 	}
 }

@@ -7,12 +7,12 @@ package auth
 import (
 	"crypto/subtle"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+
 	"github.com/lemon4ksan/sein"
 )
 
@@ -36,6 +36,7 @@ func BasicAuth(accounts map[string]string, realm ...string) sein.Middleware {
 	if len(realm) > 0 && realm[0] != "" {
 		r = realm[0]
 	}
+
 	return NewBasicAuth(BasicAuthConfig{
 		Accounts: accounts,
 		Realm:    r,
@@ -47,7 +48,8 @@ func NewBasicAuth(cfg BasicAuthConfig) sein.Middleware {
 	if cfg.Realm == "" {
 		cfg.Realm = "Restricted"
 	}
-	challengeHeader := fmt.Sprintf("Basic realm=%s", strconv.Quote(cfg.Realm))
+
+	challengeHeader := "Basic realm=" + strconv.Quote(cfg.Realm)
 
 	return func(next sein.RawHandler) sein.RawHandler {
 		return func(req *sein.Request) (any, error) {
@@ -79,6 +81,7 @@ func NewBasicAuth(cfg BasicAuthConfig) sein.Middleware {
 
 				// Timing attack protection via ConstantTimeCompare
 				userMatch := subtle.ConstantTimeCompare([]byte(user), []byte(user)) == 1
+
 				passMatch := subtle.ConstantTimeCompare([]byte(pass), []byte(expectedPass)) == 1
 				if !userMatch || !passMatch {
 					return unauthorizedResponse(challengeHeader)
@@ -95,6 +98,7 @@ func NewBasicAuth(cfg BasicAuthConfig) sein.Middleware {
 func unauthorizedResponse(challenge string) (any, error) {
 	headers := make(http.Header)
 	headers.Set(header.WWWAuthenticate, challenge)
+
 	return sein.StatusWith(http.StatusUnauthorized, map[string]string{
 		"error": "unauthorized",
 	}, headers), nil

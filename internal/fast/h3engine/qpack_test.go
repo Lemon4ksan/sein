@@ -11,6 +11,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/sein/internal/fast/h3engine"
 	"github.com/lemon4ksan/sein/internal/qpack"
 )
@@ -20,6 +21,7 @@ func TestQPACK_ServerEncodeDecodeRoundtrip(t *testing.T) {
 
 	// 1. Encode client request headers into QPACK block
 	var clientBuf bytes.Buffer
+
 	enc := qpack.NewEncoder(&clientBuf)
 	require.NoError(t, enc.WriteField(qpack.HeaderField{Name: ":method", Value: "POST"}))
 	require.NoError(t, enc.WriteField(qpack.HeaderField{Name: ":path", Value: "/api/v1/users"}))
@@ -48,10 +50,13 @@ func TestQPACK_ServerEncodeDecodeRoundtrip(t *testing.T) {
 
 	// 4. Decode server response headers
 	dec := qpack.NewDecoder()
-	var decodedStatus string
-	var decodedLen string
-	var decodedServer string
-	var decodedCustom string
+
+	var (
+		decodedStatus string
+		decodedLen    string
+		decodedServer string
+		decodedCustom string
+	)
 
 	err = dec.DecodeFields(respBlock, func(hf qpack.HeaderField) bool {
 		switch hf.Name {
@@ -64,6 +69,7 @@ func TestQPACK_ServerEncodeDecodeRoundtrip(t *testing.T) {
 		case "x-custom-header":
 			decodedCustom = hf.Value
 		}
+
 		return true
 	})
 	require.NoError(t, err)

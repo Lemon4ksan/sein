@@ -2171,6 +2171,6 @@ func getContextLUT(mode int) contextLUT {
 	return kContextLookup[mode<<9:]
 }
 
-func getContext(p1 byte, p2 byte, lut contextLUT) byte {
+func getContext(p1, p2 byte, lut contextLUT) byte {
 	return lut[p1] | lut[256+int(p2)]
 }

@@ -19,6 +19,8 @@ import (
 	"github.com/lemon4ksan/sein/internal/compress/fse"
 )
 
+var _ = (*Scratch).minSize
+
 const (
 	maxSymbolValue = 255
 

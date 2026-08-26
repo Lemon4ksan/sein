@@ -167,7 +167,7 @@ func (s *fseDecoder) readNCount(b *byteReader, maxSymbol uint16) error {
 			// The check above should make sure we can read 32 bits
 			bitStream = b.Uint32NC() >> (bitCount & 31)
 		} else {
-			bitCount -= (uint)(8 * (len(b.b) - 4 - b.off))
+			bitCount -= uint(8 * (len(b.b) - 4 - b.off))
 			b.off = len(b.b) - 4
 			bitStream = b.Uint32() >> (bitCount & 31)
 		}

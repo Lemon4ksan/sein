@@ -58,18 +58,18 @@ type serverStream struct {
 
 // ServerConn manages a single server-side HTTP/2 connection.
 type ServerConn struct {
-	conn       net.Conn
-	br         *bufio.Reader
-	bw         *bufio.Writer
-	handler    ServerHandlerFunc
-	hpackDec   *HPACK
-	hpackEnc   *HPACK
-	encMu      sync.Mutex
-	writeMu    sync.Mutex
-	streamsMu  sync.RWMutex
-	streams    map[uint32]*serverStream
-	isClosed   atomic.Bool
-	closeErr   error
+	conn      net.Conn
+	br        *bufio.Reader
+	bw        *bufio.Writer
+	handler   ServerHandlerFunc
+	hpackDec  *HPACK
+	hpackEnc  *HPACK
+	encMu     sync.Mutex
+	writeMu   sync.Mutex
+	streamsMu sync.RWMutex
+	streams   map[uint32]*serverStream
+	isClosed  atomic.Bool
+	closeErr  error
 
 	peerMaxFrameSize uint32
 	peerInitialWin   int32
@@ -100,6 +100,7 @@ func NewServerConn(netConn net.Conn, handler ServerHandlerFunc) *ServerConn {
 	sc.hpackEnc.Reset()
 	sc.hpackEnc.DisableDynamicTable = true
 	clear(sc.streams)
+
 	return sc
 }
 
@@ -140,6 +141,7 @@ func (sc *ServerConn) Serve() error {
 			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				return nil
 			}
+
 			return err
 		}
 
@@ -208,11 +210,13 @@ func (sc *ServerConn) sendSettings(st *Settings, ack bool) error {
 	} else {
 		st.CopyTo(stFrame)
 	}
+
 	fr.SetBody(stFrame)
 
 	if _, err := fr.WriteTo(sc.bw); err != nil {
 		return err
 	}
+
 	return sc.bw.Flush()
 }
 
@@ -230,6 +234,7 @@ func (sc *ServerConn) handleSettings(fr *FrameHeader) error {
 			if mfs := st.MaxFrameSize(); mfs >= 16384 && mfs <= 16777215 {
 				sc.peerMaxFrameSize = mfs
 			}
+
 			if iws := st.MaxWindowSize(); iws > 0 {
 				sc.peerInitialWin = int32(iws)
 			}
@@ -263,6 +268,7 @@ func (sc *ServerConn) handlePing(fr *FrameHeader) error {
 	if _, err := ackFr.WriteTo(sc.bw); err != nil {
 		return err
 	}
+
 	return sc.bw.Flush()
 }
 
@@ -304,6 +310,7 @@ func (sc *ServerConn) handleContinuation(fr *FrameHeader) error {
 	defer ReleaseFrameHeader(fr)
 
 	streamID := fr.Stream()
+
 	sc.streamsMu.RLock()
 	st, ok := sc.streams[streamID]
 	sc.streamsMu.RUnlock()
@@ -325,18 +332,22 @@ func (sc *ServerConn) handleContinuation(fr *FrameHeader) error {
 
 func (sc *ServerConn) finishHeaderBlock(st *serverStream) error {
 	rawBlock := st.headerBlock.Bytes()
+
 	hf := AcquireHeaderField()
 	defer ReleaseHeaderField(hf)
 
 	var hasSeenRegularHeader bool
 	for len(rawBlock) > 0 {
 		hf.Reset()
+
 		var err error
+
 		rawBlock, err = sc.hpackDec.Next(hf, rawBlock)
 		if err != nil {
 			// RFC 7541 & RFC 9113 §4.3: HPACK decoding errors MUST be treated as COMPRESSION_ERROR
 			return CompressionError
 		}
+
 		if hf.Empty() {
 			continue
 		}
@@ -356,32 +367,38 @@ func (sc *ServerConn) finishHeaderBlock(st *serverStream) error {
 			if hasSeenRegularHeader {
 				return ProtocolError
 			}
+
 			switch k {
 			case ":method":
 				if st.method != "" {
 					return ProtocolError
 				}
+
 				st.method = v
 			case ":path":
 				if st.path != "" {
 					return ProtocolError
 				}
+
 				st.path = v
 			case ":scheme":
 				if st.scheme != "" {
 					return ProtocolError
 				}
+
 				st.scheme = v
 			case ":authority":
 				if st.authority != "" {
 					return ProtocolError
 				}
+
 				st.authority = v
 			case ":protocol":
 				// RFC 8441 §4: Extended CONNECT pseudo-header
 				if st.protocol != "" {
 					return ProtocolError
 				}
+
 				st.protocol = v
 			default:
 				// RFC 9113 §8.3: Unknown or invalid pseudo-header
@@ -408,6 +425,7 @@ func (sc *ServerConn) finishHeaderBlock(st *serverStream) error {
 	if st.method == "" {
 		return ProtocolError
 	}
+
 	if st.protocol != "" {
 		// RFC 8441 §4: :protocol pseudo-header is only valid on CONNECT requests with :scheme and :path
 		if st.method != "CONNECT" || st.scheme == "" || st.path == "" {
@@ -428,6 +446,7 @@ func (sc *ServerConn) handleData(fr *FrameHeader) error {
 	defer ReleaseFrameHeader(fr)
 
 	streamID := fr.Stream()
+
 	sc.streamsMu.RLock()
 	st, ok := sc.streams[streamID]
 	sc.streamsMu.RUnlock()
@@ -491,9 +510,11 @@ func (sc *ServerConn) writeResponse(streamID uint32, res *ServerResponse) error 
 
 	hdrFr.SetStream(streamID)
 	hdrFr.SetFlags(FlagEndHeaders)
+
 	if len(res.Body) == 0 {
 		hdrFr.SetFlags(FlagEndHeaders | FlagEndStream)
 	}
+
 	hdrFr.SetBody(hFrame)
 
 	if _, err := hdrFr.WriteTo(sc.bw); err != nil {
@@ -502,6 +523,7 @@ func (sc *ServerConn) writeResponse(streamID uint32, res *ServerResponse) error 
 
 	// 2. Serialize DATA Frames
 	body := res.Body
+
 	maxChunk := int(sc.peerMaxFrameSize)
 	if maxChunk <= 0 {
 		maxChunk = defaultMaxLen
@@ -517,9 +539,11 @@ func (sc *ServerConn) writeResponse(streamID uint32, res *ServerResponse) error 
 		dFrame.SetData(chunk)
 
 		dataFr.SetStream(streamID)
+
 		if len(body) == 0 {
 			dataFr.SetFlags(FlagEndStream)
 		}
+
 		dataFr.SetBody(dFrame)
 
 		_, err := dataFr.WriteTo(sc.bw)

@@ -16,15 +16,19 @@ func CompileTransforms(b *FieldBinding) []TransformFunc {
 	if b.Trim {
 		transforms = append(transforms, strings.TrimSpace)
 	}
+
 	if b.Lower {
 		transforms = append(transforms, strings.ToLower)
 	}
+
 	if b.Upper {
 		transforms = append(transforms, strings.ToUpper)
 	}
+
 	if b.SingleSpace {
 		transforms = append(transforms, collapseSpaces)
 	}
+
 	if b.DigitsOnly {
 		transforms = append(transforms, extractDigits)
 	}
@@ -34,18 +38,22 @@ func CompileTransforms(b *FieldBinding) []TransformFunc {
 
 func collapseSpaces(s string) string {
 	var buf strings.Builder
+
 	inSpace := false
 	for _, r := range s {
 		if unicode.IsSpace(r) {
 			if !inSpace {
 				buf.WriteRune(' ')
+
 				inSpace = true
 			}
 		} else {
 			buf.WriteRune(r)
+
 			inSpace = false
 		}
 	}
+
 	return strings.TrimSpace(buf.String())
 }
 
@@ -56,5 +64,6 @@ func extractDigits(s string) string {
 			buf.WriteRune(r)
 		}
 	}
+
 	return buf.String()
 }

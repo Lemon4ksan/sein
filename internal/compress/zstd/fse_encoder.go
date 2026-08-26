@@ -86,17 +86,20 @@ func (s *fseEncoder) allocCtable() {
 	if cap(s.ct.tableSymbol) < tableSize {
 		s.ct.tableSymbol = make([]byte, tableSize)
 	}
+
 	s.ct.tableSymbol = s.ct.tableSymbol[:tableSize]
 
 	ctSize := tableSize
 	if cap(s.ct.stateTable) < ctSize {
 		s.ct.stateTable = make([]uint16, ctSize)
 	}
+
 	s.ct.stateTable = s.ct.stateTable[:ctSize]
 
 	if cap(s.ct.symbolTT) < 256 {
 		s.ct.symbolTT = make([]symbolTransform, 256)
 	}
+
 	s.ct.symbolTT = s.ct.symbolTT[:256]
 }
 
@@ -104,6 +107,7 @@ func (s *fseEncoder) allocCtable() {
 func (s *fseEncoder) buildCTable() error {
 	tableSize := uint32(1 << s.actualTableLog)
 	highThreshold := tableSize - 1
+
 	var cumul [256]int16
 
 	s.allocCtable()
@@ -122,8 +126,10 @@ func (s *fseEncoder) buildCTable() error {
 				cumul[u+1] = cumul[u] + v
 			}
 		}
+
 		// Encode last symbol separately to avoid overflowing u
 		u := int(s.symbolLen - 1)
+
 		v := s.norm[s.symbolLen-1]
 		if v == -1 {
 			// Low proba symbol
@@ -133,26 +139,37 @@ func (s *fseEncoder) buildCTable() error {
 		} else {
 			cumul[u+1] = cumul[u] + v
 		}
+
 		if uint32(cumul[s.symbolLen]) != tableSize {
-			return fmt.Errorf("internal error: expected cumul[s.symbolLen] (%d) == tableSize (%d)", cumul[s.symbolLen], tableSize)
+			return fmt.Errorf(
+				"internal error: expected cumul[s.symbolLen] (%d) == tableSize (%d)",
+				cumul[s.symbolLen],
+				tableSize,
+			)
 		}
+
 		cumul[s.symbolLen] = int16(tableSize) + 1
 	}
+
 	// Spread symbols
 	s.zeroBits = false
 	{
 		step := tableStep(tableSize)
 		tableMask := tableSize - 1
+
 		var position uint32
 		// if any symbol > largeLimit, we may have 0 bits output.
 		largeLimit := int16(1 << (s.actualTableLog - 1))
 		for ui, v := range s.norm[:s.symbolLen] {
 			symbol := byte(ui)
+
 			if v > largeLimit {
 				s.zeroBits = true
 			}
+
 			for range v {
 				tableSymbol[position] = symbol
+
 				position = (position + step) & tableMask
 				for position > highThreshold {
 					position = (position + step) & tableMask
@@ -182,6 +199,7 @@ func (s *fseEncoder) buildCTable() error {
 		total := int16(0)
 		symbolTT := s.ct.symbolTT[:s.symbolLen]
 		tableLog := s.actualTableLog
+
 		tl := (uint32(tableLog) << 16) - (1 << tableLog)
 		for i, v := range s.norm[:s.symbolLen] {
 			switch v {
@@ -198,10 +216,12 @@ func (s *fseEncoder) buildCTable() error {
 				total += v
 			}
 		}
+
 		if total != int16(tableSize) {
 			return fmt.Errorf("total mismatch %d (got) != %d (want)", total, tableSize)
 		}
 	}
+
 	return nil
 }
 
@@ -215,6 +235,7 @@ func (s *fseEncoder) setRLE(val byte) {
 	s.allocCtable()
 	s.actualTableLog = 0
 	s.ct.stateTable = s.ct.stateTable[:1]
+
 	s.ct.symbolTT[val] = symbolTransform{
 		deltaFindState: 0,
 		deltaNbBits:    0,
@@ -222,6 +243,7 @@ func (s *fseEncoder) setRLE(val byte) {
 	if debugEncoder {
 		println("setRLE: val", val, "symbolTT", s.ct.symbolTT[val])
 	}
+
 	s.rleVal = val
 	s.useRLE = true
 }
@@ -232,23 +254,30 @@ func (s *fseEncoder) setBits(transform []byte) {
 	if s.reUsed || s.preDefined {
 		return
 	}
+
 	if s.useRLE {
 		if transform == nil {
 			s.ct.symbolTT[s.rleVal].outBits = s.rleVal
 			s.maxBits = s.rleVal
 			return
 		}
+
 		s.maxBits = transform[s.rleVal]
 		s.ct.symbolTT[s.rleVal].outBits = s.maxBits
+
 		return
 	}
+
 	if transform == nil {
 		for i := range s.ct.symbolTT[:s.symbolLen] {
 			s.ct.symbolTT[i].outBits = uint8(i)
 		}
+
 		s.maxBits = uint8(s.symbolLen - 1)
+
 		return
 	}
+
 	s.maxBits = 0
 	for i, v := range transform[:s.symbolLen] {
 		s.ct.symbolTT[i].outBits = v
@@ -266,7 +295,9 @@ func (s *fseEncoder) normalizeCount(length int) error {
 	if s.reUsed {
 		return nil
 	}
+
 	s.optimalTableLog(length)
+
 	var (
 		tableLog          = s.actualTableLog
 		scale             = 62 - uint64(tableLog)
@@ -275,34 +306,39 @@ func (s *fseEncoder) normalizeCount(length int) error {
 		stillToDistribute = int16(1 << tableLog)
 		largest           int
 		largestP          int16
-		lowThreshold      = (uint32)(length >> tableLog)
+		lowThreshold      = uint32(length >> tableLog)
 	)
 	if s.maxCount == length {
 		s.useRLE = true
 		return nil
 	}
+
 	s.useRLE = false
 	for i, cnt := range s.count[:s.symbolLen] {
 		if cnt == 0 {
 			s.norm[i] = 0
 			continue
 		}
+
 		if cnt <= lowThreshold {
 			s.norm[i] = -1
 			stillToDistribute--
 		} else {
-			proba := (int16)((uint64(cnt) * step) >> scale)
+			proba := int16((uint64(cnt) * step) >> scale)
 			if proba < 8 {
 				restToBeat := vStep * uint64(rtbTable[proba])
+
 				v := uint64(cnt)*step - (uint64(proba) << scale)
 				if v > restToBeat {
 					proba++
 				}
 			}
+
 			if proba > largestP {
 				largestP = proba
 				largest = i
 			}
+
 			s.norm[i] = proba
 			stillToDistribute -= proba
 		}
@@ -314,14 +350,17 @@ func (s *fseEncoder) normalizeCount(length int) error {
 		if err != nil {
 			return err
 		}
+
 		if debugAsserts {
 			err = s.validateNorm()
 			if err != nil {
 				return err
 			}
 		}
+
 		return s.buildCTable()
 	}
+
 	s.norm[largest] += stillToDistribute
 	if debugAsserts {
 		err := s.validateNorm()
@@ -329,6 +368,7 @@ func (s *fseEncoder) normalizeCount(length int) error {
 			return err
 		}
 	}
+
 	return s.buildCTable()
 }
 
@@ -336,6 +376,7 @@ func (s *fseEncoder) normalizeCount(length int) error {
 // To be used when primary method fails.
 func (s *fseEncoder) normalizeCount2(length int) error {
 	const notYetAssigned = -2
+
 	var (
 		distributed  uint32
 		total        = uint32(length)
@@ -348,20 +389,26 @@ func (s *fseEncoder) normalizeCount2(length int) error {
 			s.norm[i] = 0
 			continue
 		}
+
 		if cnt <= lowThreshold {
 			s.norm[i] = -1
 			distributed++
 			total -= cnt
+
 			continue
 		}
+
 		if cnt <= lowOne {
 			s.norm[i] = 1
 			distributed++
 			total -= cnt
+
 			continue
 		}
+
 		s.norm[i] = notYetAssigned
 	}
+
 	toDistribute := (1 << tableLog) - distributed
 
 	if (total / toDistribute) > lowOne {
@@ -372,35 +419,43 @@ func (s *fseEncoder) normalizeCount2(length int) error {
 				s.norm[i] = 1
 				distributed++
 				total -= cnt
+
 				continue
 			}
 		}
+
 		toDistribute = (1 << tableLog) - distributed
 	}
+
 	if distributed == uint32(s.symbolLen)+1 {
 		// all values are pretty poor;
 		//   probably incompressible data (should have already been detected);
 		//   find max, then give all remaining points to max
-		var maxV int
-		var maxC uint32
+		var (
+			maxV int
+			maxC uint32
+		)
 		for i, cnt := range s.count[:s.symbolLen] {
 			if cnt > maxC {
 				maxV = i
 				maxC = cnt
 			}
 		}
+
 		s.norm[maxV] += int16(toDistribute)
+
 		return nil
 	}
 
 	if total == 0 {
 		// all of the symbols were low enough for the lowOne or lowThreshold
-		for i := uint32(0); toDistribute > 0; i = (i + 1) % (uint32(s.symbolLen)) {
+		for i := uint32(0); toDistribute > 0; i = (i + 1) % uint32(s.symbolLen) {
 			if s.norm[i] > 0 {
 				toDistribute--
 				s.norm[i]++
 			}
 		}
+
 		return nil
 	}
 
@@ -421,10 +476,12 @@ func (s *fseEncoder) normalizeCount2(length int) error {
 			if weight < 1 {
 				return errors.New("weight < 1")
 			}
+
 			s.norm[i] = int16(weight)
 			tmpTotal = end
 		}
 	}
+
 	return nil
 }
 
@@ -433,6 +490,7 @@ func (s *fseEncoder) optimalTableLog(length int) {
 	tableLog := uint8(maxEncTableLog)
 	minBitsSrc := highBit(uint32(length)) + 1
 	minBitsSymbols := highBit(uint32(s.symbolLen-1)) + 2
+
 	minBits := uint8(minBitsSymbols)
 	if minBitsSrc < minBitsSymbols {
 		minBits = uint8(minBitsSrc)
@@ -443,22 +501,27 @@ func (s *fseEncoder) optimalTableLog(length int) {
 		// Accuracy can be reduced
 		tableLog = maxBitsSrc
 	}
+
 	if minBits > tableLog {
 		tableLog = minBits
 	}
+
 	// Need a minimum to safely represent all symbol values
 	if tableLog < minEncTablelog {
 		tableLog = minEncTablelog
 	}
+
 	if tableLog > maxEncTableLog {
 		tableLog = maxEncTableLog
 	}
+
 	s.actualTableLog = tableLog
 }
 
 // validateNorm validates the normalized histogram table.
 func (s *fseEncoder) validateNorm() (err error) {
 	var total int
+
 	for _, v := range s.norm[:s.symbolLen] {
 		if v >= 0 {
 			total += int(v)
@@ -466,23 +529,29 @@ func (s *fseEncoder) validateNorm() (err error) {
 			total -= int(v)
 		}
 	}
+
 	defer func() {
 		if err == nil {
 			return
 		}
+
 		fmt.Printf("selected TableLog: %d, Symbol length: %d\n", s.actualTableLog, s.symbolLen)
+
 		for i, v := range s.norm[:s.symbolLen] {
 			fmt.Printf("%3d: %5d -> %4d \n", i, s.count[i], v)
 		}
 	}()
+
 	if total != (1 << s.actualTableLog) {
 		return fmt.Errorf("warning: Total == %d != %d", total, 1<<s.actualTableLog)
 	}
+
 	for i, v := range s.count[s.symbolLen:] {
 		if v != 0 {
 			return fmt.Errorf("warning: Found symbol out of range, %d after cut", i)
 		}
 	}
+
 	return nil
 }
 
@@ -492,6 +561,7 @@ func (s *fseEncoder) writeCount(out []byte) ([]byte, error) {
 	if s.useRLE {
 		return append(out, s.rleVal), nil
 	}
+
 	if s.preDefined || s.reUsed {
 		// Never write predefined.
 		return out, nil
@@ -518,6 +588,7 @@ func (s *fseEncoder) writeCount(out []byte) ([]byte, error) {
 		out = append(out, make([]byte, maxHeaderSize*3)...)
 		out = out[:len(out)-maxHeaderSize*3]
 	}
+
 	out = out[:outP+maxHeaderSize]
 
 	// stops at 1
@@ -527,6 +598,7 @@ func (s *fseEncoder) writeCount(out []byte) ([]byte, error) {
 			for s.norm[charnum] == 0 {
 				charnum++
 			}
+
 			for charnum >= start+24 {
 				start += 24
 				bitStream += uint32(0xFFFF) << bitCount
@@ -535,12 +607,15 @@ func (s *fseEncoder) writeCount(out []byte) ([]byte, error) {
 				outP += 2
 				bitStream >>= 16
 			}
+
 			for charnum >= start+3 {
 				start += 3
 				bitStream += 3 << bitCount
 				bitCount += 2
 			}
+
 			bitStream += uint32(charnum-start) << bitCount
+
 			bitCount += 2
 			if bitCount > 16 {
 				out[outP] = byte(bitStream)
@@ -553,26 +628,32 @@ func (s *fseEncoder) writeCount(out []byte) ([]byte, error) {
 
 		count := s.norm[charnum]
 		charnum++
+
 		max := (2*threshold - 1) - remaining
 		if count < 0 {
 			remaining += count
 		} else {
 			remaining -= count
 		}
+
 		count++ // +1 for extra accuracy
 		if count >= threshold {
 			count += max // [0..max[ [max..threshold[ (...) [threshold+max 2*threshold[
 		}
+
 		bitStream += uint32(count) << bitCount
+
 		bitCount += nbBits
 		if count < max {
 			bitCount--
 		}
 
 		previous0 = count == 1
+
 		if remaining < 1 {
 			return nil, errors.New("internal error: remaining < 1")
 		}
+
 		for remaining < threshold {
 			nbBits--
 			threshold >>= 1
@@ -588,8 +669,17 @@ func (s *fseEncoder) writeCount(out []byte) ([]byte, error) {
 	}
 
 	if outP+2 > len(out) {
-		return nil, fmt.Errorf("internal error: %d > %d, maxheader: %d, sl: %d, tl: %d, normcount: %v", outP+2, len(out), maxHeaderSize, s.symbolLen, int(tableLog), s.norm[:s.symbolLen])
+		return nil, fmt.Errorf(
+			"internal error: %d > %d, maxheader: %d, sl: %d, tl: %d, normcount: %v",
+			outP+2,
+			len(out),
+			maxHeaderSize,
+			s.symbolLen,
+			int(tableLog),
+			s.norm[:s.symbolLen],
+		)
 	}
+
 	out[outP] = byte(bitStream)
 	out[outP+1] = byte(bitStream >> 8)
 	outP += int((bitCount + 7) / 8)
@@ -597,6 +687,7 @@ func (s *fseEncoder) writeCount(out []byte) ([]byte, error) {
 	if charnum > s.symbolLen {
 		return nil, errors.New("internal error: charnum > s.symbolLen")
 	}
+
 	return out[:outP], nil
 }
 
@@ -606,28 +697,34 @@ func (s *fseEncoder) writeCount(out []byte) ([]byte, error) {
 func (s *fseEncoder) bitCost(symbolValue uint8, accuracyLog uint32) uint32 {
 	minNbBits := s.ct.symbolTT[symbolValue].deltaNbBits >> 16
 	threshold := (minNbBits + 1) << 16
+
 	if debugAsserts {
-		if !(s.actualTableLog < 16) {
+		if s.actualTableLog >= 16 {
 			panic("!s.actualTableLog < 16")
 		}
+
 		// ensure enough room for renormalization double shift
-		if !(uint8(accuracyLog) < 31-s.actualTableLog) {
+		if uint8(accuracyLog) >= 31-s.actualTableLog {
 			panic("!uint8(accuracyLog) < 31-s.actualTableLog")
 		}
 	}
+
 	tableSize := uint32(1) << s.actualTableLog
 	deltaFromThreshold := threshold - (s.ct.symbolTT[symbolValue].deltaNbBits + tableSize)
 	// linear interpolation (very approximate)
 	normalizedDeltaFromThreshold := (deltaFromThreshold << accuracyLog) >> s.actualTableLog
+
 	bitMultiplier := uint32(1) << accuracyLog
 	if debugAsserts {
 		if s.ct.symbolTT[symbolValue].deltaNbBits+tableSize > threshold {
 			panic("s.ct.symbolTT[symbolValue].deltaNbBits+tableSize > threshold")
 		}
+
 		if normalizedDeltaFromThreshold > bitMultiplier {
 			panic("normalizedDeltaFromThreshold > bitMultiplier")
 		}
 	}
+
 	return (minNbBits+1)*bitMultiplier - normalizedDeltaFromThreshold
 }
 
@@ -639,26 +736,34 @@ func (s *fseEncoder) approxSize(hist []uint32) uint32 {
 		// More symbols than we have.
 		return math.MaxUint32
 	}
+
 	if s.useRLE {
 		// We will never reuse RLE encoders.
 		return math.MaxUint32
 	}
+
 	const kAccuracyLog = 8
+
 	badCost := (uint32(s.actualTableLog) + 1) << kAccuracyLog
+
 	var cost uint32
 	for i, v := range hist {
 		if v == 0 {
 			continue
 		}
+
 		if s.norm[i] == 0 {
 			return math.MaxUint32
 		}
+
 		bitCost := s.bitCost(uint8(i), kAccuracyLog)
 		if bitCost > badCost {
 			return math.MaxUint32
 		}
+
 		cost += v * bitCost
 	}
+
 	return cost >> kAccuracyLog
 }
 
@@ -668,9 +773,11 @@ func (s *fseEncoder) maxHeaderSize() uint32 {
 	if s.preDefined {
 		return 0
 	}
+
 	if s.useRLE {
 		return 8
 	}
+
 	return (((uint32(s.symbolLen) * uint32(s.actualTableLog)) >> 3) + 3) * 8
 }
 
@@ -684,6 +791,7 @@ type cState struct {
 // init will initialize the compression state to the first symbol of the stream.
 func (c *cState) init(bw *bitWriter, ct *cTable, first symbolTransform) {
 	c.bw = bw
+
 	c.stateTable = ct.stateTable
 	if len(c.stateTable) == 1 {
 		// RLE
@@ -691,6 +799,7 @@ func (c *cState) init(bw *bitWriter, ct *cTable, first symbolTransform) {
 		c.state = 0
 		return
 	}
+
 	nbBitsOut := (first.deltaNbBits + (1 << 15)) >> 16
 	im := int32((nbBitsOut << 16) - first.deltaNbBits)
 	lu := (im >> nbBitsOut) + int32(first.deltaFindState)

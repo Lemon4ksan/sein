@@ -14,6 +14,8 @@ import (
 	"github.com/lemon4ksan/foundation/silicon/endian"
 )
 
+var _ = (*bitReaderShifted).fillFast
+
 // bitReader reads a bitstream in reverse.
 // The last set bit indicates the start of the stream and is used
 // for aligning the input.

@@ -18,7 +18,9 @@ import (
 )
 
 func BenchmarkH1_SIMDRequestParsing(b *testing.B) {
-	rawHTTP := []byte("GET /api/v1/users?limit=100&offset=0 HTTP/1.1\r\nHost: example.com\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\nAccept: application/json\r\nAccept-Encoding: gzip, deflate, br, zstd\r\nConnection: keep-alive\r\n\r\n")
+	rawHTTP := []byte(
+		"GET /api/v1/users?limit=100&offset=0 HTTP/1.1\r\nHost: example.com\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\nAccept: application/json\r\nAccept-Encoding: gzip, deflate, br, zstd\r\nConnection: keep-alive\r\n\r\n",
+	)
 
 	rdr := bytes.NewReader(rawHTTP)
 	br := bufio.NewReaderSize(rdr, 4096)
@@ -50,6 +52,7 @@ func BenchmarkH1_ResponseSerialization(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		buf.Reset()
 		bw.Reset(&buf)
+
 		_ = res.WriteResponse(httptest.NewRecorder())
 	}
 }
@@ -87,7 +90,9 @@ func BenchmarkRouter_StaticMatch(b *testing.B) {
 }
 
 func BenchmarkZstd_Compress_Fastest(b *testing.B) {
-	payload := []byte(`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`)
+	payload := []byte(
+		`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`,
+	)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -98,7 +103,9 @@ func BenchmarkZstd_Compress_Fastest(b *testing.B) {
 }
 
 func BenchmarkZstd_Compress_Default(b *testing.B) {
-	payload := []byte(`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`)
+	payload := []byte(
+		`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`,
+	)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -109,7 +116,9 @@ func BenchmarkZstd_Compress_Default(b *testing.B) {
 }
 
 func BenchmarkBrotli_Compress_BestSpeed(b *testing.B) {
-	payload := []byte(`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`)
+	payload := []byte(
+		`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`,
+	)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -120,7 +129,9 @@ func BenchmarkBrotli_Compress_BestSpeed(b *testing.B) {
 }
 
 func BenchmarkBrotli_Compress_Default(b *testing.B) {
-	payload := []byte(`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`)
+	payload := []byte(
+		`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`,
+	)
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -131,7 +142,9 @@ func BenchmarkBrotli_Compress_Default(b *testing.B) {
 }
 
 func BenchmarkGzip_Compress_Default(b *testing.B) {
-	payload := []byte(`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`)
+	payload := []byte(
+		`{"status":"ok","code":200,"message":"Multi-algorithm server compression benchmark payload with repeated JSON fields","items":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`,
+	)
 
 	b.ReportAllocs()
 	b.ResetTimer()

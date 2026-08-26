@@ -6,7 +6,7 @@
 
 package ws
 
-const hasVectorWS = false
+const HasVectorWS = false
 
 // VectorApplyFastMask applies the 4-byte WebSocket XOR mask key to payload.
 func VectorApplyFastMask(payload []byte, mask [4]byte) {

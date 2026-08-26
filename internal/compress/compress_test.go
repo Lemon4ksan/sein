@@ -20,6 +20,7 @@ func TestBrotliCompressionRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompressBrotli BestSpeed failed: %v", err)
 	}
+
 	if len(fastCompressed) >= len(data) {
 		t.Errorf("expected compression, original: %d, compressed: %d", len(data), len(fastCompressed))
 	}
@@ -28,6 +29,7 @@ func TestBrotliCompressionRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecompressBrotli failed: %v", err)
 	}
+
 	if !bytes.Equal(fastDecompressed, data) {
 		t.Errorf("decompressed data mismatch")
 	}
@@ -42,6 +44,7 @@ func TestBrotliCompressionRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecompressBrotli failed: %v", err)
 	}
+
 	if !bytes.Equal(defaultDecompressed, data) {
 		t.Errorf("decompressed data mismatch")
 	}
@@ -73,6 +76,7 @@ func TestZstdCompressionRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompressZstd Fastest failed: %v", err)
 	}
+
 	if len(fastCompressed) >= len(data) {
 		t.Errorf("expected compression, original: %d, compressed: %d", len(data), len(fastCompressed))
 	}
@@ -81,6 +85,7 @@ func TestZstdCompressionRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecompressZstd failed: %v", err)
 	}
+
 	if !bytes.Equal(fastDecompressed, data) {
 		t.Errorf("decompressed data mismatch")
 	}
@@ -95,6 +100,7 @@ func TestZstdCompressionRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecompressZstd failed: %v", err)
 	}
+
 	if !bytes.Equal(defaultDecompressed, data) {
 		t.Errorf("decompressed data mismatch")
 	}
@@ -105,6 +111,7 @@ func TestAutoDecompress(t *testing.T) {
 
 	// 1. Test "zstd"
 	zstdComp, _ := compress.CompressZstd(data, compress.ZstdSpeedDefault)
+
 	zstdDec, err := compress.Decompress("zstd", zstdComp)
 	if err != nil || !bytes.Equal(zstdDec, data) {
 		t.Fatalf("auto decompress 'zstd' failed: %v", err)
@@ -112,6 +119,7 @@ func TestAutoDecompress(t *testing.T) {
 
 	// 2. Test "br"
 	brComp, _ := compress.CompressBrotli(data, compress.BrotliDefaultCompression)
+
 	brDec, err := compress.Decompress("br", brComp)
 	if err != nil || !bytes.Equal(brDec, data) {
 		t.Fatalf("auto decompress 'br' failed: %v", err)
@@ -119,6 +127,7 @@ func TestAutoDecompress(t *testing.T) {
 
 	// 3. Test "gzip"
 	gzComp, _ := compress.CompressGzip(data, 6)
+
 	gzDec, err := compress.Decompress("gzip", gzComp)
 	if err != nil || !bytes.Equal(gzDec, data) {
 		t.Fatalf("auto decompress 'gzip' failed: %v", err)
@@ -130,4 +139,3 @@ func TestAutoDecompress(t *testing.T) {
 		t.Fatalf("auto decompress 'identity' failed: %v", err)
 	}
 }
-

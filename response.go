@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
+
 	"github.com/lemon4ksan/sein/internal/h1"
 )
 
@@ -67,14 +68,14 @@ func (r Response[T]) WriteToH1(res *h1.Response) error {
 			res.Headers.Add(k, v)
 		}
 	}
-	for _, c := range r.Cookies {
-		res.Cookies = append(res.Cookies, c)
-	}
+
+	res.Cookies = append(res.Cookies, r.Cookies...)
 
 	status := r.Status
 	if status == 0 {
 		status = http.StatusOK
 	}
+
 	res.StatusCode = status
 
 	if status == http.StatusNoContent || status == http.StatusNotModified {
@@ -88,23 +89,32 @@ func (r Response[T]) WriteToH1(res *h1.Response) error {
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMEApplicationOctetStream)
 		}
+
 		res.Body = append(res.Body, v...)
+
 		return nil
+
 	case string:
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
 		}
+
 		res.Body = append(res.Body, v...)
+
 		return nil
+
 	default:
 		if res.Headers.Get(header.ContentType) == "" {
 			res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
 		}
+
 		data, err := json.Marshal(v)
 		if err != nil {
 			return err
 		}
+
 		res.Body = append(res.Body, data...)
+
 		return nil
 	}
 }
@@ -143,21 +153,29 @@ func (r Response[T]) WriteResponse(w http.ResponseWriter) error {
 		if w.Header().Get(header.ContentType) == "" {
 			w.Header().Set(header.ContentType, header.MIMEApplicationOctetStream)
 		}
+
 		w.WriteHeader(status)
 		_, err := w.Write(v)
+
 		return err
+
 	case string:
 		if w.Header().Get(header.ContentType) == "" {
 			w.Header().Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
 		}
+
 		w.WriteHeader(status)
 		_, err := w.Write([]byte(v))
+
 		return err
+
 	default:
 		if w.Header().Get(header.ContentType) == "" {
 			w.Header().Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
 		}
+
 		w.WriteHeader(status)
+
 		return json.NewEncoder(w).Encode(v)
 	}
 }
@@ -167,7 +185,9 @@ func (r Response[T]) WithHeader(key, value string) Response[T] {
 	if r.Headers == nil {
 		r.Headers = make(http.Header)
 	}
+
 	r.Headers.Set(key, value)
+
 	return r
 }
 
@@ -188,6 +208,7 @@ func (r Response[T]) WithETag(etag string) Response[T] {
 	if !strings.HasPrefix(etag, "\"") && !strings.HasPrefix(etag, "W/\"") {
 		etag = "\"" + etag + "\""
 	}
+
 	return r.WithHeader(header.ETag, etag)
 }
 
@@ -240,7 +261,9 @@ func Redirect(targetURL string, status ...int) Response[any] {
 	if len(status) > 0 {
 		code = status[0]
 	}
+
 	r := Response[any]{Status: code}
+
 	return r.WithHeader(header.Location, targetURL)
 }
 
@@ -259,5 +282,6 @@ func HTML(content string) Response[string] {
 		Status: http.StatusOK,
 		Body:   content,
 	}
+
 	return r.WithHeader(header.ContentType, "text/html; charset=utf-8")
 }

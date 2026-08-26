@@ -17,6 +17,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/builtin/compress"
 	intCompress "github.com/lemon4ksan/sein/internal/compress"
@@ -38,6 +39,7 @@ func TestResponseCompression_ZstdBrotliGzip(t *testing.T) {
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+
 	addr := ln.Addr().String()
 
 	go func() {
@@ -98,6 +100,7 @@ func TestResponseCompression_ZstdBrotliGzip(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	require.NoError(t, app.Shutdown(ctx))
 }
 
@@ -114,6 +117,7 @@ func TestInboundCompressedRequestBodyDecompression(t *testing.T) {
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+
 	addr := ln.Addr().String()
 
 	go func() {
@@ -136,6 +140,7 @@ func TestInboundCompressedRequestBodyDecompression(t *testing.T) {
 	assert.Equal(t, http.StatusOK, respZstd.StatusCode)
 	zstdEcho, _ := io.ReadAll(respZstd.Body)
 	_ = respZstd.Body.Close()
+
 	assert.Equal(t, "Echo: Secret Zstd payload", string(zstdEcho))
 
 	// 2. Brotli Request Body
@@ -152,9 +157,11 @@ func TestInboundCompressedRequestBodyDecompression(t *testing.T) {
 	assert.Equal(t, http.StatusOK, respBr.StatusCode)
 	brEcho, _ := io.ReadAll(respBr.Body)
 	_ = respBr.Body.Close()
+
 	assert.Equal(t, "Echo: Secret Brotli payload", string(brEcho))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	require.NoError(t, app.Shutdown(ctx))
 }

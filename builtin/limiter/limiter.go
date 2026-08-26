@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lemon4ksan/foundation/timekit"
 	"github.com/lemon4ksan/sein"
 )
 
@@ -68,11 +69,12 @@ func (rl *rateLimiter) getShard(key string) (shardIdx uint64) {
 		hash ^= uint64(key[i])
 		hash *= 1099511628211
 	}
+
 	return hash & 63
 }
 
-func (rl *rateLimiter) allow(key string) (allowed bool, remaining int64, resetInSecs int64) {
-	now := time.Now().Unix()
+func (rl *rateLimiter) allow(key string) (allowed bool, remaining, resetInSecs int64) {
+	now := timekit.CoarseUnix()
 	idx := rl.getShard(key)
 	shard := &rl.shards[idx]
 
@@ -82,6 +84,7 @@ func (rl *rateLimiter) allow(key string) (allowed bool, remaining int64, resetIn
 
 	if !exists {
 		shard.mu.Lock()
+
 		b, exists = shard.entries[key]
 		if !exists {
 			b = &bucket{
@@ -90,8 +93,10 @@ func (rl *rateLimiter) allow(key string) (allowed bool, remaining int64, resetIn
 			}
 			shard.entries[key] = b
 			shard.mu.Unlock()
+
 			return true, rl.rate - 1, rl.windowSecs
 		}
+
 		shard.mu.Unlock()
 	}
 
@@ -108,6 +113,7 @@ func (rl *rateLimiter) allow(key string) (allowed bool, remaining int64, resetIn
 
 	count := atomic.AddInt64(&b.count, 1)
 	remaining = rl.rate - count
+
 	resetInSecs = reset - now
 	if resetInSecs < 0 {
 		resetInSecs = 0
@@ -133,6 +139,7 @@ func New(config ...Config) sein.Middleware {
 		if cfg.Rate <= 0 {
 			cfg.Rate = DefaultConfig.Rate
 		}
+
 		if cfg.Window <= 0 {
 			cfg.Window = DefaultConfig.Window
 		}
@@ -148,7 +155,11 @@ func New(config ...Config) sein.Middleware {
 	limitHandler := cfg.LimitReachedHandler
 	if limitHandler == nil {
 		limitHandler = func(req *sein.Request) (any, error) {
-			return nil, sein.NewHTTPError(http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "rate limit exceeded, please try again later")
+			return nil, sein.NewHTTPError(
+				http.StatusTooManyRequests,
+				"TOO_MANY_REQUESTS",
+				"rate limit exceeded, please try again later",
+			)
 		}
 	}
 
@@ -177,9 +188,11 @@ func New(config ...Config) sein.Middleware {
 				if err != nil {
 					return nil, err
 				}
+
 				if rl.sendHeaders {
 					return attachRateLimitHeaders(res, rl.rate, 0, resetSecs), nil
 				}
+
 				return res, nil
 			}
 
@@ -207,12 +220,15 @@ func attachRateLimitHeaders(result any, limit, remaining, resetSecs int64) any {
 		if headers == nil {
 			headers = make(http.Header)
 		}
+
 		headers.Set("RateLimit-Limit", rateLimitStr)
 		headers.Set("RateLimit-Remaining", remainingStr)
 		headers.Set("RateLimit-Reset", resetStr)
+
 		if remaining == 0 {
 			headers.Set("Retry-After", resetStr)
 		}
+
 		return sein.StatusWith(holder.StatusCode(), holder.ResponseBody(), headers)
 	}
 
@@ -220,6 +236,7 @@ func attachRateLimitHeaders(result any, limit, remaining, resetSecs int64) any {
 	headers.Set("RateLimit-Limit", rateLimitStr)
 	headers.Set("RateLimit-Remaining", remainingStr)
 	headers.Set("RateLimit-Reset", resetStr)
+
 	if remaining == 0 {
 		headers.Set("Retry-After", resetStr)
 	}

@@ -440,6 +440,7 @@ func (d *frameDec) runDecoder(dst []byte, dec *blockDec) ([]byte, error) {
 			println("runDecoder: maxDecodedSize exceeded", uint64(len(d.history.b)-crcStart), ">", d.o.maxDecodedSize)
 
 			err = ErrDecoderSizeExceeded
+
 			break
 		}
 
@@ -447,6 +448,7 @@ func (d *frameDec) runDecoder(dst []byte, dec *blockDec) ([]byte, error) {
 			println("runDecoder: cap exceeded", uint64(len(d.history.b)), ">", cap(dst))
 
 			err = ErrDecoderSizeExceeded
+
 			break
 		}
 
@@ -454,6 +456,7 @@ func (d *frameDec) runDecoder(dst []byte, dec *blockDec) ([]byte, error) {
 			println("runDecoder: FrameContentSize exceeded", uint64(len(d.history.b)-crcStart), ">", d.FrameContentSize)
 
 			err = ErrFrameSizeExceeded
+
 			break
 		}
 
@@ -474,7 +477,7 @@ func (d *frameDec) runDecoder(dst []byte, dec *blockDec) ([]byte, error) {
 			if d.o.ignoreChecksum {
 				err = d.consumeCRC()
 			} else {
-				d.crc.Write(dst[crcStart:])
+				_, _ = d.crc.Write(dst[crcStart:])
 				err = d.checkCRC()
 			}
 		}

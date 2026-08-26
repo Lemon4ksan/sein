@@ -101,6 +101,7 @@ func handleHTTPConnect(ctx context.Context, srv *Server, conn net.Conn, req *htt
 	}
 
 	var d net.Dialer
+
 	outboundConn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, portStr))
 	if err != nil {
 		_, _ = conn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
@@ -203,6 +204,7 @@ func processInterceptedRequest(
 	if err != nil {
 		return err
 	}
+
 	outReq.Header = interceptReq.Header.Clone()
 
 	resp, err := engine.Do(outReq)

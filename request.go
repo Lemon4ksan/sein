@@ -5,7 +5,6 @@
 package sein
 
 import (
-	"slices"
 	"bufio"
 	"bytes"
 	"context"
@@ -18,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +25,7 @@ import (
 	"github.com/lemon4ksan/foundation/borrow"
 	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
+
 	"github.com/lemon4ksan/sein/internal/compress"
 	"github.com/lemon4ksan/sein/internal/h1"
 )
@@ -80,6 +81,7 @@ func NewRequest(r *http.Request, params map[string]string) *Request {
 		req.path = r.URL.Path
 		req.query = r.URL.RawQuery
 	}
+
 	return req
 }
 
@@ -102,7 +104,12 @@ func NewH1Request(h1Req *h1.Request, params map[string]string) *Request {
 }
 
 // NewH2Request creates a Request wrapping a native H2 stream request.
-func NewH2Request(method, path, authority, remoteAddr string, rawHeaders http.Header, body []byte, params map[string]string) *Request {
+func NewH2Request(
+	method, path, authority, remoteAddr string,
+	rawHeaders http.Header,
+	body []byte,
+	params map[string]string,
+) *Request {
 	req := &Request{
 		ctx:        context.Background(),
 		method:     method,
@@ -121,13 +128,20 @@ func NewH2Request(method, path, authority, remoteAddr string, rawHeaders http.He
 				h.Set(k, v)
 			}
 		}
+
 		req.h1Headers = &h
 	}
+
 	return req
 }
 
 // NewH3Request creates a Request wrapping a native H3 stream request.
-func NewH3Request(method, path, authority, remoteAddr string, rawHeaders http.Header, body []byte, params map[string]string) *Request {
+func NewH3Request(
+	method, path, authority, remoteAddr string,
+	rawHeaders http.Header,
+	body []byte,
+	params map[string]string,
+) *Request {
 	req := &Request{
 		ctx:        context.Background(),
 		method:     method,
@@ -146,8 +160,10 @@ func NewH3Request(method, path, authority, remoteAddr string, rawHeaders http.He
 				h.Set(k, v)
 			}
 		}
+
 		req.h1Headers = &h
 	}
+
 	return req
 }
 
@@ -157,11 +173,13 @@ func (r *Request) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if r.h1Req != nil {
 		return r.h1Req.Hijack()
 	}
+
 	if r.raw != nil {
 		if hj, ok := any(r.raw).(http.Hijacker); ok {
 			return hj.Hijack()
 		}
 	}
+
 	return nil, nil, errors.New("sein: hijacking not supported on this connection")
 }
 
@@ -170,6 +188,7 @@ func (r *Request) Scope() *borrow.Scope {
 	if r.scope == nil {
 		r.scope = borrow.NewScope()
 	}
+
 	return r.scope
 }
 
@@ -179,6 +198,7 @@ func (r *Request) Release() {
 		r.scope.Release()
 		r.scope = nil
 	}
+
 	if r.multipartForm != nil {
 		_ = r.multipartForm.RemoveAll()
 		r.multipartForm = nil
@@ -190,6 +210,7 @@ func (r *Request) Context() context.Context {
 	if r.ctx == nil {
 		return context.Background()
 	}
+
 	return r.ctx
 }
 
@@ -214,9 +235,11 @@ func (r *Request) Method() string {
 	if r.method != "" {
 		return r.method
 	}
+
 	if r.raw != nil {
 		return r.raw.Method
 	}
+
 	return ""
 }
 
@@ -225,9 +248,11 @@ func (r *Request) Path() string {
 	if r.path != "" {
 		return r.path
 	}
+
 	if r.raw != nil && r.raw.URL != nil {
 		return r.raw.URL.Path
 	}
+
 	return ""
 }
 
@@ -236,6 +261,7 @@ func (r *Request) Param(name string) ParamValue {
 	if r.params == nil {
 		return ""
 	}
+
 	return ParamValue(r.params[name])
 }
 
@@ -249,17 +275,21 @@ func (r *Request) Query(key string) ParamValue {
 					if err == nil {
 						return ParamValue(unescaped)
 					}
+
 					return ParamValue(v)
 				}
 			} else if pair == key {
 				return ""
 			}
 		}
+
 		return ""
 	}
+
 	if r.raw != nil && r.raw.URL != nil {
 		return ParamValue(r.raw.URL.Query().Get(key))
 	}
+
 	return ""
 }
 
@@ -268,9 +298,11 @@ func (r *Request) Header(key string) string {
 	if r.h1Headers != nil {
 		return r.h1Headers.Get(key)
 	}
+
 	if r.raw != nil {
 		return r.raw.Header.Get(key)
 	}
+
 	return ""
 }
 
@@ -282,27 +314,32 @@ func (r *Request) Cookies() []*http.Cookie {
 	}
 
 	parts := strings.Split(cookieHdr, ";")
+
 	cookies := make([]*http.Cookie, 0, len(parts))
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if k, v, found := strings.Cut(part, "="); found {
+			// #nosec G124 -- Parsing incoming Cookie header
 			cookies = append(cookies, &http.Cookie{
 				Name:  strings.TrimSpace(k),
 				Value: strings.TrimSpace(v),
 			})
 		}
 	}
+
 	return cookies
 }
 
 // BearerToken extracts the token from the "Authorization: Bearer <token>" header.
 func (r *Request) BearerToken() (string, bool) {
 	auth := r.Header(header.Authorization)
+
 	prefix := header.ValueBearer + " "
 	if strings.HasPrefix(auth, prefix) {
 		token := strings.TrimPrefix(auth, prefix)
 		return strings.TrimSpace(token), true
 	}
+
 	return "", false
 }
 
@@ -312,15 +349,19 @@ func (r *Request) ClientIP() string {
 	if cfIP := r.Header(header.CFConnectingIP); cfIP != "" {
 		return strings.TrimSpace(cfIP)
 	}
+
 	if flyIP := r.Header("Fly-Client-IP"); flyIP != "" {
 		return strings.TrimSpace(flyIP)
 	}
+
 	if trueIP := r.Header("True-Client-IP"); trueIP != "" {
 		return strings.TrimSpace(trueIP)
 	}
+
 	if realIP := r.Header(header.XRealIP); realIP != "" {
 		return strings.TrimSpace(realIP)
 	}
+
 	if fwd := r.Header(header.XForwardedFor); fwd != "" {
 		items := strings.Split(fwd, ",")
 		for _, item := range slices.Backward(items) {
@@ -330,20 +371,25 @@ func (r *Request) ClientIP() string {
 			}
 		}
 	}
+
 	if r.remoteAddr != "" {
 		host, _, err := net.SplitHostPort(r.remoteAddr)
 		if err == nil {
 			return host
 		}
+
 		return r.remoteAddr
 	}
+
 	if r.raw != nil {
 		host, _, err := net.SplitHostPort(r.raw.RemoteAddr)
 		if err == nil {
 			return host
 		}
+
 		return r.raw.RemoteAddr
 	}
+
 	return ""
 }
 
@@ -352,9 +398,11 @@ func (r *Request) RemoteAddr() string {
 	if r.remoteAddr != "" {
 		return r.remoteAddr
 	}
+
 	if r.raw != nil {
 		return r.raw.RemoteAddr
 	}
+
 	return ""
 }
 
@@ -363,9 +411,11 @@ func (r *Request) Protocol() string {
 	if r.proto != "" {
 		return r.proto
 	}
+
 	if r.raw != nil {
 		return r.raw.Proto
 	}
+
 	return ""
 }
 
@@ -374,14 +424,17 @@ func (r *Request) Scheme() string {
 	if proto := r.Header(header.XForwardedProto); proto != "" {
 		return proto
 	}
+
 	if r.raw != nil {
 		if r.raw.TLS != nil {
 			return "https"
 		}
+
 		if r.raw.URL != nil && r.raw.URL.Scheme != "" {
 			return r.raw.URL.Scheme
 		}
 	}
+
 	return "http"
 }
 
@@ -390,9 +443,11 @@ func (r *Request) Host() string {
 	if r.host != "" {
 		return r.host
 	}
+
 	if r.raw != nil {
 		return r.raw.Host
 	}
+
 	return ""
 }
 
@@ -402,18 +457,22 @@ func (r *Request) IfNoneMatch(etag string) bool {
 	if headerVal == "" {
 		return false
 	}
+
 	if headerVal == "*" {
 		return true
 	}
+
 	etag = strings.Trim(etag, "\"")
 	for _, part := range strings.Split(headerVal, ",") {
 		part = strings.TrimSpace(part)
 		part = strings.TrimPrefix(part, "W/")
+
 		part = strings.Trim(part, "\"")
 		if part == etag {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -423,10 +482,12 @@ func (r *Request) IfModifiedSince(lastModified time.Time) bool {
 	if headerVal == "" {
 		return false
 	}
+
 	t, err := http.ParseTime(headerVal)
 	if err != nil {
 		return false
 	}
+
 	return !lastModified.Truncate(time.Second).After(t)
 }
 
@@ -451,12 +512,14 @@ func (r *Request) parseMultipartForm(maxMemory int64) error {
 	}
 
 	mr := multipart.NewReader(bytes.NewReader(r.Body()), boundary)
+
 	f, err := mr.ReadForm(maxMemory)
 	if err != nil {
 		return err
 	}
 
 	r.multipartForm = f
+
 	return nil
 }
 
@@ -483,6 +546,7 @@ func (r *Request) FormValue(key string) string {
 				if err == nil {
 					return unescaped
 				}
+
 				return v
 			}
 		}
@@ -497,6 +561,7 @@ func (r *Request) Cookie(name string) (string, error) {
 	if cookieHeader == "" {
 		return "", http.ErrNoCookie
 	}
+
 	for _, part := range strings.Split(cookieHeader, ";") {
 		part = strings.TrimSpace(part)
 		if k, v, found := strings.Cut(part, "="); found {
@@ -505,6 +570,7 @@ func (r *Request) Cookie(name string) (string, error) {
 			}
 		}
 	}
+
 	return "", http.ErrNoCookie
 }
 
@@ -540,6 +606,7 @@ func (r *Request) FormFiles(key string) ([]*File, error) {
 			for i, fh := range fhs {
 				files[i] = NewFile(fh)
 			}
+
 			return files, nil
 		}
 	}
@@ -550,10 +617,12 @@ func (r *Request) FormFiles(key string) ([]*File, error) {
 
 	if r.multipartForm != nil && r.multipartForm.File != nil {
 		fhs := r.multipartForm.File[key]
+
 		files := make([]*File, len(fhs))
 		for i, fh := range fhs {
 			files[i] = NewFile(fh)
 		}
+
 		return files, nil
 	}
 
@@ -576,6 +645,7 @@ func (r *Request) SaveUploadedFile(file *File, dstPath string) error {
 	if file == nil {
 		return ErrBadRequest("nil file provided to SaveUploadedFile")
 	}
+
 	return file.SaveTo(dstPath)
 }
 
@@ -591,6 +661,7 @@ func (r *Request) Body() []byte {
 				r.bodyBuf = decompressed
 			}
 		}
+
 		return r.bodyBuf
 	}
 
@@ -599,15 +670,19 @@ func (r *Request) Body() []byte {
 		if err != nil {
 			return nil
 		}
+
 		if ce := r.Header(header.ContentEncoding); ce != "" && ce != "identity" {
 			decompressed, err := compress.Decompress(ce, data)
 			if err == nil {
 				data = decompressed
 			}
 		}
+
 		r.bodyBuf = data
+
 		return data
 	}
+
 	return nil
 }
 
@@ -617,6 +692,7 @@ func (r *Request) BindJSON(dest any) error {
 	if len(body) == 0 {
 		return ErrEmptyRequestBody
 	}
+
 	if err := json.Unmarshal(body, dest); err != nil {
 		return ErrInvalidJSONPayload.WithCause(err)
 	}
@@ -627,9 +703,11 @@ func (r *Request) BindJSON(dest any) error {
 			if errors.As(err, &domainErr) {
 				return domainErr
 			}
+
 			return ErrValidationFailed.WithMessage(err.Error())
 		}
 	}
+
 	return nil
 }
 
@@ -653,6 +731,7 @@ func Set[T any](r *Request, val T) {
 	if r.overflow == nil {
 		r.overflow = make(map[reflect.Type]any)
 	}
+
 	r.overflow[typ] = val
 }
 
@@ -683,5 +762,6 @@ func MustGet[T any](r *Request) T {
 	if !ok {
 		panic("sein: requested type not found in request storage: " + reflect.TypeFor[T]().String())
 	}
+
 	return val
 }

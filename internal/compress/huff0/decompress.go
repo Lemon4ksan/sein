@@ -27,6 +27,13 @@ type dEntrySingle struct {
 // Uses special code for all tables that are < 8 bits.
 const use8BitTables = true
 
+var (
+	_ = use8BitTables
+	_ = (*Decoder).decompress1X8Bit
+	_ = (*Decoder).decompress1X8BitExactly
+	_ = (*Scratch).matches
+)
+
 // ReadTable will read a table from the input.
 // The size of the input may be larger than the table definition.
 // Any content remaining after the table definition will be returned.
@@ -199,7 +206,8 @@ func ReadTable(in []byte, s *Scratch) (s2 *Scratch, remain []byte, err error) {
 // The length of the supplied input must match the end of a block exactly.
 // Before this is called, the table must be initialized with ReadTable unless
 // the encoder re-used the table.
-// deprecated: Use the stateless Decoder() to get a concurrent version.
+//
+// Deprecated: Use the stateless Decoder() to get a concurrent version.
 func (s *Scratch) Decompress1X(in []byte) (out []byte, err error) {
 	if cap(s.Out) < s.MaxDecodedSize {
 		s.Out = make([]byte, s.MaxDecodedSize)
@@ -216,7 +224,8 @@ func (s *Scratch) Decompress1X(in []byte) (out []byte, err error) {
 // the encoder re-used the table.
 // The length of the supplied input must match the end of a block exactly.
 // The destination size of the uncompressed data must be known and provided.
-// deprecated: Use the stateless Decoder() to get a concurrent version.
+//
+// Deprecated: Use the stateless Decoder() to get a concurrent version.
 func (s *Scratch) Decompress4X(in []byte, dstSize int) (out []byte, err error) {
 	if dstSize > s.MaxDecodedSize {
 		return nil, ErrMaxDecodedSizeExceeded
@@ -312,7 +321,7 @@ func (d *Decoder) decompress1X8Bit(dst, src []byte) ([]byte, error) {
 			off += 4
 			if off == 0 {
 				if len(dst)+256 > maxDecodedSize {
-					br.close()
+					_ = br.close()
 					d.bufs.Put(bufs)
 					return nil, ErrMaxDecodedSizeExceeded
 				}
@@ -344,7 +353,7 @@ func (d *Decoder) decompress1X8Bit(dst, src []byte) ([]byte, error) {
 			off += 4
 			if off == 0 {
 				if len(dst)+256 > maxDecodedSize {
-					br.close()
+					_ = br.close()
 					d.bufs.Put(bufs)
 					return nil, ErrMaxDecodedSizeExceeded
 				}
@@ -377,7 +386,7 @@ func (d *Decoder) decompress1X8Bit(dst, src []byte) ([]byte, error) {
 			if off == 0 {
 				if len(dst)+256 > maxDecodedSize {
 					d.bufs.Put(bufs)
-					br.close()
+					_ = br.close()
 					return nil, ErrMaxDecodedSizeExceeded
 				}
 
@@ -738,7 +747,6 @@ func (d *Decoder) decompress4X8bit(dst, src []byte) ([]byte, error) {
 	// Decode 4 values from each decoder/loop.
 	const bufoff = 256
 	for br[0].off >= 4 && br[1].off >= 4 && br[2].off >= 4 && br[3].off >= 4 {
-
 		{
 			// Interleave 2 decodes.
 			const (
@@ -898,7 +906,7 @@ func (d *Decoder) decompress4X8bit(dst, src []byte) ([]byte, error) {
 				if br.off >= 4 {
 					v := br.in[br.off-4:]
 					v = v[:4]
-					low := (uint32(v[0])) | (uint32(v[1]) << 8) | (uint32(v[2]) << 16) | (uint32(v[3]) << 24)
+					low := uint32(v[0]) | (uint32(v[1]) << 8) | (uint32(v[2]) << 16) | (uint32(v[3]) << 24)
 					br.value |= uint64(low) << (br.bitsRead - 32)
 					br.bitsRead -= 32
 					br.off -= 4
@@ -1000,7 +1008,6 @@ func (d *Decoder) decompress4X8bitExactly(dst, src []byte) ([]byte, error) {
 	// Decode 4 values from each decoder/loop.
 	const bufoff = 256
 	for br[0].off >= 4 && br[1].off >= 4 && br[2].off >= 4 && br[3].off >= 4 {
-
 		{
 			// Interleave 2 decodes.
 			const (
@@ -1159,7 +1166,7 @@ func (d *Decoder) decompress4X8bitExactly(dst, src []byte) ([]byte, error) {
 				if br.off >= 4 {
 					v := br.in[br.off-4:]
 					v = v[:4]
-					low := (uint32(v[0])) | (uint32(v[1]) << 8) | (uint32(v[2]) << 16) | (uint32(v[3]) << 24)
+					low := uint32(v[0]) | (uint32(v[1]) << 8) | (uint32(v[2]) << 16) | (uint32(v[3]) << 24)
 					br.value |= uint64(low) << (br.bitsRead - 32)
 					br.bitsRead -= 32
 					br.off -= 4
@@ -1233,6 +1240,7 @@ func (s *Scratch) matches(ct cTable, w io.Writer) {
 					fmt.Fprintf(w, "symbol %x has decoder, but no encoder\n", sym)
 
 					errs++
+
 					break
 				}
 			}

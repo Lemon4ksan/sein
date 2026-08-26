@@ -584,7 +584,7 @@ func (s *Scratch) normalizeCount() error {
 		stillToDistribute = int16(1 << tableLog)
 		largest           int
 		largestP          int16
-		lowThreshold      = (uint32)(s.br.remain() >> tableLog)
+		lowThreshold      = uint32(s.br.remain() >> tableLog)
 	)
 
 	for i, cnt := range s.count[:s.symbolLen] {
@@ -599,7 +599,7 @@ func (s *Scratch) normalizeCount() error {
 			s.norm[i] = -1
 			stillToDistribute--
 		} else {
-			proba := (int16)((uint64(cnt) * step) >> scale)
+			proba := int16((uint64(cnt) * step) >> scale)
 			if proba < 8 {
 				restToBeat := vStep * uint64(rtbTable[proba])
 
@@ -707,7 +707,7 @@ func (s *Scratch) normalizeCount2() error {
 
 	if total == 0 {
 		// all of the symbols were low enough for the lowOne or lowThreshold
-		for i := uint32(0); toDistribute > 0; i = (i + 1) % (uint32(s.symbolLen)) {
+		for i := uint32(0); toDistribute > 0; i = (i + 1) % uint32(s.symbolLen) {
 			if s.norm[i] > 0 {
 				toDistribute--
 				s.norm[i]++

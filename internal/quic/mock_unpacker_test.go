@@ -12,10 +12,10 @@ package quic
 import (
 	reflect "reflect"
 
+	gomock "github.com/lemon4ksan/foundation/testkit/gomock"
 	monotime "github.com/lemon4ksan/sein/internal/quic/internal/monotime"
 	protocol "github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 	wire "github.com/lemon4ksan/sein/internal/quic/internal/wire"
-	gomock "github.com/lemon4ksan/foundation/testkit/gomock"
 )
 
 // MockUnpacker is a mock of Unpacker interface.

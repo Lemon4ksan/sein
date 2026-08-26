@@ -16,6 +16,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/ws"
 )
@@ -35,6 +36,7 @@ func TestWebSocket_HandshakeAndEcho(t *testing.T) {
 			if err != nil {
 				return nil, nil
 			}
+
 			if err := conn.WriteMessage(msgType, data); err != nil {
 				return nil, err
 			}
@@ -43,6 +45,7 @@ func TestWebSocket_HandshakeAndEcho(t *testing.T) {
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+
 	addr := ln.Addr().String()
 
 	go func() {
@@ -52,6 +55,7 @@ func TestWebSocket_HandshakeAndEcho(t *testing.T) {
 	// Connect TCP client
 	clientConn, err := net.Dial("tcp", addr)
 	require.NoError(t, err)
+
 	defer clientConn.Close()
 
 	// 1. Perform WebSocket Handshake
@@ -78,20 +82,25 @@ func TestWebSocket_HandshakeAndEcho(t *testing.T) {
 
 	// Read Headers
 	expectedAccept := ws.ComputeAcceptKey(clientKey)
+
 	var hasUpgrade, hasAccept bool
 	for {
 		line, err := br.ReadString('\n')
 		require.NoError(t, err)
+
 		if line == "\r\n" {
 			break
 		}
+
 		if line == "Upgrade: websocket\r\n" {
 			hasUpgrade = true
 		}
+
 		if line == "Sec-WebSocket-Accept: "+expectedAccept+"\r\n" {
 			hasAccept = true
 		}
 	}
+
 	assert.True(t, hasUpgrade)
 	assert.True(t, hasAccept)
 
@@ -106,7 +115,7 @@ func TestWebSocket_HandshakeAndEcho(t *testing.T) {
 	}
 
 	frameHdr := []byte{
-		0x81, // FIN + OpText
+		0x81,                      // FIN + OpText
 		0x80 | byte(len(payload)), // Masked bit + Length
 		maskKey[0], maskKey[1], maskKey[2], maskKey[3],
 	}
@@ -118,6 +127,7 @@ func TestWebSocket_HandshakeAndEcho(t *testing.T) {
 
 	// 3. Read Server Echo (Unmasked)
 	var respHdr [2]byte
+
 	_, err = io.ReadFull(br, respHdr[:])
 	require.NoError(t, err)
 	assert.Equal(t, byte(0x81), respHdr[0]) // FIN + OpText
@@ -141,6 +151,7 @@ func TestWebSocket_HandshakeAndEcho(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	require.NoError(t, app.Shutdown(ctx))
 }
 
@@ -153,11 +164,13 @@ func TestWebSocket_SubprotocolNegotiation(t *testing.T) {
 			return nil, err
 		}
 		defer conn.Close()
+
 		return nil, nil
 	})
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+
 	addr := ln.Addr().String()
 
 	go func() {
@@ -166,6 +179,7 @@ func TestWebSocket_SubprotocolNegotiation(t *testing.T) {
 
 	clientConn, err := net.Dial("tcp", addr)
 	require.NoError(t, err)
+
 	defer clientConn.Close()
 
 	nonce := make([]byte, 16)
@@ -192,17 +206,21 @@ func TestWebSocket_SubprotocolNegotiation(t *testing.T) {
 	for {
 		line, err := br.ReadString('\n')
 		require.NoError(t, err)
+
 		if line == "\r\n" {
 			break
 		}
+
 		if len(line) > 24 && line[:24] == "Sec-WebSocket-Protocol: " {
 			matchedProto = line[24 : len(line)-2]
 		}
 	}
+
 	assert.Equal(t, "json-rpc", matchedProto)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	require.NoError(t, app.Shutdown(ctx))
 }
 
@@ -223,6 +241,7 @@ func TestWebSocket_InvalidHandshake_Rejection(t *testing.T) {
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+
 	addr := ln.Addr().String()
 
 	go func() {
@@ -232,17 +251,28 @@ func TestWebSocket_InvalidHandshake_Rejection(t *testing.T) {
 	// 1. Test POST method rejection (RFC 6455 §4.2.1 Item 1)
 	conn1, err := net.Dial("tcp", addr)
 	require.NoError(t, err)
-	_, _ = conn1.Write([]byte("POST /ws-invalid HTTP/1.1\r\nHost: " + addr + "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n"))
+
+	_, _ = conn1.Write(
+		[]byte(
+			"POST /ws-invalid HTTP/1.1\r\nHost: " + addr + "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n",
+		),
+	)
 	_ = conn1.Close()
 
 	// 2. Test Invalid Key (not 16 bytes decoded) (RFC 6455 §4.2.1 Item 5)
 	conn2, err := net.Dial("tcp", addr)
 	require.NoError(t, err)
-	_, _ = conn2.Write([]byte("GET /ws-badkey HTTP/1.1\r\nHost: " + addr + "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: YWJjZA==\r\n\r\n"))
+
+	_, _ = conn2.Write(
+		[]byte(
+			"GET /ws-badkey HTTP/1.1\r\nHost: " + addr + "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: YWJjZA==\r\n\r\n",
+		),
+	)
 	_ = conn2.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	require.NoError(t, app.Shutdown(ctx))
 }
 

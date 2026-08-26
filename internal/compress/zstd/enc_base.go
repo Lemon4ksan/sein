@@ -49,9 +49,12 @@ func (e *fastBase) WindowSize(size int64) int32 {
 	if size > 0 && size < int64(e.maxMatchOff) {
 		b := max(
 			// Keep minimum window.
-			int32(1)<<uint(bits.Len(uint(size))), 1024)
+			int32(1)<<uint(bits.Len(uint(size))), 1024,
+		)
+
 		return b
 	}
+
 	return e.maxMatchOff
 }
 
@@ -64,14 +67,23 @@ func (e *fastBase) addBlock(src []byte) int32 {
 	if debugAsserts && e.cur > e.bufferReset {
 		panic(fmt.Sprintf("ecur (%d) > buffer reset (%d)", e.cur, e.bufferReset))
 	}
+
 	// check if we have space already
 	if len(e.hist)+len(src) > cap(e.hist) {
 		if cap(e.hist) == 0 {
 			e.ensureHist(len(src))
 		} else {
 			if cap(e.hist) < int(e.maxMatchOff+maxCompressedBlockSize) {
-				panic(fmt.Errorf("unexpected buffer cap %d, want at least %d with window %d", cap(e.hist), e.maxMatchOff+maxCompressedBlockSize, e.maxMatchOff))
+				panic(
+					fmt.Errorf(
+						"unexpected buffer cap %d, want at least %d with window %d",
+						cap(e.hist),
+						e.maxMatchOff+maxCompressedBlockSize,
+						e.maxMatchOff,
+					),
+				)
 			}
+
 			// Move down
 			offset := int32(len(e.hist)) - e.maxMatchOff
 			copy(e.hist[0:e.maxMatchOff], e.hist[offset:])
@@ -79,8 +91,10 @@ func (e *fastBase) addBlock(src []byte) int32 {
 			e.hist = e.hist[:e.maxMatchOff]
 		}
 	}
+
 	s := int32(len(e.hist))
 	e.hist = append(e.hist, src...)
+
 	return s
 }
 
@@ -89,20 +103,24 @@ func (e *fastBase) ensureHist(n int) {
 	if cap(e.hist) >= n {
 		return
 	}
+
 	l := e.maxMatchOff
 	if (e.lowMem && e.maxMatchOff > maxCompressedBlockSize) || e.maxMatchOff <= maxCompressedBlockSize {
 		l += maxCompressedBlockSize
 	} else {
 		l += e.maxMatchOff
 	}
+
 	// Make it at least 1MB.
 	if l < 1<<20 && !e.lowMem {
 		l = 1 << 20
 	}
+
 	// Make it at least the requested size.
 	if l < int32(n) {
 		l = int32(n)
 	}
+
 	e.hist = make([]byte, 0, l)
 }
 
@@ -119,18 +137,22 @@ func (e *fastBase) matchlen(s, t int32, src []byte) int32 {
 			err := fmt.Sprintf("s (%d) < 0", s)
 			panic(err)
 		}
+
 		if t < 0 {
 			err := fmt.Sprintf("t (%d) < 0", t)
 			panic(err)
 		}
+
 		if s-t > e.maxMatchOff {
 			err := fmt.Sprintf("s (%d) - t (%d) > maxMatchOff (%d)", s, t, e.maxMatchOff)
 			panic(err)
 		}
+
 		if len(src)-int(s) > maxCompressedBlockSize {
 			panic(fmt.Sprintf("len(src)-s (%d) > maxCompressedBlockSize (%d)", len(src)-int(s), maxCompressedBlockSize))
 		}
 	}
+
 	return int32(matchLen(src[s:], src[t:]))
 }
 
@@ -144,12 +166,15 @@ func (e *fastBase) resetBasePrefix(prefix []byte) {
 	} else {
 		e.blk.reset(nil)
 	}
+
 	e.blk.initNewEncode()
+
 	if e.crc == nil {
 		e.crc = xxhash.New()
 	} else {
 		e.crc.Reset()
 	}
+
 	e.blk.dictLitEnc = nil
 	e.ensureHist(len(prefix) + maxCompressedBlockSize)
 	// Bump cur so old table entries fall outside the window.
@@ -158,6 +183,7 @@ func (e *fastBase) resetBasePrefix(prefix []byte) {
 	if e.cur < e.bufferReset {
 		e.cur += e.maxMatchOff + int32(len(e.hist))
 	}
+
 	e.hist = e.hist[:0]
 	e.hist = append(e.hist, prefix...)
 }
@@ -170,18 +196,22 @@ func (e *fastBase) resetBase(d *dict, singleBlock bool) {
 	} else {
 		e.blk.reset(nil)
 	}
+
 	e.blk.initNewEncode()
+
 	if e.crc == nil {
 		e.crc = xxhash.New()
 	} else {
 		e.crc.Reset()
 	}
+
 	e.blk.dictLitEnc = nil
 	if d != nil {
 		low := e.lowMem
 		if singleBlock {
 			e.lowMem = true
 		}
+
 		e.ensureHist(d.ContentSize() + maxCompressedBlockSize)
 		e.lowMem = low
 	}
@@ -191,6 +221,7 @@ func (e *fastBase) resetBase(d *dict, singleBlock bool) {
 	if e.cur < e.bufferReset {
 		e.cur += e.maxMatchOff + int32(len(e.hist))
 	}
+
 	e.hist = e.hist[:0]
 	if d != nil {
 		// Set offsets (currently not used)
@@ -198,6 +229,7 @@ func (e *fastBase) resetBase(d *dict, singleBlock bool) {
 			e.blk.recentOffsets[i] = uint32(off)
 			e.blk.prevRecentOffsets[i] = e.blk.recentOffsets[i]
 		}
+
 		// Transfer litenc.
 		e.blk.dictLitEnc = d.litEnc
 		e.hist = append(e.hist, d.content...)

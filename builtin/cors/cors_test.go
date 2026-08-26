@@ -12,6 +12,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/testkit/assert"
+
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/builtin/cors"
 )
@@ -26,6 +27,7 @@ func TestCORS_Default_SimpleRequest(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/data", nil)
 	req.Header.Set(header.Origin, "https://frontend.example.com")
+
 	w := httptest.NewRecorder()
 
 	s.ServeHTTP(w, req)
@@ -53,6 +55,7 @@ func TestCORS_Preflight_WithOptions(t *testing.T) {
 	req.Header.Set(header.Origin, "https://dashboard.lemon.app")
 	req.Header.Set(header.AccessControlRequestMethod, "POST")
 	req.Header.Set(header.AccessControlRequestHeaders, "Authorization, Content-Type")
+
 	w := httptest.NewRecorder()
 
 	s.ServeHTTP(w, req)
@@ -68,6 +71,7 @@ func TestCORS_Preflight_WithOptions(t *testing.T) {
 	reqInvalid := httptest.NewRequest("OPTIONS", "/api/v1/resource", nil)
 	reqInvalid.Header.Set(header.Origin, "https://malicious.hacker.com")
 	reqInvalid.Header.Set(header.AccessControlRequestMethod, "POST")
+
 	wInvalid := httptest.NewRecorder()
 
 	s.ServeHTTP(wInvalid, reqInvalid)

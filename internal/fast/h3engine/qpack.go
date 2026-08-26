@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
+
 	"github.com/lemon4ksan/sein/internal/qpack"
 )
 
@@ -30,6 +31,7 @@ type PooledEncoder struct {
 var encoderPool = sync.Pool{
 	New: func() any {
 		buf := new(bytes.Buffer)
+
 		return &PooledEncoder{
 			buf: buf,
 			enc: qpack.NewEncoder(buf),
@@ -50,10 +52,15 @@ func NewQPACKCodec() *QPACKCodec {
 }
 
 // DecodeRequestHeaders decodes a QPACK header block into HTTP/3 pseudo-headers and standard http.Header.
-func (q *QPACKCodec) DecodeRequestHeaders(headerBlock []byte) (method, path, scheme, authority string, headers http.Header, err error) {
+func (q *QPACKCodec) DecodeRequestHeaders(
+	headerBlock []byte,
+) (method, path, scheme, authority string, headers http.Header, err error) {
 	headers = make(http.Header)
-	var hasSeenRegularHeader bool
-	var malformed bool
+
+	var (
+		hasSeenRegularHeader bool
+		malformed            bool
+	)
 
 	decodeErr := q.decoder.DecodeFields(headerBlock, func(hf qpack.HeaderField) bool {
 		k := hf.Name
@@ -80,25 +87,33 @@ func (q *QPACKCodec) DecodeRequestHeaders(headerBlock []byte) (method, path, sch
 					malformed = true
 					return false
 				}
+
 				method = v
+
 			case ":path":
 				if path != "" {
 					malformed = true
 					return false
 				}
+
 				path = v
+
 			case ":scheme":
 				if scheme != "" {
 					malformed = true
 					return false
 				}
+
 				scheme = v
+
 			case ":authority":
 				if authority != "" {
 					malformed = true
 					return false
 				}
+
 				authority = v
+
 			case ":protocol":
 				// RFC 9220: Extended CONNECT for WebSockets
 				headers.Set(":protocol", v)
@@ -123,12 +138,13 @@ func (q *QPACKCodec) DecodeRequestHeaders(headerBlock []byte) (method, path, sch
 
 			headers.Add(k, v)
 		}
+
 		return true
 	})
-
 	if decodeErr != nil {
 		return "", "", "", "", nil, ErrQPACKDecompressFailed
 	}
+
 	if malformed {
 		return "", "", "", "", nil, ErrMalformedHeader
 	}
@@ -143,8 +159,10 @@ func (q *QPACKCodec) DecodeRequestHeaders(headerBlock []byte) (method, path, sch
 // EncodeResponseHeaders encodes HTTP response status and headers into a QPACK-compressed byte slice.
 func (q *QPACKCodec) EncodeResponseHeaders(statusCode int, headers http.Header, bodyLen int) []byte {
 	pe := encoderPool.Get().(*PooledEncoder)
-	pe.buf.Reset()
 	defer encoderPool.Put(pe)
+
+	pe.buf.Reset()
+	pe.enc.Reset(pe.buf)
 
 	// 1. :status pseudo-header
 	_ = pe.enc.WriteField(qpack.HeaderField{
@@ -165,6 +183,7 @@ func (q *QPACKCodec) EncodeResponseHeaders(statusCode int, headers http.Header, 
 		if isForbiddenH3Header(k) {
 			continue
 		}
+
 		kLower := strings.ToLower(k)
 		for _, v := range vv {
 			_ = pe.enc.WriteField(qpack.HeaderField{
@@ -176,6 +195,7 @@ func (q *QPACKCodec) EncodeResponseHeaders(statusCode int, headers http.Header, 
 
 	result := make([]byte, pe.buf.Len())
 	copy(result, pe.buf.Bytes())
+
 	return result
 }
 

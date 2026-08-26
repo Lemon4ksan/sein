@@ -20,6 +20,7 @@ func IngestDTO[T any](req *Request, dest *T) error {
 	if err := binder.Ingest(adapter, dest); err != nil {
 		return mapBinderError(err)
 	}
+
 	return nil
 }
 
@@ -94,10 +95,12 @@ func (a *requestAdapter) FormFiles(key string) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	res := make([]any, len(files))
 	for i, f := range files {
 		res[i] = f
 	}
+
 	return res, nil
 }
 
@@ -115,10 +118,12 @@ func (a *requestAdapter) GetContext(typ reflect.Type) (any, bool) {
 			return a.req.slots[i].val, true
 		}
 	}
+
 	if a.req.overflow != nil {
 		val, ok := a.req.overflow[typ]
 		return val, ok
 	}
+
 	return nil, false
 }
 
@@ -126,6 +131,7 @@ func (a *requestAdapter) RawURLQuery() map[string][]string {
 	if a.req.raw != nil && a.req.raw.URL != nil {
 		return a.req.raw.URL.Query()
 	}
+
 	return nil
 }
 

@@ -423,6 +423,7 @@ func (b *blockDec) decodeLiterals(in []byte, hist *history) (remain []byte, err 
 				"want:",
 				litRegenSize,
 			)
+
 			return in, ErrBlockTooSmall
 		}
 
@@ -703,6 +704,7 @@ func (b *blockDec) prepareSequences(in []byte, hist *history) (err error) {
 				}
 
 				seq.fse = &fsePredef[i]
+
 			case compModeRLE:
 				if br.remain() < 1 {
 					return ErrBlockTooSmall
@@ -848,6 +850,7 @@ func (b *blockDec) updateHistory(hist *history) error {
 		println("Last block, no history returned")
 
 		hist.b = hist.b[:0]
+
 		return nil
 	} else {
 		hist.append(b.dst)

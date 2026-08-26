@@ -370,6 +370,7 @@ func (s *Server) handleDirectTcpipChannel(ch ssh.Channel, reqs <-chan *ssh.Reque
 	dest := net.JoinHostPort(msg.RAddr, strconv.FormatUint(uint64(msg.RPort), 10))
 
 	var d net.Dialer
+
 	destConn, err := d.Dial("tcp", dest)
 	if err != nil {
 		return

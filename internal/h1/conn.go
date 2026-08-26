@@ -60,10 +60,12 @@ func (ch *ConnHandler) ServeConn(conn net.Conn) error {
 	}()
 
 	br := readerStorage.Get()
+
 	br.Reset(conn)
 	defer readerStorage.Put(br)
 
 	bw := writerStorage.Get()
+
 	bw.Reset(conn)
 	defer writerStorage.Put(bw)
 
@@ -74,6 +76,7 @@ func (ch *ConnHandler) ServeConn(conn net.Conn) error {
 	defer resStorage.Put(res)
 
 	remoteAddr := conn.RemoteAddr().String()
+
 	var tlsState *tls.ConnectionState
 	if tlsConn, ok := conn.(*tls.Conn); ok {
 		state := tlsConn.ConnectionState()
@@ -89,8 +92,10 @@ func (ch *ConnHandler) ServeConn(conn net.Conn) error {
 		if isHijacked {
 			return nil, nil, errors.New("h1: connection already hijacked")
 		}
+
 		isHijacked = true
 		rw := bufio.NewReadWriter(br, bw)
+
 		return conn, rw, nil
 	}
 
@@ -114,6 +119,7 @@ func (ch *ConnHandler) ServeConn(conn net.Conn) error {
 			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				return nil
 			}
+
 			return err
 		}
 

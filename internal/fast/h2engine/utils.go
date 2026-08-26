@@ -183,9 +183,12 @@ func SerializeResponseHeaders(dst *Headers, hp *HPACK, statusCode int, headers h
 
 	for k, vv := range headers {
 		// RFC 9113 §8.2.2: Connection-specific headers MUST NOT be sent in HTTP/2.
-		if strings.EqualFold(k, "Connection") || strings.EqualFold(k, "Transfer-Encoding") || strings.EqualFold(k, "Keep-Alive") || strings.EqualFold(k, "Upgrade") {
+		if strings.EqualFold(k, "Connection") || strings.EqualFold(k, "Transfer-Encoding") ||
+			strings.EqualFold(k, "Keep-Alive") ||
+			strings.EqualFold(k, "Upgrade") {
 			continue
 		}
+
 		for _, v := range vv {
 			hf.SetBytes(toLowerCopy([]byte(k)), []byte(v))
 			dst.AppendHeaderField(hp, hf, false)

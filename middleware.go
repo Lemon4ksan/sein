@@ -33,6 +33,7 @@ func Recovery() Middleware {
 					err = ErrInternal(fmt.Sprintf("internal server panic: %v", r))
 				}
 			}()
+
 			return next(req)
 		}
 	}
@@ -55,10 +56,12 @@ func BearerAuth[T any](validator func(ctx context.Context, token string) (T, err
 				if errors.As(err, &domainErr) {
 					return nil, domainErr
 				}
+
 				return nil, ErrInvalidBearerToken.WithCause(err)
 			}
 
 			Set(req, session)
+
 			return next(req)
 		}
 	}

@@ -24,8 +24,11 @@ const minQualityForHqContextModeling = 7
 
 const minQualityForHqBlockSplitting = 10
 
-/* For quality below MIN_QUALITY_FOR_BLOCK_SPLIT there is no block splitting,
-   so we buffer at most this much literals and commands. */
+/*
+For quality below MIN_QUALITY_FOR_BLOCK_SPLIT there is no block splitting,
+
+	so we buffer at most this much literals and commands.
+*/
 const maxNumDelayedSymbols = 0x2FFF
 
 /* Returns hash-table size for quality levels 0 and 1. */
@@ -77,6 +80,7 @@ func sanitizeParams(params *encoderParams) {
 		} else {
 			max_lgwin = maxWindowBits
 		}
+
 		if params.lgwin > uint(max_lgwin) {
 			params.lgwin = uint(max_lgwin)
 		}
@@ -85,7 +89,7 @@ func sanitizeParams(params *encoderParams) {
 
 /* Returns optimized lg_block value. */
 func computeLgBlock(params *encoderParams) int {
-	var lgblock int = params.lgblock
+	lgblock := params.lgblock
 	if params.quality == fastOnePassCompressionQuality || params.quality == fastTwoPassCompressionQuality {
 		lgblock = int(params.lgwin)
 	} else if params.quality < minQualityForBlockSplit {
@@ -102,26 +106,32 @@ func computeLgBlock(params *encoderParams) int {
 	return lgblock
 }
 
-/* Returns log2 of the size of main ring buffer area.
-   Allocate at least lgwin + 1 bits for the ring buffer so that the newly
-   added block fits there completely and we still get lgwin bits and at least
-   read_block_size_bits + 1 bits because the copy tail length needs to be
-   smaller than ring-buffer size. */
+/*
+Returns log2 of the size of main ring buffer area.
+
+	Allocate at least lgwin + 1 bits for the ring buffer so that the newly
+	added block fits there completely and we still get lgwin bits and at least
+	read_block_size_bits + 1 bits because the copy tail length needs to be
+	smaller than ring-buffer size.
+*/
 func computeRbBits(params *encoderParams) int {
 	return 1 + brotli_max_int(int(params.lgwin), params.lgblock)
 }
 
 func maxMetablockSize(params *encoderParams) uint {
-	var bits int = brotli_min_int(computeRbBits(params), maxInputBlockBits)
+	bits := brotli_min_int(computeRbBits(params), maxInputBlockBits)
 	return uint(1) << uint(bits)
 }
 
-/* When searching for backward references and have not seen matches for a long
-   time, we can skip some match lookups. Unsuccessful match lookups are very
-   expensive and this kind of a heuristic speeds up compression quite a lot.
-   At first 8 byte strides are taken and every second byte is put to hasher.
-   After 4x more literals stride by 16 bytes, every put 4-th byte to hasher.
-   Applied only to qualities 2 to 9. */
+/*
+When searching for backward references and have not seen matches for a long
+
+	time, we can skip some match lookups. Unsuccessful match lookups are very
+	expensive and this kind of a heuristic speeds up compression quite a lot.
+	At first 8 byte strides are taken and every second byte is put to hasher.
+	After 4x more literals stride by 16 bytes, every put 4-th byte to hasher.
+	Applied only to qualities 2 to 9.
+*/
 func literalSpreeLengthForSparseSearch(params *encoderParams) uint {
 	if params.quality < 9 {
 		return 64
@@ -149,6 +159,7 @@ func chooseHasher(params *encoderParams, hparams *hasherParams) {
 		hparams.type_ = 6
 		hparams.block_bits = params.quality - 1
 		hparams.bucket_bits = 15
+
 		hparams.hash_len = 5
 		if params.quality < 7 {
 			hparams.num_last_distances_to_check = 4
@@ -159,12 +170,14 @@ func chooseHasher(params *encoderParams, hparams *hasherParams) {
 		}
 	} else {
 		hparams.type_ = 5
+
 		hparams.block_bits = params.quality - 1
 		if params.quality < 7 {
 			hparams.bucket_bits = 14
 		} else {
 			hparams.bucket_bits = 15
 		}
+
 		if params.quality < 7 {
 			hparams.num_last_distances_to_check = 4
 		} else if params.quality < 9 {

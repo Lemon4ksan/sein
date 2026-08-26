@@ -33,6 +33,7 @@ func TestZstdDecoder(t *testing.T) {
 
 	dec, err := zstd.NewReader(bytes.NewReader(compressed), zstd.WithDecoderConcurrency(1))
 	require.NoError(t, err)
+
 	defer dec.Close()
 
 	decompressed, err := io.ReadAll(dec)

@@ -52,6 +52,7 @@ func handleSOCKS5Conn(ctx context.Context, srv *Server, conn net.Conn, br *bufio
 	targetAddr := net.JoinHostPort(targetHost, strconv.Itoa(targetPort))
 
 	var d net.Dialer
+
 	outboundConn, err := d.DialContext(ctx, "tcp", targetAddr)
 	if err != nil {
 		_ = sendSOCKS5Reply(conn, socksRespCmdFail, nil, 0)

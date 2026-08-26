@@ -93,6 +93,7 @@ func (r *Router) Add(method, pattern string, handler RawHandler) {
 		if r.static[method] == nil {
 			r.static[method] = make(map[string]RawHandler)
 		}
+
 		r.static[method][pattern] = handler
 	}
 
@@ -113,6 +114,7 @@ func (r *Router) Add(method, pattern string, handler RawHandler) {
 
 		isWildcard := strings.HasPrefix(seg, "*") || seg == "..."
 		isParam := !isWildcard && strings.HasPrefix(seg, ":")
+
 		paramName := ""
 		if isParam {
 			paramName = seg[1:]
@@ -128,10 +130,12 @@ func (r *Router) Add(method, pattern string, handler RawHandler) {
 				child = c
 				break
 			}
+
 			if isParam && c.isParam && c.paramName == paramName {
 				child = c
 				break
 			}
+
 			if !isParam && !isWildcard && !c.isParam && !c.isWildcard && c.pathSegment == seg {
 				child = c
 				break
@@ -199,14 +203,17 @@ func matchNode(curr *routeNode, segments []string, hasTrailingSlash bool, params
 			if curr.isWildcard || curr.trailingSlash == hasTrailingSlash {
 				return curr.handler, true
 			}
+
 			return nil, false
 		}
+
 		// Check for wildcard matching empty suffix
 		for _, child := range curr.children {
 			if child.isWildcard && child.handler != nil {
 				return child.handler, true
 			}
 		}
+
 		return nil, false
 	}
 
@@ -229,6 +236,7 @@ func matchNode(curr *routeNode, segments []string, hasTrailingSlash bool, params
 			if h, ok := matchNode(child, remaining, hasTrailingSlash, params); ok {
 				return h, true
 			}
+
 			delete(params, child.paramName)
 		}
 	}
@@ -239,6 +247,7 @@ func matchNode(curr *routeNode, segments []string, hasTrailingSlash bool, params
 			if child.paramName != "" {
 				params[child.paramName] = strings.Join(segments, "/")
 			}
+
 			if child.handler != nil {
 				return child.handler, true
 			}
@@ -253,6 +262,7 @@ func splitPath(path string) []string {
 	if trimmed == "" {
 		return nil
 	}
+
 	return strings.Split(trimmed, "/")
 }
 
@@ -270,6 +280,7 @@ func (r *Router) HasPath(path string) bool {
 
 	segments := splitPath(path)
 	params := make(map[string]string)
+
 	hasTrailingSlash := len(path) > 1 && strings.HasSuffix(path, "/")
 	for _, root := range r.routes {
 		if _, ok := matchNode(root, segments, hasTrailingSlash, params); ok {
@@ -303,17 +314,20 @@ func (r *Router) AllowedMethods(path string) []string {
 	// Check dynamic trie routes
 	segments := splitPath(path)
 	params := make(map[string]string)
+
 	hasTrailingSlash := len(path) > 1 && strings.HasSuffix(path, "/")
 	for m, root := range r.routes {
 		if slices.Contains(methods, m) {
 			continue
 		}
+
 		if _, ok := matchNode(root, segments, hasTrailingSlash, params); ok {
 			methods = append(methods, m)
 		}
 	}
 
 	slices.Sort(methods)
+
 	return methods
 }
 
@@ -351,5 +365,6 @@ func (r *Router) Routes() []RouteInfo {
 
 	res := make([]RouteInfo, len(r.routeList))
 	copy(res, r.routeList)
+
 	return res
 }

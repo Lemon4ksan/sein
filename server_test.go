@@ -48,6 +48,7 @@ func TestPureHandler(t *testing.T) {
 		if req.Name == "" {
 			return UserResponse{}, sein.ErrBadRequest("name cannot be empty")
 		}
+
 		return UserResponse{
 			ID:    42,
 			Name:  req.Name,
@@ -92,7 +93,9 @@ func TestRequestParamsAndTypedContext(t *testing.T) {
 			if !ok || token != "secret-token" {
 				return nil, sein.ErrUnauthorized("missing or invalid bearer token")
 			}
+
 			sein.Set(req, UserSession{UserID: 100, Role: "admin"})
+
 			return next(req)
 		}
 	}
@@ -120,10 +123,12 @@ func TestRequestParamsAndTypedContext(t *testing.T) {
 	// 2. Authorized request
 	reqAuth := httptest.NewRequest(http.MethodGet, "/users/100", nil)
 	reqAuth.Header.Set("Authorization", "Bearer secret-token")
+
 	recAuth := httptest.NewRecorder()
 	app.ServeHTTP(recAuth, reqAuth)
 
 	assert.Equal(t, http.StatusOK, recAuth.Code)
+
 	var resp UserResponse
 	require.NoError(t, json.Unmarshal(recAuth.Body.Bytes(), &resp))
 	assert.Equal(t, uint64(100), resp.ID)
@@ -149,20 +154,19 @@ type mockUserController struct {
 }
 
 func (c *mockUserController) Mount(g *sein.Group) {
-	type GetByIDDTO struct {
-		ID uint64 `path:"id"`
-	}
 	g.GetWith("/:id", c.getByID)
 	g.Post("", c.create)
 }
 
 func (c *mockUserController) getByID(ctx context.Context, req struct {
 	ID uint64 `path:"id"`
-}) (UserResponse, error) {
+},
+) (UserResponse, error) {
 	name, exists := c.db[req.ID]
 	if !exists {
 		return UserResponse{}, sein.ErrNotFound("user not found")
 	}
+
 	return UserResponse{ID: req.ID, Name: name}, nil
 }
 
@@ -186,6 +190,7 @@ func TestControllerMountAndGrouping(t *testing.T) {
 	app.ServeHTTP(recGet, reqGet)
 
 	assert.Equal(t, http.StatusOK, recGet.Code)
+
 	var u UserResponse
 	require.NoError(t, json.Unmarshal(recGet.Body.Bytes(), &u))
 	assert.Equal(t, uint64(10), u.ID)
@@ -215,9 +220,11 @@ func TestDomainErrors(t *testing.T) {
 		if req.Email == "taken@example.com" {
 			return UserResponse{}, ErrUserEmailBusy
 		}
+
 		if req.Email == "banned@example.com" {
 			return UserResponse{}, ErrAccountSuspended.WithDetail("ban_reason", "rule violation")
 		}
+
 		return UserResponse{ID: 1, Name: req.Name, Email: req.Email}, nil
 	})
 
@@ -275,6 +282,7 @@ func (dto SelfValidatingDTO) Validate() error {
 	if dto.Age < 18 {
 		return errors.New("must be at least 18 years old")
 	}
+
 	return nil
 }
 
@@ -313,14 +321,14 @@ type UserSessionData struct {
 
 type FullFeaturedDTO struct {
 	UserID    uint64           `path:"user_id"`
-	TraceID   string           `header:"X-Trace-ID,required"`
-	SessionID string           `cookie:"session_id,required"`
-	Token     string           `auth:"bearer,required"`
-	Session   *UserSessionData `ctx:""`
-	Tags      []string         `query:"tag"`
-	Limit     int              `query:"limit,default=50"`
-	Optional  *string          `query:"opt"`
-	Title     string           `json:"title"`
+	TraceID   string           `               header:"X-Trace-ID,required"`
+	SessionID string           `                                            cookie:"session_id,required"`
+	Token     string           `                                                                         auth:"bearer,required"`
+	Session   *UserSessionData `                                                                                                ctx:""`
+	Tags      []string         `                                                                                                       query:"tag"`
+	Limit     int              `                                                                                                       query:"limit,default=50"`
+	Optional  *string          `                                                                                                       query:"opt"`
+	Title     string           `                                                                                                                                json:"title"`
 }
 
 func TestUnifiedDTO_FullFeatures(t *testing.T) {
@@ -338,6 +346,7 @@ func TestUnifiedDTO_FullFeatures(t *testing.T) {
 		if req.Optional != nil {
 			optVal = *req.Optional
 		}
+
 		return map[string]any{
 			"user_id":    req.UserID,
 			"trace_id":   req.TraceID,
@@ -355,7 +364,11 @@ func TestUnifiedDTO_FullFeatures(t *testing.T) {
 	bodyJSON, err := json.Marshal(map[string]string{"title": "Zero-Reflection Post"})
 	require.NoError(t, err)
 
-	httpReq := httptest.NewRequest(http.MethodPost, "/users/100/posts?tag=go&tag=rust&opt=custom", bytes.NewReader(bodyJSON))
+	httpReq := httptest.NewRequest(
+		http.MethodPost,
+		"/users/100/posts?tag=go&tag=rust&opt=custom",
+		bytes.NewReader(bodyJSON),
+	)
 	httpReq.Header.Set("X-Trace-ID", "trace-xyz-777")
 	httpReq.Header.Set("Authorization", "Bearer secret-token-abc")
 	httpReq.AddCookie(&http.Cookie{Name: "session_id", Value: "sess-cookie-999"})
@@ -401,10 +414,10 @@ type AdvancedTransformDTO struct {
 	Status      string        `query:"status,enum=active|pending|archived"`
 	CreatedAt   time.Time     `query:"created_at"`
 	Timeout     time.Duration `query:"timeout,default=15s"`
-	ClientIP    net.IP        `net:"ip"`
-	IPAddr      netip.Addr    `net:"ip"`
-	Protocol    string        `net:"proto"`
-	Host        string        `net:"host"`
+	ClientIP    net.IP        `                                            net:"ip"`
+	IPAddr      netip.Addr    `                                            net:"ip"`
+	Protocol    string        `                                            net:"proto"`
+	Host        string        `                                            net:"host"`
 }
 
 func TestUnifiedDTO_AdvancedTransformsAndAdapters(t *testing.T) {
@@ -458,7 +471,7 @@ func TestUnifiedDTO_AdvancedTransformsAndAdapters(t *testing.T) {
 
 type FileUploadDTO struct {
 	Category string     `form:"category,required,trim,lower"`
-	Avatar   *sein.File `file:"avatar,required"`
+	Avatar   *sein.File `                                    file:"avatar,required"`
 }
 
 func TestUnifiedDTO_FileUpload(t *testing.T) {
@@ -469,6 +482,7 @@ func TestUnifiedDTO_FileUpload(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
+
 		return map[string]any{
 			"category":  req.Category,
 			"filename":  req.Avatar.Filename,
@@ -478,11 +492,13 @@ func TestUnifiedDTO_FileUpload(t *testing.T) {
 	})
 
 	var body bytes.Buffer
+
 	writer := multipart.NewWriter(&body)
 	_ = writer.WriteField("category", "  AVATARS  ")
 
 	part, err := writer.CreateFormFile("avatar", "profile.png")
 	require.NoError(t, err)
+
 	_, _ = part.Write([]byte("fake-image-bytes-12345"))
 	_ = writer.Close()
 
@@ -504,13 +520,13 @@ func TestUnifiedDTO_FileUpload(t *testing.T) {
 
 type PydanticFeaturesDTO struct {
 	UserID    uuid.UUID           `path:"id,uuid"`
-	Username  string              `query:"username,pattern=^[a-z0-9_]{3,16}$"`
-	Callback  string              `query:"callback,url"`
-	Step      int                 `query:"step,positive,multiple_of=5,le=100"`
-	Tags      []string            `query:"tags,sep=|"`
-	BinaryHex []byte              `query:"hash,hex"`
-	BinaryB64 []byte              `query:"b64,base64"`
-	Password  sein.Secret[string] `json:"password"`
+	Username  string              `               query:"username,pattern=^[a-z0-9_]{3,16}$"`
+	Callback  string              `               query:"callback,url"`
+	Step      int                 `               query:"step,positive,multiple_of=5,le=100"`
+	Tags      []string            `               query:"tags,sep=|"`
+	BinaryHex []byte              `               query:"hash,hex"`
+	BinaryB64 []byte              `               query:"b64,base64"`
+	Password  sein.Secret[string] `                                                          json:"password"`
 }
 
 func TestUnifiedDTO_PydanticGradeFeatures(t *testing.T) {
@@ -606,11 +622,13 @@ func TestNativeH1Server_SocketAndKeepAlive(t *testing.T) {
 		if req.ID == 42 {
 			return UserResp{ID: 42, Name: "Bob", Email: "bob@example.com"}, nil
 		}
+
 		return UserResp{}, sein.NotFound("USER_NOT_FOUND", "User not found")
 	})
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+
 	addr := ln.Addr().String()
 
 	go func() {
@@ -628,6 +646,7 @@ func TestNativeH1Server_SocketAndKeepAlive(t *testing.T) {
 	var created UserResp
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	_ = resp.Body.Close()
+
 	assert.Equal(t, 42, created.ID)
 	assert.Equal(t, "Bob", created.Name)
 
@@ -639,6 +658,7 @@ func TestNativeH1Server_SocketAndKeepAlive(t *testing.T) {
 	var fetched UserResp
 	require.NoError(t, json.NewDecoder(resp2.Body).Decode(&fetched))
 	_ = resp2.Body.Close()
+
 	assert.Equal(t, 42, fetched.ID)
 
 	// 3. GET /users/999 (404 Domain Error)
@@ -650,6 +670,7 @@ func TestNativeH1Server_SocketAndKeepAlive(t *testing.T) {
 	// 4. Graceful Shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	require.NoError(t, app.Shutdown(ctx))
 }
 
@@ -674,6 +695,7 @@ func TestNativeH1Server_StreamWriterAndSSE(t *testing.T) {
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+
 	addr := ln.Addr().String()
 
 	go func() {
@@ -688,7 +710,9 @@ func TestNativeH1Server_StreamWriterAndSSE(t *testing.T) {
 	assert.Equal(t, http.StatusOK, respStream.StatusCode)
 	streamBody, err := io.ReadAll(respStream.Body)
 	require.NoError(t, err)
+
 	_ = respStream.Body.Close()
+
 	assert.Equal(t, "chunk-alpha-chunk-beta", string(streamBody))
 
 	// 2. Test /sse (Event stream)
@@ -698,6 +722,7 @@ func TestNativeH1Server_StreamWriterAndSSE(t *testing.T) {
 	assert.Equal(t, "text/event-stream", respSSE.Header.Get("Content-Type"))
 	sseBody, err := io.ReadAll(respSSE.Body)
 	require.NoError(t, err)
+
 	_ = respSSE.Body.Close()
 
 	assert.Contains(t, string(sseBody), "event: update\ndata: state_ready\n\n")
@@ -705,6 +730,7 @@ func TestNativeH1Server_StreamWriterAndSSE(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	require.NoError(t, app.Shutdown(ctx))
 }
 
@@ -721,6 +747,7 @@ func TestNativeH1Server_MultipartFileUpload(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
+
 		return map[string]any{
 			"title":    req.Title,
 			"filename": req.Doc.Filename,
@@ -731,6 +758,7 @@ func TestNativeH1Server_MultipartFileUpload(t *testing.T) {
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+
 	addr := ln.Addr().String()
 
 	go func() {
@@ -739,6 +767,7 @@ func TestNativeH1Server_MultipartFileUpload(t *testing.T) {
 
 	// Build multipart request body
 	var b bytes.Buffer
+
 	w := multipart.NewWriter(&b)
 	_ = w.WriteField("title", "Quarterly Report")
 	part, _ := w.CreateFormFile("doc", "report.txt")
@@ -761,6 +790,7 @@ func TestNativeH1Server_MultipartFileUpload(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	require.NoError(t, app.Shutdown(ctx))
 }
 
@@ -773,11 +803,13 @@ func TestNativeH1Server_ConditionalETagAnd304(t *testing.T) {
 		if req.IfNoneMatch(currentETag) {
 			return sein.NotModified().WithETag(currentETag), nil
 		}
+
 		return sein.OK[any](map[string]string{"theme": "dark"}).WithETag(currentETag), nil
 	})
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+
 	addr := ln.Addr().String()
 
 	go func() {
@@ -801,13 +833,11 @@ func TestNativeH1Server_ConditionalETagAnd304(t *testing.T) {
 	assert.Equal(t, http.StatusNotModified, resp2.StatusCode)
 	body2, _ := io.ReadAll(resp2.Body)
 	_ = resp2.Body.Close()
+
 	assert.Empty(t, body2)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	require.NoError(t, app.Shutdown(ctx))
 }
-
-
-
-

@@ -81,7 +81,7 @@ func (b *bitReader) fillFast() {
 	// 2 bounds checks.
 	v := b.in[b.off-4:]
 	v = v[:4]
-	low := (uint32(v[0])) | (uint32(v[1]) << 8) | (uint32(v[2]) << 16) | (uint32(v[3]) << 24)
+	low := uint32(v[0]) | (uint32(v[1]) << 8) | (uint32(v[2]) << 16) | (uint32(v[3]) << 24)
 	b.value = (b.value << 32) | uint64(low)
 	b.bitsRead -= 32
 	b.off -= 4
@@ -96,7 +96,7 @@ func (b *bitReader) fill() {
 	if b.off > 4 {
 		v := b.in[b.off-4:]
 		v = v[:4]
-		low := (uint32(v[0])) | (uint32(v[1]) << 8) | (uint32(v[2]) << 16) | (uint32(v[3]) << 24)
+		low := uint32(v[0]) | (uint32(v[1]) << 8) | (uint32(v[2]) << 16) | (uint32(v[3]) << 24)
 		b.value = (b.value << 32) | uint64(low)
 		b.bitsRead -= 32
 		b.off -= 4

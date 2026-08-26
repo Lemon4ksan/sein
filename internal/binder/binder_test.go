@@ -44,28 +44,30 @@ func (m *mockRequestView) Cookie(name string) (string, error) {
 	if v, ok := m.cookies[name]; ok {
 		return v, nil
 	}
+
 	return "", errors.New("no cookie")
 }
-func (m *mockRequestView) BearerToken() (string, bool)       { return m.bearer, m.hasBearer }
-func (m *mockRequestView) ClientIP() string                  { return m.clientIP }
-func (m *mockRequestView) Protocol() string                  { return m.proto }
-func (m *mockRequestView) Scheme() string                    { return m.scheme }
-func (m *mockRequestView) Host() string                      { return m.host }
-func (m *mockRequestView) Method() string                    { return m.method }
-func (m *mockRequestView) Path() string                      { return m.path }
-func (m *mockRequestView) FormValue(key string) string       { return m.formVals[key] }
-func (m *mockRequestView) FormFile(key string) (any, error)  { return nil, errors.New("no file") }
+func (m *mockRequestView) BearerToken() (string, bool)      { return m.bearer, m.hasBearer }
+func (m *mockRequestView) ClientIP() string                 { return m.clientIP }
+func (m *mockRequestView) Protocol() string                 { return m.proto }
+func (m *mockRequestView) Scheme() string                   { return m.scheme }
+func (m *mockRequestView) Host() string                     { return m.host }
+func (m *mockRequestView) Method() string                   { return m.method }
+func (m *mockRequestView) Path() string                     { return m.path }
+func (m *mockRequestView) FormValue(key string) string      { return m.formVals[key] }
+func (m *mockRequestView) FormFile(key string) (any, error) { return nil, errors.New("no file") }
 func (m *mockRequestView) FormFiles(key string) ([]any, error) {
 	return nil, errors.New("no files")
 }
-func (m *mockRequestView) Body() []byte              { return m.bodyBytes }
-func (m *mockRequestView) BindJSON(dest any) error   { return nil }
+func (m *mockRequestView) Body() []byte                     { return m.bodyBytes }
+func (m *mockRequestView) BindJSON(dest any) error          { return nil }
 func (m *mockRequestView) RawURLQuery() map[string][]string { return m.rawQueries }
 func (m *mockRequestView) GetContext(typ reflect.Type) (any, bool) {
 	if m.contexts != nil {
 		v, ok := m.contexts[typ]
 		return v, ok
 	}
+
 	return nil, false
 }
 
@@ -107,6 +109,7 @@ func TestBinderIngest(t *testing.T) {
 	}
 
 	var dto ComprehensiveTestDTO
+
 	err := binder.Ingest(mockReq, &dto)
 	require.NoError(t, err)
 
@@ -133,25 +136,33 @@ func TestBinderValidationFailures(t *testing.T) {
 
 	// 1. Min failure
 	req1 := &mockRequestView{queries: map[string]string{"limit": "3"}}
+
 	var dto1 ValidatedDTO
+
 	err1 := binder.Ingest(req1, &dto1)
 	assert.Error(t, err1)
 
 	// 2. Len failure
 	req2 := &mockRequestView{queries: map[string]string{"code": "12345"}}
+
 	var dto2 ValidatedDTO
+
 	err2 := binder.Ingest(req2, &dto2)
 	assert.Error(t, err2)
 
 	// 3. Email failure
 	req3 := &mockRequestView{queries: map[string]string{"email": "not-an-email"}}
+
 	var dto3 ValidatedDTO
+
 	err3 := binder.Ingest(req3, &dto3)
 	assert.Error(t, err3)
 
 	// 4. Enum failure
 	req4 := &mockRequestView{queries: map[string]string{"role": "superuser"}}
+
 	var dto4 ValidatedDTO
+
 	err4 := binder.Ingest(req4, &dto4)
 	assert.Error(t, err4)
 }

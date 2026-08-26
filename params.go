@@ -41,8 +41,10 @@ func (p ParamValue) AsInt(fallback ...int) int {
 		if len(fallback) > 0 {
 			return fallback[0]
 		}
+
 		return 0
 	}
+
 	return v
 }
 
@@ -58,8 +60,10 @@ func (p ParamValue) AsUint64(fallback ...uint64) uint64 {
 		if len(fallback) > 0 {
 			return fallback[0]
 		}
+
 		return 0
 	}
+
 	return v
 }
 
@@ -75,8 +79,10 @@ func (p ParamValue) AsInt64(fallback ...int64) int64 {
 		if len(fallback) > 0 {
 			return fallback[0]
 		}
+
 		return 0
 	}
+
 	return v
 }
 
@@ -92,8 +98,10 @@ func (p ParamValue) AsBool(fallback ...bool) bool {
 		if len(fallback) > 0 {
 			return fallback[0]
 		}
+
 		return false
 	}
+
 	return v
 }
 
@@ -119,6 +127,7 @@ func (p PathParamDef[T]) Get(req *Request) (T, error) {
 		var zero T
 		return zero, ErrMissingPathParam.WithDetail("param", p.name)
 	}
+
 	return parseScalar[T](string(val))
 }
 
@@ -128,6 +137,7 @@ func (p PathParamDef[T]) MustGet(req *Request) T {
 	if err != nil {
 		panic(err)
 	}
+
 	return v
 }
 
@@ -137,6 +147,7 @@ func (p PathParamDef[T]) GetOr(req *Request, fallback T) T {
 	if err != nil {
 		return fallback
 	}
+
 	return v
 }
 
@@ -162,6 +173,7 @@ func (q QueryParamDef[T]) Get(req *Request) (T, error) {
 		var zero T
 		return zero, ErrMissingQueryParam.WithDetail("param", q.name)
 	}
+
 	return parseScalar[T](string(val))
 }
 
@@ -171,10 +183,12 @@ func (q QueryParamDef[T]) GetOr(req *Request, fallback T) T {
 	if val.IsEmpty() {
 		return fallback
 	}
+
 	v, err := parseScalar[T](string(val))
 	if err != nil {
 		return fallback
 	}
+
 	return v
 }
 
@@ -200,6 +214,7 @@ func (h HeaderParamDef[T]) Get(req *Request) (T, error) {
 		var zero T
 		return zero, ErrMissingHeader.WithDetail("header", h.name)
 	}
+
 	return parseScalar[T](val)
 }
 
@@ -209,10 +224,12 @@ func (h HeaderParamDef[T]) GetOr(req *Request, fallback T) T {
 	if val == "" {
 		return fallback
 	}
+
 	v, err := parseScalar[T](val)
 	if err != nil {
 		return fallback
 	}
+
 	return v
 }
 
@@ -226,79 +243,105 @@ func parseScalar[T ParamConstraint](s string) (T, error) {
 		if err != nil {
 			return zero, ErrBadRequest("invalid uint64 parameter", err)
 		}
+
 		return any(v).(T), nil
+
 	case uint32:
 		v, err := strconv.ParseUint(s, 10, 32)
 		if err != nil {
 			return zero, ErrBadRequest("invalid uint32 parameter", err)
 		}
+
 		return any(uint32(v)).(T), nil
+
 	case uint16:
 		v, err := strconv.ParseUint(s, 10, 16)
 		if err != nil {
 			return zero, ErrBadRequest("invalid uint16 parameter", err)
 		}
+
 		return any(uint16(v)).(T), nil
+
 	case uint8:
 		v, err := strconv.ParseUint(s, 10, 8)
 		if err != nil {
 			return zero, ErrBadRequest("invalid uint8 parameter", err)
 		}
+
 		return any(uint8(v)).(T), nil
+
 	case uint:
 		v, err := strconv.ParseUint(s, 10, 64)
 		if err != nil {
 			return zero, ErrBadRequest("invalid uint parameter", err)
 		}
+
 		return any(uint(v)).(T), nil
+
 	case int64:
 		v, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
 			return zero, ErrBadRequest("invalid int64 parameter", err)
 		}
+
 		return any(v).(T), nil
+
 	case int32:
 		v, err := strconv.ParseInt(s, 10, 32)
 		if err != nil {
 			return zero, ErrBadRequest("invalid int32 parameter", err)
 		}
+
 		return any(int32(v)).(T), nil
+
 	case int16:
 		v, err := strconv.ParseInt(s, 10, 16)
 		if err != nil {
 			return zero, ErrBadRequest("invalid int16 parameter", err)
 		}
+
 		return any(int16(v)).(T), nil
+
 	case int8:
 		v, err := strconv.ParseInt(s, 10, 8)
 		if err != nil {
 			return zero, ErrBadRequest("invalid int8 parameter", err)
 		}
+
 		return any(int8(v)).(T), nil
+
 	case int:
 		v, err := strconv.Atoi(s)
 		if err != nil {
 			return zero, ErrBadRequest("invalid integer parameter", err)
 		}
+
 		return any(v).(T), nil
+
 	case bool:
 		v, err := strconv.ParseBool(s)
 		if err != nil {
 			return zero, ErrBadRequest("invalid boolean parameter", err)
 		}
+
 		return any(v).(T), nil
+
 	case float64:
 		v, err := strconv.ParseFloat(s, 64)
 		if err != nil {
 			return zero, ErrBadRequest("invalid float64 parameter", err)
 		}
+
 		return any(v).(T), nil
+
 	case float32:
 		v, err := strconv.ParseFloat(s, 32)
 		if err != nil {
 			return zero, ErrBadRequest("invalid float32 parameter", err)
 		}
+
 		return any(float32(v)).(T), nil
+
 	default:
 		return parseUnderlying[T](s)
 	}
@@ -306,6 +349,7 @@ func parseScalar[T ParamConstraint](s string) (T, error) {
 
 func parseUnderlying[T ParamConstraint](s string) (T, error) {
 	var zero T
+
 	typ := reflect.TypeFor[T]()
 	switch typ.Kind() {
 	case reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8, reflect.Uint:
@@ -313,17 +357,23 @@ func parseUnderlying[T ParamConstraint](s string) (T, error) {
 		if err != nil {
 			return zero, ErrBadRequest("invalid unsigned integer parameter", err)
 		}
+
 		res := reflect.New(typ).Elem()
 		res.SetUint(v)
+
 		return res.Interface().(T), nil
+
 	case reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8, reflect.Int:
 		v, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
 			return zero, ErrBadRequest("invalid integer parameter", err)
 		}
+
 		res := reflect.New(typ).Elem()
 		res.SetInt(v)
+
 		return res.Interface().(T), nil
+
 	case reflect.String:
 		res := reflect.New(typ).Elem()
 		res.SetString(s)
@@ -333,9 +383,12 @@ func parseUnderlying[T ParamConstraint](s string) (T, error) {
 		if err != nil {
 			return zero, ErrBadRequest("invalid boolean parameter", err)
 		}
+
 		res := reflect.New(typ).Elem()
 		res.SetBool(v)
+
 		return res.Interface().(T), nil
+
 	default:
 		return zero, errors.New("sein: unsupported parameter scalar type")
 	}

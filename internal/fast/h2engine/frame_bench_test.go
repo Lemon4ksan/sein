@@ -38,6 +38,12 @@ func BenchmarkFrameHeader_Pack9Bytes(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		h2engine.PackFrameHeader(dst[:], 16384, h2engine.FrameHeaders, h2engine.FlagEndHeaders|h2engine.FlagEndStream, 13)
+		h2engine.PackFrameHeader(
+			dst[:],
+			16384,
+			h2engine.FrameHeaders,
+			h2engine.FlagEndHeaders|h2engine.FlagEndStream,
+			13,
+		)
 	}
 }

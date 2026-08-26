@@ -18,6 +18,7 @@ type bitWriter struct {
 
 func (w *bitWriter) writeBits(nb uint, b uint64) {
 	w.bits |= b << w.nbits
+
 	w.nbits += nb
 	if w.nbits >= 32 {
 		bits := w.bits
@@ -44,6 +45,7 @@ func (w *bitWriter) jumpToByteBoundary() {
 	dst := w.dst
 	for w.nbits != 0 {
 		dst = append(dst, byte(w.bits))
+
 		w.bits >>= 8
 		if w.nbits > 8 { // Avoid underflow
 			w.nbits -= 8
@@ -51,6 +53,7 @@ func (w *bitWriter) jumpToByteBoundary() {
 			w.nbits = 0
 		}
 	}
+
 	w.bits = 0
 	w.dst = dst
 }

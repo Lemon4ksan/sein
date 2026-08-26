@@ -12,11 +12,11 @@ package mockackhandler
 import (
 	reflect "reflect"
 
+	gomock "github.com/lemon4ksan/foundation/testkit/gomock"
 	ackhandler "github.com/lemon4ksan/sein/internal/quic/internal/ackhandler"
 	monotime "github.com/lemon4ksan/sein/internal/quic/internal/monotime"
 	protocol "github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 	wire "github.com/lemon4ksan/sein/internal/quic/internal/wire"
-	gomock "github.com/lemon4ksan/foundation/testkit/gomock"
 )
 
 // MockSentPacketHandler is a mock of SentPacketHandler interface.

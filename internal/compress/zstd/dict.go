@@ -37,6 +37,7 @@ func (d *dict) ID() uint32 {
 	if d == nil {
 		return 0
 	}
+
 	return d.id
 }
 
@@ -45,6 +46,7 @@ func (d *dict) ContentSize() int {
 	if d == nil {
 		return 0
 	}
+
 	return len(d.content)
 }
 
@@ -53,6 +55,7 @@ func (d *dict) Content() []byte {
 	if d == nil {
 		return nil
 	}
+
 	return d.content
 }
 
@@ -61,6 +64,7 @@ func (d *dict) Offsets() [3]int {
 	if d == nil {
 		return [3]int{}
 	}
+
 	return d.offsets
 }
 
@@ -69,6 +73,7 @@ func (d *dict) LitEncoder() *huff0.Scratch {
 	if d == nil {
 		return nil
 	}
+
 	return d.litEnc
 }
 
@@ -79,14 +84,17 @@ func loadDict(b []byte) (*dict, error) {
 	if len(b) <= 8+(3*4) {
 		return nil, io.ErrUnexpectedEOF
 	}
+
 	d := dict{
 		llDec: sequenceDec{fse: &fseDecoder{}},
 		ofDec: sequenceDec{fse: &fseDecoder{}},
 		mlDec: sequenceDec{fse: &fseDecoder{}},
 	}
+
 	if string(b[:4]) != dictMagic {
 		return nil, ErrMagicMismatch
 	}
+
 	d.id = binary.LittleEndian.Uint32(b[4:8])
 	if d.id == 0 {
 		return nil, errors.New("dictionaries cannot have ID 0")
@@ -94,10 +102,12 @@ func loadDict(b []byte) (*dict, error) {
 
 	// Read literal table
 	var err error
+
 	d.litEnc, b, err = huff0.ReadTable(b[8:], nil)
 	if err != nil {
 		return nil, fmt.Errorf("loading literal table: %w", err)
 	}
+
 	d.litEnc.Reuse = huff0.ReusePolicyMust
 
 	br := byteReader{
@@ -108,31 +118,39 @@ func loadDict(b []byte) (*dict, error) {
 		if err := dec.readNCount(&br, uint16(maxTableSymbol[i])); err != nil {
 			return err
 		}
+
 		if br.overread() {
 			return io.ErrUnexpectedEOF
 		}
+
 		err = dec.transform(symbolTableX[i])
 		if err != nil {
 			println("Transform table error:", err)
 			return err
 		}
+
 		if debugDecoder || debugEncoder {
 			println("Read table ok", "symbolLen:", dec.symbolLen)
 		}
+
 		// Set decoders as predefined so they aren't reused.
 		dec.preDefined = true
+
 		return nil
 	}
 
 	if err := readDec(tableOffsets, d.ofDec.fse); err != nil {
 		return nil, err
 	}
+
 	if err := readDec(tableMatchLengths, d.mlDec.fse); err != nil {
 		return nil, err
 	}
+
 	if err := readDec(tableLiteralLengths, d.llDec.fse); err != nil {
 		return nil, err
 	}
+
 	if br.remain() < 12 {
 		return nil, io.ErrUnexpectedEOF
 	}
@@ -143,13 +161,20 @@ func loadDict(b []byte) (*dict, error) {
 	br.advance(4)
 	d.offsets[2] = int(br.Uint32())
 	br.advance(4)
+
 	if d.offsets[0] <= 0 || d.offsets[1] <= 0 || d.offsets[2] <= 0 {
 		return nil, errors.New("invalid offset in dictionary")
 	}
+
 	d.content = make([]byte, br.remain())
 	copy(d.content, br.unread())
+
 	if d.offsets[0] > len(d.content) || d.offsets[1] > len(d.content) || d.offsets[2] > len(d.content) {
-		return nil, fmt.Errorf("initial offset bigger than dictionary content size %d, offsets: %v", len(d.content), d.offsets)
+		return nil, fmt.Errorf(
+			"initial offset bigger than dictionary content size %d, offsets: %v",
+			len(d.content),
+			d.offsets,
+		)
 	}
 
 	return &d, nil
@@ -162,8 +187,10 @@ func InspectDictionary(b []byte) (interface {
 	Content() []byte
 	Offsets() [3]int
 	LitEncoder() *huff0.Scratch
-}, error) {
+}, error,
+) {
 	initPredefined()
+
 	d, err := loadDict(b)
 	return d, err
 }
@@ -197,6 +224,7 @@ type BuildDictOptions struct {
 
 func BuildDict(o BuildDictOptions) ([]byte, error) {
 	initPredefined()
+
 	hist := o.History
 	contents := o.Contents
 	debug := o.DebugOut != nil
@@ -219,12 +247,15 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 	if int64(len(hist)) > dictMaxLength {
 		return nil, fmt.Errorf("dictionary of size %d > %d", len(hist), int64(dictMaxLength))
 	}
+
 	if len(hist) < 8 {
 		return nil, fmt.Errorf("dictionary of size %d < %d", len(hist), 8)
 	}
+
 	if len(contents) == 0 {
 		return nil, errors.New("no content provided")
 	}
+
 	d := dict{
 		id:      o.ID,
 		litEnc:  nil,
@@ -236,6 +267,7 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 	}
 	block := blockEnc{lowMem: false}
 	block.init()
+
 	var enc encoder
 	if o.Level != 0 {
 		eOpts := encoderOptions{
@@ -248,14 +280,24 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 		enc = eOpts.encoder()
 	} else {
 		o.Level = SpeedBestCompression
-		enc = encoder(&bestFastEncoder{fastBase: fastBase{maxMatchOff: int32(maxMatchLen), bufferReset: math.MaxInt32 - int32(maxMatchLen*2), lowMem: false}})
+		enc = encoder(
+			&bestFastEncoder{
+				fastBase: fastBase{
+					maxMatchOff: int32(maxMatchLen),
+					bufferReset: math.MaxInt32 - int32(maxMatchLen*2),
+					lowMem:      false,
+				},
+			},
+		)
 	}
+
 	var (
 		remain [256]int
 		ll     [256]int
 		ml     [256]int
 		of     [256]int
 	)
+
 	addValues := func(dst *[256]int, src []byte) {
 		for _, v := range src {
 			dst[v]++
@@ -269,36 +311,46 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 	seqs := 0
 	nUsed := 0
 	litTotal := 0
+
 	newOffsets := make(map[uint32]int, 1000)
 	for _, b := range contents {
 		block.reset(nil)
+
 		if len(b) < 8 {
 			continue
 		}
+
 		nUsed++
+
 		enc.Reset(&d, true)
 		enc.Encode(&block, b)
 		addValues(&remain, block.literals)
+
 		litTotal += len(block.literals)
 		if len(block.sequences) == 0 {
 			continue
 		}
+
 		seqs += len(block.sequences)
 		block.genCodes()
 		addHist(&ll, block.coders.llEnc.Histogram())
 		addHist(&ml, block.coders.mlEnc.Histogram())
 		addHist(&of, block.coders.ofEnc.Histogram())
+
 		for i, seq := range block.sequences {
 			if i > 3 {
 				break
 			}
+
 			offset := seq.offset
 			if offset == 0 {
 				continue
 			}
+
 			if int(offset) >= len(o.History) {
 				continue
 			}
+
 			if offset > 3 {
 				newOffsets[offset-3]++
 			} else {
@@ -311,61 +363,78 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 			}
 		}
 	}
+
 	// Find most used offsets.
 	var sortedOffsets []uint32
 	for k := range newOffsets {
 		if k == 0 {
 			continue
 		}
+
 		sortedOffsets = append(sortedOffsets, k)
 	}
+
 	sort.Slice(sortedOffsets, func(i, j int) bool {
 		a, b := sortedOffsets[i], sortedOffsets[j]
+
 		ca, cb := newOffsets[a], newOffsets[b]
 		if ca == cb {
 			// Prefer the longer offset
 			return a > b
 		}
+
 		return ca > cb
 	})
+
 	if debug {
 		print("Offsets:")
+
 		for i, v := range sortedOffsets {
 			if i > 20 {
 				break
 			}
+
 			printf("[%d: %d],", v, newOffsets[v])
 		}
+
 		println("")
 	}
+
 	// Dictionary recent-offsets must be three positive values within the
 	// history. Ranked matches may be fewer (or empty when only unset
 	// repeat codes were seen), so fill remaining slots with defaults.
 	used := make(map[int]bool, 3)
+
 	var finalOffsets [3]int
+
 	nOff := 0
 	for _, v := range sortedOffsets {
 		iv := int(v)
 		if iv <= 0 || iv > len(hist) || used[iv] {
 			continue
 		}
+
 		finalOffsets[nOff] = iv
 		used[iv] = true
+
 		nOff++
 		if nOff == 3 {
 			break
 		}
 	}
+
 	for _, def := range []int{1, 4, 8} {
 		if nOff == 3 {
 			break
 		}
+
 		if def <= len(hist) && !used[def] {
 			finalOffsets[nOff] = def
 			used[def] = true
 			nOff++
 		}
 	}
+
 	for def := 1; nOff < 3 && def <= len(hist); def++ {
 		if !used[def] {
 			finalOffsets[nOff] = def
@@ -373,9 +442,11 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 			nOff++
 		}
 	}
+
 	if nOff < 3 {
 		return nil, fmt.Errorf("could not determine 3 valid dictionary offsets (history size %d)", len(hist))
 	}
+
 	o.Offsets = finalOffsets
 	if debug {
 		println("New repeat offsets", o.Offsets)
@@ -384,12 +455,15 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 	if nUsed == 0 || seqs == 0 {
 		return nil, fmt.Errorf("%d blocks, %d sequences found", nUsed, seqs)
 	}
+
 	if litTotal == 0 {
 		return nil, errors.New("0 literals found")
 	}
+
 	if debug {
 		println("Sequences:", seqs, "Blocks:", nUsed, "Literals:", litTotal)
 	}
+
 	if seqs/nUsed < 512 {
 		// Use 512 as minimum.
 		nUsed = seqs / 512
@@ -397,11 +471,15 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 			nUsed = 1
 		}
 	}
+
 	copyHist := func(dst *fseEncoder, src *[256]int) ([]byte, error) {
 		hist := dst.Histogram()
-		var maxSym uint8
-		var maxCount int
-		var fakeLength int
+
+		var (
+			maxSym     uint8
+			maxCount   int
+			fakeLength int
+		)
 		for i, v := range src {
 			if v > 0 {
 				v = v / nUsed
@@ -409,12 +487,15 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 					v = 1
 				}
 			}
+
 			if v > maxCount {
 				maxCount = v
 			}
+
 			if v != 0 {
 				maxSym = uint8(i)
 			}
+
 			fakeLength += v
 			hist[i] = uint32(v)
 		}
@@ -426,13 +507,16 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 					fakeLength++
 					maxSym++
 					hist[i+1] = 1
+
 					if maxSym > 1 {
 						break
 					}
 				}
+
 				if hist[0] == 0 {
 					fakeLength++
 					hist[i] = 1
+
 					if maxSym > 1 {
 						break
 					}
@@ -443,32 +527,41 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 		dst.HistogramFinished(maxSym, maxCount)
 		dst.reUsed = false
 		dst.useRLE = false
+
 		err := dst.normalizeCount(fakeLength)
 		if err != nil {
 			return nil, err
 		}
+
 		if debug {
 			println("RAW:", dst.count[:maxSym+1], "NORM:", dst.norm[:maxSym+1], "LEN:", fakeLength)
 		}
+
 		return dst.writeCount(nil)
 	}
+
 	if debug {
 		print("Literal lengths: ")
 	}
+
 	llTable, err := copyHist(block.coders.llEnc, &ll)
 	if err != nil {
 		return nil, err
 	}
+
 	if debug {
 		print("Match lengths: ")
 	}
+
 	mlTable, err := copyHist(block.coders.mlEnc, &ml)
 	if err != nil {
 		return nil, err
 	}
+
 	if debug {
 		print("Offsets: ")
 	}
+
 	ofTable, err := copyHist(block.coders.ofEnc, &of)
 	if err != nil {
 		return nil, err
@@ -479,9 +572,11 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 	huffBuff := make([]byte, 0, avgSize)
 	// Target size
 	div := max(litTotal/avgSize, 1)
+
 	if debug {
 		println("Huffman weights:")
 	}
+
 	for i, n := range remain[:] {
 		if n > 0 {
 			n = n / div
@@ -489,25 +584,31 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 			if n == 0 {
 				n = 1
 			}
+
 			huffBuff = append(huffBuff, bytes.Repeat([]byte{byte(i)}, n)...)
 			if debug {
 				printf("[%d: %d], ", i, n)
 			}
 		}
 	}
+
 	if o.CompatV155 && remain[255]/div == 0 {
 		huffBuff = append(huffBuff, 255)
 	}
+
 	scratch := &huff0.Scratch{TableLog: 11}
 	for tries := range 255 {
 		scratch = &huff0.Scratch{TableLog: 11}
+
 		_, _, err = huff0.Compress1X(huffBuff, scratch)
 		if err == nil {
 			break
 		}
+
 		if debug {
 			printf("Try %d: Huffman error: %v\n", tries+1, err)
 		}
+
 		huffBuff = huffBuff[:0]
 		if tries == 250 {
 			if debug {
@@ -519,8 +620,10 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 			for i := range 128 {
 				huffBuff = append(huffBuff, byte(i))
 			}
+
 			continue
 		}
+
 		if errors.Is(err, huff0.ErrIncompressible) {
 			// Try truncating least common.
 			for i, n := range remain[:] {
@@ -531,13 +634,16 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 					}
 				}
 			}
+
 			if o.CompatV155 && len(huffBuff) > 0 && huffBuff[len(huffBuff)-1] != 255 {
 				huffBuff = append(huffBuff, 255)
 			}
+
 			if len(huffBuff) == 0 {
 				huffBuff = append(huffBuff, 0, 255)
 			}
 		}
+
 		if errors.Is(err, huff0.ErrUseRLE) {
 			for i, n := range remain[:] {
 				n = n / (div * (i + 1))
@@ -545,6 +651,7 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 				if n == 0 {
 					n = 1
 				}
+
 				huffBuff = append(huffBuff, bytes.Repeat([]byte{byte(i)}, n)...)
 			}
 		}
@@ -554,12 +661,14 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 	out.Write([]byte(dictMagic))
 	out.Write(binary.LittleEndian.AppendUint32(nil, o.ID))
 	out.Write(scratch.OutTable)
+
 	if debug {
 		println("huff table:", len(scratch.OutTable), "bytes")
 		println("of table:", len(ofTable), "bytes")
 		println("ml table:", len(mlTable), "bytes")
 		println("ll table:", len(llTable), "bytes")
 	}
+
 	out.Write(ofTable)
 	out.Write(mlTable)
 	out.Write(llTable)
@@ -567,18 +676,22 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 	out.Write(binary.LittleEndian.AppendUint32(nil, uint32(o.Offsets[1])))
 	out.Write(binary.LittleEndian.AppendUint32(nil, uint32(o.Offsets[2])))
 	out.Write(hist)
+
 	if _, err := loadDict(out.Bytes()); err != nil {
 		return nil, fmt.Errorf("built dictionary failed validation: %w", err)
 	}
+
 	if debug {
 		i, err := InspectDictionary(out.Bytes())
 		if err != nil {
 			panic(err)
 		}
+
 		println("ID:", i.ID())
 		println("Content size:", i.ContentSize())
 		println("Encoder:", i.LitEncoder() != nil)
 		println("Offsets:", i.Offsets())
+
 		var totalSize int
 		for _, b := range contents {
 			totalSize += len(b)
@@ -590,20 +703,26 @@ func BuildDict(o BuildDictOptions) ([]byte, error) {
 				panic(err)
 			}
 			defer enc.Close()
-			var dst []byte
-			var totalSize int
+
+			var (
+				dst       []byte
+				totalSize int
+			)
 			for _, b := range contents {
 				dst = enc.EncodeAll(b, dst[:0])
 				totalSize += len(dst)
 			}
+
 			return totalSize
 		}
 		plain := encWith(WithEncoderLevel(o.Level))
 		withDict := encWith(WithEncoderLevel(o.Level), WithEncoderDict(out.Bytes()))
+
 		println("Input size:", totalSize)
 		println("Plain Compressed:", plain)
 		println("Dict Compressed:", withDict)
 		println("Saved:", plain-withDict, (plain-withDict)/len(contents), "bytes per input (rounded down)")
 	}
+
 	return out.Bytes(), nil
 }

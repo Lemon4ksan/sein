@@ -20,22 +20,28 @@ func generateTestData(size int, entropy float64) []byte {
 	if size == 0 {
 		return b
 	}
+
 	if entropy <= 0 {
 		for i := range b {
 			b[i] = byte('A' + (i % 26))
 		}
+
 		return b
 	}
+
 	if entropy >= 1.0 {
 		_, _ = rand.Read(b)
 		return b
 	}
+
 	// Mixed pattern
 	chunk := make([]byte, 64)
+
 	_, _ = rand.Read(chunk)
 	for i := range b {
 		b[i] = chunk[i%len(chunk)]
 	}
+
 	return b
 }
 
@@ -94,6 +100,7 @@ func TestStreamRoundtrip(t *testing.T) {
 	raw := generateTestData(256*1024, 0.4)
 
 	var buf bytes.Buffer
+
 	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedDefault))
 	if err != nil {
 		t.Fatalf("NewWriter failed: %v", err)
@@ -101,11 +108,13 @@ func TestStreamRoundtrip(t *testing.T) {
 
 	chunkSize := 1024
 	for i := 0; i < len(raw); i += chunkSize {
-		end := min(i + chunkSize, len(raw))
+		end := min(i+chunkSize, len(raw))
+
 		n, err := zw.Write(raw[i:end])
 		if err != nil {
 			t.Fatalf("write failed: %v", err)
 		}
+
 		if n != end-i {
 			t.Fatalf("wrote %d bytes, want %d", n, end-i)
 		}
@@ -114,6 +123,7 @@ func TestStreamRoundtrip(t *testing.T) {
 	if err := zw.Flush(); err != nil {
 		t.Fatalf("flush failed: %v", err)
 	}
+
 	if err := zw.Close(); err != nil {
 		t.Fatalf("close failed: %v", err)
 	}
@@ -168,10 +178,12 @@ func TestEncoderOptions(t *testing.T) {
 			defer enc.Close()
 
 			comp := enc.EncodeAll(raw, nil)
+
 			decomp, err := dec.DecodeAll(comp, nil)
 			if err != nil {
 				t.Fatalf("failed decoding %s: %v", tc.name, err)
 			}
+
 			if !bytes.Equal(raw, decomp) {
 				t.Fatalf("mismatch for %s", tc.name)
 			}
@@ -196,6 +208,7 @@ func TestEncoderReset(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		raw := generateTestData((i+1)*16*1024, 0.2*float64(i))
+
 		var buf bytes.Buffer
 		enc.Reset(&buf)
 
@@ -203,6 +216,7 @@ func TestEncoderReset(t *testing.T) {
 		if err != nil {
 			t.Fatalf("iteration %d write failed: %v", i, err)
 		}
+
 		if err := enc.Close(); err != nil {
 			t.Fatalf("iteration %d close failed: %v", i, err)
 		}
@@ -215,6 +229,7 @@ func TestEncoderReset(t *testing.T) {
 		if err != nil {
 			t.Fatalf("iteration %d read failed: %v", i, err)
 		}
+
 		if !bytes.Equal(raw, got) {
 			t.Fatalf("iteration %d mismatch", i)
 		}

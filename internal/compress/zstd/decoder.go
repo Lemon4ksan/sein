@@ -450,7 +450,8 @@ func (d *Decoder) DecodeAll(input, dst []byte) ([]byte, error) {
 			// and we didn't get frame content size.
 			size := min(
 				// Cap to 1 MB.
-				len(input)*2, 1<<20)
+				len(input)*2, 1<<20,
+			)
 			if uint64(size) > d.o.maxDecodedSize {
 				size = int(d.o.maxDecodedSize)
 			}
@@ -541,7 +542,7 @@ func (d *Decoder) nextBlock(blocking bool) (ok bool) {
 	}
 
 	if len(next.b) > 0 {
-		d.current.crc.Write(next.b)
+		_, _ = d.current.crc.Write(next.b)
 	}
 
 	if next.err == nil && next.d != nil && next.d.hasCRC {
@@ -648,7 +649,7 @@ func (d *Decoder) nextBlockSync() (ok bool) {
 		// Update/Check CRC
 		if d.frame.HasCheckSum {
 			if !d.o.ignoreChecksum {
-				d.frame.crc.Write(d.current.b)
+				_, _ = d.frame.crc.Write(d.current.b)
 			}
 
 			if d.current.d.Last {
@@ -860,6 +861,7 @@ func (d *Decoder) startStreamDecoder(ctx context.Context, r io.Reader, output ch
 				hasErr = true
 
 				output <- out
+
 				continue
 			}
 

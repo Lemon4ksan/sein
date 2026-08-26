@@ -52,8 +52,10 @@ func (s *Session) SendIPPacket(packet []byte) error {
 		return errors.New("sein/masque: datagram transport not configured")
 	}
 
-	var stackBuf [2048]byte
-	var buf []byte
+	var (
+		stackBuf [2048]byte
+		buf      []byte
+	)
 
 	varIdLen := EncodeVarintSlice(s.contextID, stackBuf[:8])
 	totalLen := varIdLen + len(packet)
@@ -115,6 +117,7 @@ func (s *Session) WriteCapsule(capsuleType uint64, payload []byte) error {
 	}
 
 	var hdrBuf [16]byte
+
 	hdrLen := EncodeCapsuleHeader(capsuleType, uint64(len(payload)), hdrBuf[:])
 
 	if len(payload) <= 512 {
@@ -123,6 +126,7 @@ func (s *Session) WriteCapsule(capsuleType uint64, payload []byte) error {
 		copy(combined[hdrLen:hdrLen+len(payload)], payload)
 
 		_, err := s.controlStream.Write(combined[:hdrLen+len(payload)])
+
 		return err
 	}
 
@@ -158,6 +162,7 @@ func (s *Session) ReadCapsule() (uint64, []byte, error) {
 	varintLen := 1 << tag
 
 	var typeBuf [8]byte
+
 	typeBuf[0] = firstByte[0]
 	if varintLen > 1 {
 		if _, err := io.ReadFull(s.controlStream, typeBuf[1:varintLen]); err != nil {
@@ -178,6 +183,7 @@ func (s *Session) ReadCapsule() (uint64, []byte, error) {
 	varintLen = 1 << tag
 
 	var lenBuf [8]byte
+
 	lenBuf[0] = firstByte[0]
 	if varintLen > 1 {
 		if _, err := io.ReadFull(s.controlStream, lenBuf[1:varintLen]); err != nil {

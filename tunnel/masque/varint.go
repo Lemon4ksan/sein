@@ -63,19 +63,27 @@ func DecodeVarint(payload []byte) (val uint64, readLen int, err error) {
 		if len(payload) < 2 {
 			return 0, 0, errors.New("sein/masque: truncated 2-byte varint")
 		}
+
 		v := binary.BigEndian.Uint16(payload[:2]) & 0x3fff
+
 		return uint64(v), 2, nil
+
 	case 2:
 		if len(payload) < 4 {
 			return 0, 0, errors.New("sein/masque: truncated 4-byte varint")
 		}
+
 		v := binary.BigEndian.Uint32(payload[:4]) & 0x3fffffff
+
 		return uint64(v), 4, nil
+
 	case 3:
 		if len(payload) < 8 {
 			return 0, 0, errors.New("sein/masque: truncated 8-byte varint")
 		}
+
 		v := binary.BigEndian.Uint64(payload[:8]) & 0x3fffffffffffffff
+
 		return v, 8, nil
 	}
 

@@ -93,6 +93,7 @@ func initPredefined() {
 				addBits:  0,
 			}
 		}
+
 		fillBase(tmp[16:], 16, 1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
 		symbolTableX[tableLiteralLengths] = tmp
 
@@ -105,6 +106,7 @@ func initPredefined() {
 				addBits:  0,
 			}
 		}
+
 		fillBase(tmp[32:], 35, 1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
 		symbolTableX[tableMatchLengths] = tmp
 
@@ -114,7 +116,39 @@ func initPredefined() {
 			baseLine: 1,
 			addBits:  1,
 		}
-		fillBase(tmp[2:], 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30)
+		fillBase(
+			tmp[2:],
+			1,
+			2,
+			3,
+			4,
+			5,
+			6,
+			7,
+			8,
+			9,
+			10,
+			11,
+			12,
+			13,
+			14,
+			15,
+			16,
+			17,
+			18,
+			19,
+			20,
+			21,
+			22,
+			23,
+			24,
+			25,
+			26,
+			27,
+			28,
+			29,
+			30,
+		)
 		symbolTableX[tableOffsets] = tmp
 
 		// Fill predefined tables and transform them.
@@ -131,6 +165,7 @@ func initPredefined() {
 					-1, -1, -1, -1,
 				})
 				f.symbolLen = 36
+
 			case tableOffsets:
 				// https://github.com/facebook/zstd/blob/ededcfca57366461021c922720878c81a5854a0a/lib/decompress/zstd_decompress_block.c#L281
 				f.actualTableLog = 5
@@ -139,8 +174,9 @@ func initPredefined() {
 					1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1,
 				})
 				f.symbolLen = 29
+
 			case tableMatchLengths:
-				//https://github.com/facebook/zstd/blob/ededcfca57366461021c922720878c81a5854a0a/lib/decompress/zstd_decompress_block.c#L304
+				// https://github.com/facebook/zstd/blob/ededcfca57366461021c922720878c81a5854a0a/lib/decompress/zstd_decompress_block.c#L304
 				f.actualTableLog = 6
 				copy(f.norm[:], []int16{
 					1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
@@ -150,22 +186,27 @@ func initPredefined() {
 				})
 				f.symbolLen = 53
 			}
+
 			if err := f.buildDtable(); err != nil {
-				panic(fmt.Errorf("building table %v: %v", tableIndex(i), err))
+				panic(fmt.Errorf("building table %v: %w", tableIndex(i), err))
 			}
+
 			if err := f.transform(symbolTableX[i]); err != nil {
-				panic(fmt.Errorf("building table %v: %v", tableIndex(i), err))
+				panic(fmt.Errorf("building table %v: %w", tableIndex(i), err))
 			}
+
 			f.preDefined = true
 
 			// Create encoder as well
 			enc := &fsePredefEnc[i]
 			copy(enc.norm[:], f.norm[:])
 			enc.symbolLen = f.symbolLen
+
 			enc.actualTableLog = f.actualTableLog
 			if err := enc.buildCTable(); err != nil {
-				panic(fmt.Errorf("building encoding table %v: %v", tableIndex(i), err))
+				panic(fmt.Errorf("building encoding table %v: %w", tableIndex(i), err))
 			}
+
 			enc.setBits(bitTables[i])
 			enc.preDefined = true
 		}

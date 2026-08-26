@@ -79,6 +79,7 @@ func (d *Digest) Write(b []byte) (n int, err error) {
 		copy(memleft, b)
 
 		d.n += n
+
 		return n, err
 	}
 

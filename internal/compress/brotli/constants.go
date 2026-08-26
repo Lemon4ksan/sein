@@ -49,7 +49,7 @@ const maxNdirect = 120
 
 const maxDistanceBits = 24
 
-func distanceAlphabetSize(NPOSTFIX uint, NDIRECT uint, MAXNBITS uint) uint {
+func distanceAlphabetSize(NPOSTFIX, NDIRECT, MAXNBITS uint) uint {
 	return numDistanceShortCodes + NDIRECT + uint(MAXNBITS<<(NPOSTFIX+1))
 }
 

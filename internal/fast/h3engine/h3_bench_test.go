@@ -33,6 +33,7 @@ func BenchmarkQPACK_DecodeRequestHeaders(b *testing.B) {
 	codec := h3engine.NewQPACKCodec()
 
 	var buf bytes.Buffer
+
 	enc := qpack.NewEncoder(&buf)
 	_ = enc.WriteField(qpack.HeaderField{Name: ":method", Value: "GET"})
 	_ = enc.WriteField(qpack.HeaderField{Name: ":path", Value: "/api/v1/users"})

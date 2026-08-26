@@ -119,7 +119,7 @@ func (s *Scratch) readNCount() error {
 			}
 		}
 
-		max := (2*(threshold) - 1) - (remaining)
+		max := (2*threshold - 1) - remaining
 
 		var count int32
 
@@ -158,7 +158,7 @@ func (s *Scratch) readNCount() error {
 			b.advance(bitCount >> 3)
 			bitCount &= 7
 		} else {
-			bitCount -= (uint)(8 * (len(b.b) - 4 - b.off))
+			bitCount -= uint(8 * (len(b.b) - 4 - b.off))
 			b.off = len(b.b) - 4
 		}
 
@@ -327,17 +327,21 @@ func (s *Scratch) decompress() error {
 			if hasVectorFSE {
 				br.fillFast()
 				br.fillFast()
+
 				off = vectorDecodeQuad(&s1, &s2, s.decTable, tmp, off)
 			} else {
 				br.fillFast()
+
 				tmp[off+0] = s1.nextFast()
 				tmp[off+1] = s2.nextFast()
 
 				br.fillFast()
+
 				tmp[off+2] = s1.nextFast()
 				tmp[off+3] = s2.nextFast()
 				off += 4
 			}
+
 			// When off is 0, we have overflowed and should write.
 			if off == 0 {
 				s.Out = append(s.Out, tmp...)

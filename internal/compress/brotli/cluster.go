@@ -15,7 +15,7 @@ type histogramPair struct {
 	cost_diff  float64
 }
 
-func histogramPairIsLess(p1 *histogramPair, p2 *histogramPair) bool {
+func histogramPairIsLess(p1, p2 *histogramPair) bool {
 	if p1.cost_diff != p2.cost_diff {
 		return p1.cost_diff > p2.cost_diff
 	}
@@ -24,7 +24,7 @@ func histogramPairIsLess(p1 *histogramPair, p2 *histogramPair) bool {
 }
 
 /* Returns entropy reduction of the context map when we combine two clusters. */
-func clusterCostDiff(size_a uint, size_b uint) float64 {
-	var size_c uint = size_a + size_b
+func clusterCostDiff(size_a, size_b uint) float64 {
+	size_c := size_a + size_b
 	return float64(size_a)*fastLog2(size_a) + float64(size_b)*fastLog2(size_b) - float64(size_c)*fastLog2(size_c)
 }

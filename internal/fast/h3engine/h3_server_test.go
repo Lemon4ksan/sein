@@ -22,6 +22,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
+
 	"github.com/lemon4ksan/sein/internal/fast/h3engine"
 	"github.com/lemon4ksan/sein/internal/qpack"
 	"github.com/lemon4ksan/sein/internal/quic"
@@ -50,6 +51,7 @@ func generateTestTLSConfig(t *testing.T) (*tls.Config, *tls.Config) {
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
 	keyBytes, err := x509.MarshalECPrivateKey(key)
 	require.NoError(t, err)
+
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
 
 	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
@@ -77,6 +79,7 @@ func TestH3Server_EndToEnd(t *testing.T) {
 
 	listener, err := quic.ListenAddr("127.0.0.1:0", serverTLS, quicConfig)
 	require.NoError(t, err)
+
 	defer listener.Close()
 
 	addr := listener.Addr().String()
@@ -87,12 +90,15 @@ func TestH3Server_EndToEnd(t *testing.T) {
 			res.StatusCode = http.StatusOK
 			res.Headers.Set("Content-Type", "text/plain")
 			res.Body = []byte("Hello HTTP/3 QUIC World!")
+
 			return nil
 
 		case "/echo":
 			res.StatusCode = http.StatusOK
 			res.Headers.Set("Content-Type", "application/octet-stream")
+
 			res.Body = append([]byte("H3 Echo: "), req.Body...)
+
 			return nil
 
 		default:
@@ -109,6 +115,7 @@ func TestH3Server_EndToEnd(t *testing.T) {
 			if err != nil {
 				return
 			}
+
 			sc := h3engine.NewServerConn(conn, handler)
 			go func() {
 				_ = sc.Serve()
@@ -122,6 +129,7 @@ func TestH3Server_EndToEnd(t *testing.T) {
 
 	clientConn, err := quic.DialAddr(ctx, addr, clientTLS, quicConfig)
 	require.NoError(t, err)
+
 	defer clientConn.CloseWithError(0, "")
 
 	// 2. Open client unidirectional Control Stream and send SETTINGS (RFC 9114 §6.2.1)
@@ -129,6 +137,7 @@ func TestH3Server_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	var typeBuf [8]byte
+
 	n := quicvarint.Append(typeBuf[:0], h3engine.StreamTypeControl)
 	_, err = clientCtrl.Write(n)
 	require.NoError(t, err)
@@ -142,6 +151,7 @@ func TestH3Server_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	var qpackBuf bytes.Buffer
+
 	enc := qpack.NewEncoder(&qpackBuf)
 	require.NoError(t, enc.WriteField(qpack.HeaderField{Name: ":method", Value: "GET"}))
 	require.NoError(t, enc.WriteField(qpack.HeaderField{Name: ":path", Value: "/hello"}))
@@ -149,6 +159,7 @@ func TestH3Server_EndToEnd(t *testing.T) {
 	require.NoError(t, enc.WriteField(qpack.HeaderField{Name: ":authority", Value: addr}))
 
 	var frameHdr [16]byte
+
 	hdrBytes := quicvarint.Append(frameHdr[:0], h3engine.FrameTypeHeaders)
 	hdrBytes = quicvarint.Append(hdrBytes, uint64(qpackBuf.Len()))
 
@@ -174,15 +185,21 @@ func TestH3Server_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	dec := qpack.NewDecoder()
-	var statusCode string
-	var contentType string
+
+	var (
+		statusCode  string
+		contentType string
+	)
+
 	err = dec.DecodeFields(respHeaderBytes, func(hf qpack.HeaderField) bool {
 		if hf.Name == ":status" {
 			statusCode = hf.Value
 		}
+
 		if hf.Name == "content-type" {
 			contentType = hf.Value
 		}
+
 		return true
 	})
 	require.NoError(t, err)

@@ -12,8 +12,8 @@ package mocks
 import (
 	reflect "reflect"
 
-	protocol "github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 	gomock "github.com/lemon4ksan/foundation/testkit/gomock"
+	protocol "github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 // MockShortHeaderSealer is a mock of ShortHeaderSealer interface.
