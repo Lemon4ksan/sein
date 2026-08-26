@@ -16,6 +16,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/borrow"
 	"github.com/lemon4ksan/foundation/generic"
+	"github.com/lemon4ksan/foundation/net/http/header"
 )
 
 // Validatable is an interface for request DTOs that validate their own invariants.
@@ -119,9 +120,10 @@ func (r *Request) Header(key string) string {
 
 // BearerToken extracts the token from the "Authorization: Bearer <token>" header.
 func (r *Request) BearerToken() (string, bool) {
-	auth := r.Header("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		token := strings.TrimPrefix(auth, "Bearer ")
+	auth := r.Header(header.Authorization)
+	prefix := header.ValueBearer + " "
+	if strings.HasPrefix(auth, prefix) {
+		token := strings.TrimPrefix(auth, prefix)
 		return strings.TrimSpace(token), true
 	}
 	return "", false

@@ -7,6 +7,8 @@ package sein
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/lemon4ksan/foundation/net/http/header"
 )
 
 // Responder is an interface that allows custom types to control their exact wire serialization.
@@ -53,22 +55,22 @@ func (r Response[T]) WriteResponse(w http.ResponseWriter) error {
 		w.WriteHeader(status)
 		return nil
 	case []byte:
-		if w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", "application/octet-stream")
+		if w.Header().Get(header.ContentType) == "" {
+			w.Header().Set(header.ContentType, header.MIMEApplicationOctetStream)
 		}
 		w.WriteHeader(status)
 		_, err := w.Write(v)
 		return err
 	case string:
-		if w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if w.Header().Get(header.ContentType) == "" {
+			w.Header().Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
 		}
 		w.WriteHeader(status)
 		_, err := w.Write([]byte(v))
 		return err
 	default:
-		if w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if w.Header().Get(header.ContentType) == "" {
+			w.Header().Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
 		}
 		w.WriteHeader(status)
 		return json.NewEncoder(w).Encode(v)
@@ -134,5 +136,5 @@ func Redirect(targetURL string, status ...int) Response[any] {
 		code = status[0]
 	}
 	r := Response[any]{Status: code}
-	return r.WithHeader("Location", targetURL)
+	return r.WithHeader(header.Location, targetURL)
 }

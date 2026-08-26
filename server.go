@@ -12,6 +12,8 @@ import (
 	"net"
 	"net/http"
 	"sync"
+
+	"github.com/lemon4ksan/foundation/net/http/header"
 )
 
 // Option configures a sein Server instance.
@@ -214,7 +216,7 @@ func (s *Server) writeError(w http.ResponseWriter, err error) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
 	w.WriteHeader(resp.Status)
 	_ = json.NewEncoder(w).Encode(resp)
 }
