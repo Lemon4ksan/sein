@@ -6,6 +6,7 @@ package sein
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"net"
@@ -15,7 +16,9 @@ import (
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/sein/internal/fast/h2engine"
+	"github.com/lemon4ksan/sein/internal/fast/h3engine"
 	"github.com/lemon4ksan/sein/internal/h1"
+	"github.com/lemon4ksan/sein/internal/quic"
 )
 
 // Option configures a sein Server instance.
@@ -88,6 +91,11 @@ func (s *Server) Group(prefix string, mw ...Middleware) *Group {
 
 func (s *Server) registerRoute(method, path string, handler RawHandler, mw ...Middleware) {
 	Handle(s, method, path, handler, mw...)
+}
+
+// MountRaw registers a low-level RawHandler on the specified HTTP method and route pattern.
+func (s *Server) MountRaw(method, pattern string, handler RawHandler, mw ...Middleware) {
+	s.registerRoute(method, pattern, handler, mw...)
 }
 
 // Post registers a pure POST handler on the server: (ctx, Req) -> (Res, error)
@@ -173,6 +181,12 @@ func (s *Server) DeleteReq[Res any](path string, fn func(*Request) (Res, error),
 // dispatchH1 is the native zero-net/http request pipeline dispatcher.
 func (s *Server) dispatchH1(h1Req *h1.Request, h1Res *h1.Response) error {
 	handler, params, found := s.router.Match(h1Req.Method, h1Req.Path)
+	if !found && h1Req.Method == http.MethodOptions && len(s.middlewares) > 0 && s.router.HasPath(h1Req.Path) {
+		handler = func(req *Request) (any, error) {
+			return NoContent(), nil
+		}
+		found = true
+	}
 	if !found {
 		s.writeH1Error(h1Res, ErrNotFound("route not found"))
 		return nil
@@ -290,6 +304,12 @@ func (s *Server) writeH1Error(res *h1.Response, err error) {
 // DispatchH2 is the native zero-net/http HTTP/2 stream request dispatcher.
 func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.ServerResponse) error {
 	handler, params, found := s.router.Match(h2Req.Method, h2Req.Path)
+	if !found && h2Req.Method == http.MethodOptions && len(s.middlewares) > 0 && s.router.HasPath(h2Req.Path) {
+		handler = func(req *Request) (any, error) {
+			return NoContent(), nil
+		}
+		found = true
+	}
 	if !found {
 		s.writeH2Error(h2Res, ErrNotFound("route not found"))
 		return nil
@@ -432,9 +452,166 @@ func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
 	res.Body = data
 }
 
+// DispatchH3 is the native zero-net/http HTTP/3 stream request dispatcher.
+func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.ServerResponse) error {
+	handler, params, found := s.router.Match(h3Req.Method, h3Req.Path)
+	if !found && h3Req.Method == http.MethodOptions && len(s.middlewares) > 0 && s.router.HasPath(h3Req.Path) {
+		handler = func(req *Request) (any, error) {
+			return NoContent(), nil
+		}
+		found = true
+	}
+	if !found {
+		s.writeH3Error(h3Res, ErrNotFound("route not found"))
+		return nil
+	}
+
+	req := NewH3Request(h3Req.Method, h3Req.Path, h3Req.Authority, h3Req.RemoteAddr, h3Req.Headers, h3Req.Body, params)
+	defer req.Release()
+
+	// Wrap in global middlewares
+	finalHandler := handler
+	for _, v := range slices.Backward(s.middlewares) {
+		finalHandler = v(finalHandler)
+	}
+
+	// Execute handler
+	result, err := finalHandler(req)
+	if err != nil {
+		s.writeH3Error(h3Res, err)
+		return nil
+	}
+
+	return s.serializeH3Result(h3Res, result)
+}
+
+func (s *Server) serializeH3Result(res *h3engine.ServerResponse, result any) error {
+	res.StatusCode = http.StatusOK
+
+	if holder, ok := result.(ResponseHolder); ok {
+		res.StatusCode = holder.StatusCode()
+		if res.StatusCode == 0 {
+			res.StatusCode = http.StatusOK
+		}
+		res.Headers = holder.ResponseHeaders()
+		if res.Headers == nil {
+			res.Headers = make(http.Header)
+		}
+		body := holder.ResponseBody()
+		switch b := body.(type) {
+		case nil:
+			return nil
+		case []byte:
+			res.Body = b
+			return nil
+		case string:
+			res.Body = []byte(b)
+			return nil
+		default:
+			data, err := json.Marshal(b)
+			if err != nil {
+				return err
+			}
+			res.Body = data
+			if res.Headers.Get(header.ContentType) == "" {
+				res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+			}
+			return nil
+		}
+	}
+
+	if res.Headers == nil {
+		res.Headers = make(http.Header)
+	}
+
+	switch v := result.(type) {
+	case nil:
+		return nil
+	case []byte:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMEApplicationOctetStream)
+		}
+		res.Body = append(res.Body, v...)
+		return nil
+	case string:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
+		}
+		res.Body = append(res.Body, v...)
+		return nil
+	default:
+		if res.Headers.Get(header.ContentType) == "" {
+			res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+		}
+		data, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		res.Body = append(res.Body, data...)
+		return nil
+	}
+}
+
+func (s *Server) writeH3Error(res *h3engine.ServerResponse, err error) {
+	for _, mapper := range s.errorMappers {
+		if mapped, ok := mapper(err); ok {
+			err = mapped
+			break
+		}
+	}
+
+	var resp errorResponse
+	var definedErr DefinedError
+	var domainErr DomainError
+	var httpErr HTTPError
+
+	switch {
+	case errors.As(err, &definedErr):
+		resp = errorResponse{
+			Status:  definedErr.HTTPStatus(),
+			Code:    definedErr.ErrorCode(),
+			Message: definedErr.Message(),
+			Details: definedErr.Details(),
+		}
+	case errors.As(err, &domainErr):
+		resp = errorResponse{
+			Status:  domainErr.HTTPStatus(),
+			Code:    domainErr.ErrorCode(),
+			Message: domainErr.Error(),
+		}
+	case errors.As(err, &httpErr):
+		resp = errorResponse{
+			Status:  httpErr.HTTPStatus(),
+			Code:    httpErr.ErrorCode(),
+			Message: httpErr.Message,
+			Details: httpErr.Details,
+		}
+	default:
+		resp = errorResponse{
+			Status:  http.StatusInternalServerError,
+			Code:    "INTERNAL_SERVER_ERROR",
+			Message: err.Error(),
+		}
+	}
+
+	if res.Headers == nil {
+		res.Headers = make(http.Header)
+	}
+	res.StatusCode = resp.Status
+	res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+	data, _ := json.Marshal(resp)
+	res.Body = data
+}
+
 // ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib test recorders.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	handler, params, found := s.router.Match(r.Method, r.URL.Path)
+	if !found && r.Method == http.MethodOptions && len(s.middlewares) > 0 && s.router.HasPath(r.URL.Path) {
+		handler = func(req *Request) (any, error) {
+			return NoContent(), nil
+		}
+		found = true
+	}
 	if !found {
 		s.writeError(w, ErrNotFound("route not found"))
 		return
@@ -549,6 +726,58 @@ func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
 func (s *Server) Listen(addr string) error {
 	s.addr = addr
 	return s.ListenAndServe()
+}
+
+// ListenAndServeQUIC starts the native HTTP/3 server over UDP using TLS.
+func (s *Server) ListenAndServeQUIC(addr string, certFile, keyFile string) error {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return err
+	}
+
+	tlsConf := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h3"},
+	}
+
+	quicConf := &quic.Config{
+		EnableDatagrams: true,
+	}
+
+	ln, err := quic.ListenAddr(addr, tlsConf, quicConf)
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
+
+	for {
+		conn, err := ln.Accept(context.Background())
+		if err != nil {
+			return err
+		}
+		sc := h3engine.NewServerConn(conn, s.DispatchH3)
+		go func() {
+			_ = sc.Serve()
+		}()
+	}
+}
+
+// ListenAndServeUniversal starts the unified multi-protocol engine on port addr (e.g. :443)
+// serving HTTP/1.1, HTTP/2, and WebSockets over TCP, and HTTP/3 over UDP.
+func (s *Server) ListenAndServeUniversal(addr string, certFile, keyFile string) error {
+	errCh := make(chan error, 2)
+
+	// 1. Start HTTP/3 over UDP
+	go func() {
+		errCh <- s.ListenAndServeQUIC(addr, certFile, keyFile)
+	}()
+
+	// 2. Start HTTP/1.1 & HTTP/2 over TCP
+	go func() {
+		errCh <- s.ListenAndServeTLS(certFile, keyFile)
+	}()
+
+	return <-errCh
 }
 
 // Shutdown gracefully shuts down the server.

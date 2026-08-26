@@ -4,7 +4,7 @@
 
 package protocol
 
-import "github.com/lemon4ksan/aoni/x/quic/quicvarint"
+import "github.com/lemon4ksan/sein/internal/quic/quicvarint"
 
 // StreamType encodes if this is a unidirectional or bidirectional stream
 type StreamType uint8

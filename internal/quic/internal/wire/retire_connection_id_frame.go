@@ -5,8 +5,8 @@
 package wire
 
 import (
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/quicvarint"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/quicvarint"
 )
 
 // A RetireConnectionIDFrame is a RETIRE_CONNECTION_ID frame

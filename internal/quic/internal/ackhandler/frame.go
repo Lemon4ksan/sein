@@ -5,7 +5,7 @@
 package ackhandler
 
 import (
-	"github.com/lemon4ksan/aoni/x/quic/internal/wire"
+	"github.com/lemon4ksan/sein/internal/quic/internal/wire"
 )
 
 // FrameHandler handles the acknowledgement and the loss of a frame.

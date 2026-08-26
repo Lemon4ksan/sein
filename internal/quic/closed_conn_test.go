@@ -11,7 +11,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/require"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
 )
 
 func TestClosedLocalConnection(t *testing.T) {

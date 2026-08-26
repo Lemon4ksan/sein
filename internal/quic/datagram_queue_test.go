@@ -13,8 +13,8 @@ import (
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
-	"github.com/lemon4ksan/aoni/x/quic/internal/wire"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/wire"
 )
 
 func TestDatagramQueuePeekAndPop(t *testing.T) {

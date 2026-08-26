@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
 )
 
 const (

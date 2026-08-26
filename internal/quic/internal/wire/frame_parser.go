@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/qerr"
-	"github.com/lemon4ksan/aoni/x/quic/quicvarint"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/qerr"
+	"github.com/lemon4ksan/sein/internal/quic/quicvarint"
 )
 
 var errUnknownFrameType = errors.New("unknown frame type")

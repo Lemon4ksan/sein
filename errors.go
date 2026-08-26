@@ -193,9 +193,23 @@ func ErrUnprocessable(message string, cause ...error) HTTPError {
 	return NewError(http.StatusUnprocessableEntity, message, cause...)
 }
 
+// ErrTooManyRequests creates a 429 Too Many Requests ad-hoc error.
+func ErrTooManyRequests(message string, cause ...error) HTTPError {
+	return NewError(http.StatusTooManyRequests, message, cause...)
+}
+
 // ErrInternal creates a 500 Internal Server Error ad-hoc error.
 func ErrInternal(message string, cause ...error) HTTPError {
 	return NewError(http.StatusInternalServerError, message, cause...)
+}
+
+// NewHTTPError creates a structured HTTPError with status, code, and message.
+func NewHTTPError(status int, code, message string) HTTPError {
+	return HTTPError{
+		Status:  status,
+		Code:    code,
+		Message: message,
+	}
 }
 
 // AsHTTPError checks if an error wraps or is an HTTPError.

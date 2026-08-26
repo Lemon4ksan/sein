@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
 )
 
 // LogFrame logs a frame, either sent or received

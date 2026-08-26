@@ -5,8 +5,8 @@
 package wire
 
 import (
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/quicvarint"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/quicvarint"
 )
 
 // A MaxStreamDataFrame is a MAX_STREAM_DATA frame

@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/chacha20"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 type headerProtector interface {
@@ -88,6 +88,11 @@ func (p *aesHeaderProtector) apply(sample []byte, firstByte *byte, hdrBytes []by
 
 	p.block.Encrypt(p.mask[:], sample)
 
+	if hasVectorHP {
+		vectorApplyHPMask(p.mask[:], firstByte, hdrBytes, p.isLongHeader)
+		return
+	}
+
 	if p.isLongHeader {
 		*firstByte ^= p.mask[0] & 0xf
 	} else {
@@ -152,6 +157,11 @@ func (p *chachaHeaderProtector) apply(sample []byte, firstByte *byte, hdrBytes [
 }
 
 func (p *chachaHeaderProtector) applyMask(firstByte *byte, hdrBytes []byte) {
+	if hasVectorHP {
+		vectorApplyHPMask(p.mask[:], firstByte, hdrBytes, p.isLongHeader)
+		return
+	}
+
 	if p.isLongHeader {
 		*firstByte ^= p.mask[0] & 0xf
 	} else {

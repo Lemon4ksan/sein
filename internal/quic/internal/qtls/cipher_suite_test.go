@@ -12,7 +12,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/require"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/testdata"
+	"github.com/lemon4ksan/sein/internal/quic/internal/testdata"
 )
 
 func TestCipherSuiteSelection(t *testing.T) {

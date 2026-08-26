@@ -9,8 +9,8 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	list "github.com/lemon4ksan/aoni/x/quic/internal/utils/linkedlist"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	list "github.com/lemon4ksan/sein/internal/quic/internal/utils/linkedlist"
 )
 
 // byteInterval is an interval from one ByteCount to the other

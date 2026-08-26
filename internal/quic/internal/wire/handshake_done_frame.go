@@ -5,7 +5,7 @@
 package wire
 
 import (
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 // A HandshakeDoneFrame is a HANDSHAKE_DONE frame

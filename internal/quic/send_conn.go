@@ -9,8 +9,8 @@ import (
 	"net"
 	"sync/atomic"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
 )
 
 // A sendConn allows sending using a simple Write() on a non-connected packet conn.

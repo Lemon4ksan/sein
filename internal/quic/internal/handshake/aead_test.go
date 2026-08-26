@@ -12,7 +12,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/require"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 func getSealerAndOpener(t *testing.T, cs cipherSuite, v protocol.Version) (LongHeaderSealer, LongHeaderOpener) {

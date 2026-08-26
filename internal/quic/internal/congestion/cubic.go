@@ -8,8 +8,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/monotime"
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/monotime"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 // This cubic implementation is based on the one found in Chromiums's QUIC

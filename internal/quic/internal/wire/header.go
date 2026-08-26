@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/quicvarint"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/quicvarint"
 )
 
 // ParseConnectionID parses the destination connection ID of a packet.

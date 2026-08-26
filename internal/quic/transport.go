@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
-	"github.com/lemon4ksan/aoni/x/quic/internal/wire"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/wire"
 )
 
 // ErrTransportClosed is returned by [Transport.Listen], [Transport.ListenEarly], [Transport.Dial],
@@ -110,6 +110,7 @@ type Transport struct {
 
 	readingNonQUICPackets atomic.Bool
 	nonQUICPackets        chan receivedPacket
+	serverHandler         packetHandler
 
 	logger utils.Logger
 }
@@ -399,7 +400,7 @@ func (t *Transport) listen(conn rawConn) {
 		//nolint:staticcheck // SA1019 ignore this!
 		// TODO: This code is used to ignore wsa errors on Windows.
 		// Since net.Error.Temporary is deprecated as of Go 1.18, we should find a better solution.
-		// See https://github.com/lemon4ksan/aoni/x/quic/issues/1737 for details.
+		// See https://github.com/lemon4ksan/sein/internal/quic/issues/1737 for details.
 		var nerr net.Error
 		if errors.As(err, &nerr) {
 			t.mutex.Lock()
@@ -456,6 +457,15 @@ func (t *Transport) handlePacket(p receivedPacket) {
 	// If there's a connection associated with the connection ID, pass the packet there.
 	if handler, ok := (*packetHandlerMap)(t).Get(connID); ok {
 		handler.handlePacket(p)
+		return
+	}
+
+	t.mutex.Lock()
+	server := t.serverHandler
+	t.mutex.Unlock()
+
+	if server != nil {
+		server.handlePacket(p)
 		return
 	}
 

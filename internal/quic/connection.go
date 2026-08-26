@@ -19,14 +19,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/ackhandler"
-	"github.com/lemon4ksan/aoni/x/quic/internal/handshake"
-	"github.com/lemon4ksan/aoni/x/quic/internal/monotime"
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/qerr"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils/ringbuffer"
-	"github.com/lemon4ksan/aoni/x/quic/internal/wire"
+	"github.com/lemon4ksan/sein/internal/quic/internal/ackhandler"
+	"github.com/lemon4ksan/sein/internal/quic/internal/handshake"
+	"github.com/lemon4ksan/sein/internal/quic/internal/monotime"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/qerr"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils/ringbuffer"
+	"github.com/lemon4ksan/sein/internal/quic/internal/wire"
 )
 
 type unpacker interface {
@@ -331,7 +331,7 @@ var newClientConnection = func(
 		// different from protocol.DefaultActiveConnectionIDLimit.
 		// If set to the default value, it will be omitted from the transport parameters, which will make
 		// old quic-go versions interpret it as 0, instead of the default value of 2.
-		// See https://github.com/lemon4ksan/aoni/x/quic/pull/3806.
+		// See https://github.com/lemon4ksan/sein/internal/quic/pull/3806.
 		ActiveConnectionIDLimit:   protocol.MaxActiveConnectionIDs,
 		InitialSourceConnectionID: srcConnID,
 		EnableResetStreamAt:       conf.EnableStreamResetPartialDelivery,
@@ -380,6 +380,129 @@ var newClientConnection = func(
 			s.rttStats.SetInitialRTT(token.rtt)
 		}
 	}
+
+	return &wrappedConn{Conn: s}
+}
+
+// declare this as a variable, such that we can mock it in tests
+var newServerConnection = func(
+	ctx context.Context,
+	conn sendConn,
+	runner connRunner,
+	origDestConnID protocol.ConnectionID,
+	retrySrcConnID *protocol.ConnectionID,
+	clientDestConnID protocol.ConnectionID,
+	destConnID protocol.ConnectionID,
+	srcConnID protocol.ConnectionID,
+	connIDGenerator ConnectionIDGenerator,
+	conf *Config,
+	tlsConf *tls.Config,
+	tokenGenerator *handshake.TokenGenerator,
+	enable0RTT bool,
+	logger utils.Logger,
+	v protocol.Version,
+) *wrappedConn {
+	s := &Conn{
+		conn:                conn,
+		config:              conf,
+		origDestConnID:      origDestConnID,
+		retrySrcConnID:      retrySrcConnID,
+		handshakeDestConnID: destConnID,
+		srcConnIDLen:        srcConnID.Len(),
+		perspective:         protocol.PerspectiveServer,
+		logID:               origDestConnID.String(),
+		logger:              logger,
+		version:             v,
+		tokenGenerator:      tokenGenerator,
+	}
+
+	s.connIDManager = newConnIDManager(
+		destConnID,
+		func(token protocol.StatelessResetToken) { runner.AddResetToken(token, s) },
+		runner.RemoveResetToken,
+		s.queueControlFrame,
+	)
+	s.connIDGenerator = newConnIDGenerator(
+		runner,
+		srcConnID,
+		&clientDestConnID,
+		connRunnerCallbacks{
+			AddConnectionID:    func(connID protocol.ConnectionID) { runner.Add(connID, s) },
+			RemoveConnectionID: runner.Remove,
+			ReplaceWithClosed:  runner.ReplaceWithClosed,
+		},
+		s.queueControlFrame,
+		connIDGenerator,
+	)
+	s.ctx, s.ctxCancel = context.WithCancelCause(ctx)
+	s.preSetup()
+	s.sentPacketHandler = ackhandler.NewSentPacketHandler(
+		0,
+		protocol.ByteCount(s.config.InitialPacketSize),
+		s.rttStats,
+		&s.connStats,
+		false,
+		s.conn.capabilities().ECN,
+		s.receivedPacketHandler.IgnorePacketsBelow,
+		s.perspective,
+		s.logger,
+	)
+	s.maxPayloadSizeEstimate.Store(uint32(estimateMaxPayloadSize(protocol.ByteCount(s.config.InitialPacketSize))))
+
+	oneRTTStream := newCryptoStream()
+	s.oneRTTStream = oneRTTStream
+
+	params := &wire.TransportParameters{
+		InitialMaxStreamDataBidiRemote:  protocol.ByteCount(s.config.InitialStreamReceiveWindow),
+		InitialMaxStreamDataBidiLocal:   protocol.ByteCount(s.config.InitialStreamReceiveWindow),
+		InitialMaxStreamDataUni:         protocol.ByteCount(s.config.InitialStreamReceiveWindow),
+		InitialMaxData:                  protocol.ByteCount(s.config.InitialConnectionReceiveWindow),
+		MaxIdleTimeout:                  s.config.MaxIdleTimeout,
+		MaxBidiStreamNum:                protocol.StreamNum(s.config.MaxIncomingStreams),
+		MaxUniStreamNum:                 protocol.StreamNum(s.config.MaxIncomingUniStreams),
+		MaxAckDelay:                     protocol.MaxAckDelayInclGranularity,
+		MaxUDPPayloadSize:               protocol.MaxPacketBufferSize,
+		AckDelayExponent:                protocol.AckDelayExponent,
+		ActiveConnectionIDLimit:         protocol.MaxActiveConnectionIDs,
+		InitialSourceConnectionID:       srcConnID,
+		OriginalDestinationConnectionID: origDestConnID,
+		RetrySourceConnectionID:         retrySrcConnID,
+		EnableResetStreamAt:             conf.EnableStreamResetPartialDelivery,
+	}
+	if s.config.EnableDatagrams {
+		params.MaxDatagramFrameSize = wire.MaxDatagramSize
+	} else {
+		params.MaxDatagramFrameSize = protocol.InvalidByteCount
+	}
+
+	cs := handshake.NewCryptoSetupServer(
+		clientDestConnID,
+		conn.LocalAddr(),
+		conn.RemoteAddr(),
+		params,
+		tlsConf,
+		enable0RTT,
+		s.rttStats,
+		logger,
+		s.version,
+	)
+	s.cryptoStreamHandler = cs
+	s.cryptoStreamManager = newCryptoStreamManager(s.initialStream, s.handshakeStream, oneRTTStream)
+	s.unpacker = newPacketUnpacker(cs, s.srcConnIDLen)
+
+	s.packer = newPacketPacker(
+		srcConnID,
+		s.connIDManager.Get,
+		s.initialStream,
+		s.handshakeStream,
+		s.sentPacketHandler,
+		s.retransmissionQueue,
+		cs,
+		s.framer,
+		&s.receivedPacketHandler,
+		s.datagramQueue,
+		s.perspective,
+	)
 
 	return &wrappedConn{Conn: s}
 }

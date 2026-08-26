@@ -7,8 +7,8 @@ package ackhandler
 import (
 	"fmt"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
 )
 
 type ecnState uint8

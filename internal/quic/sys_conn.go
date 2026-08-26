@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/monotime"
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/monotime"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
 )
 
 type connCapabilities struct {
@@ -67,7 +67,7 @@ func wrapConn(pc net.PacketConn) (rawConn, error) {
 				}
 
 				log.Printf(
-					"%s. See https://github.com/lemon4ksan/aoni/x/quic/wiki/UDP-Buffer-Sizes for details.",
+					"%s. See https://github.com/lemon4ksan/sein/internal/quic/wiki/UDP-Buffer-Sizes for details.",
 					err,
 				)
 			})
@@ -82,7 +82,7 @@ func wrapConn(pc net.PacketConn) (rawConn, error) {
 				}
 
 				log.Printf(
-					"%s. See https://github.com/lemon4ksan/aoni/x/quic/wiki/UDP-Buffer-Sizes for details.",
+					"%s. See https://github.com/lemon4ksan/sein/internal/quic/wiki/UDP-Buffer-Sizes for details.",
 					err,
 				)
 			})

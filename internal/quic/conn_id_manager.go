@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/qerr"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
-	"github.com/lemon4ksan/aoni/x/quic/internal/wire"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/qerr"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/wire"
 )
 
 type newConnID struct {
@@ -355,7 +355,7 @@ func (h *connIDManager) IsActiveStatelessResetToken(token protocol.StatelessRese
 // Using the connIDManager after it has been closed can have disastrous effects:
 // If the connection ID is rotated, a new entry would be inserted into the packet handler map,
 // leading to a memory leak of the connection struct.
-// See https://github.com/lemon4ksan/aoni/x/quic/pull/4852 for more details.
+// See https://github.com/lemon4ksan/sein/internal/quic/pull/4852 for more details.
 func (h *connIDManager) assertNotClosed() {
 	if h.closed {
 		panic("connection ID manager is closed")

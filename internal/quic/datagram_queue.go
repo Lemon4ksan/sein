@@ -9,9 +9,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils/ringbuffer"
-	"github.com/lemon4ksan/aoni/x/quic/internal/wire"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils/ringbuffer"
+	"github.com/lemon4ksan/sein/internal/quic/internal/wire"
 )
 
 const (

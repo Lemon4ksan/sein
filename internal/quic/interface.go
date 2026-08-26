@@ -12,8 +12,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/handshake"
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/handshake"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 // The StreamID is the ID of a QUIC stream.

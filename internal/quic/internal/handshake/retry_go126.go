@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 // used for QUIC v1 (RFC 9000)

@@ -4,7 +4,7 @@
 
 package wire
 
-import "github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+import "github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 
 type FrameType uint64
 

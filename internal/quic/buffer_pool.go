@@ -8,7 +8,7 @@ package quic
 import (
 	"github.com/lemon4ksan/foundation/silicon/pool"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 type packetBuffer struct {

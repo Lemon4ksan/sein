@@ -11,8 +11,8 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/require"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/monotime"
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/monotime"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 func TestLostPacketTracker(t *testing.T) {

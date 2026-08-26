@@ -9,13 +9,13 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/ackhandler"
-	"github.com/lemon4ksan/aoni/x/quic/internal/monotime"
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils/minheap"
-	"github.com/lemon4ksan/aoni/x/quic/internal/utils/ringbuffer"
-	"github.com/lemon4ksan/aoni/x/quic/internal/wire"
-	"github.com/lemon4ksan/aoni/x/quic/quicvarint"
+	"github.com/lemon4ksan/sein/internal/quic/internal/ackhandler"
+	"github.com/lemon4ksan/sein/internal/quic/internal/monotime"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils/minheap"
+	"github.com/lemon4ksan/sein/internal/quic/internal/utils/ringbuffer"
+	"github.com/lemon4ksan/sein/internal/quic/internal/wire"
+	"github.com/lemon4ksan/sein/internal/quic/quicvarint"
 )
 
 const (
@@ -325,7 +325,7 @@ func (f *framer) appendControlFrames(
 // This is a hack.
 // It is easier to implement than propagating an error return value in QueueControlFrame.
 // The correct solution would be to queue frames with their respective structs.
-// See https://github.com/lemon4ksan/aoni/x/quic/issues/4271 for the queueing of stream-related control frames.
+// See https://github.com/lemon4ksan/sein/internal/quic/issues/4271 for the queueing of stream-related control frames.
 func (f *framer) QueuedTooManyControlFrames() bool {
 	return f.queuedTooManyControlFrames
 }

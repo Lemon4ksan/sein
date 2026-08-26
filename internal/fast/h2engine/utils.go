@@ -173,12 +173,12 @@ func SerializeResponseHeaders(dst *Headers, hp *HPACK, statusCode int, headers h
 
 	hf.SetKeyBytes(StringStatus)
 	hf.SetValue(strconv.Itoa(statusCode))
-	dst.AppendHeaderField(hp, hf, true)
+	dst.AppendHeaderField(hp, hf, false)
 
 	if bodyLen >= 0 {
 		hf.SetKeyBytes(StringContentLength)
 		hf.SetValue(strconv.Itoa(bodyLen))
-		dst.AppendHeaderField(hp, hf, true)
+		dst.AppendHeaderField(hp, hf, false)
 	}
 
 	for k, vv := range headers {

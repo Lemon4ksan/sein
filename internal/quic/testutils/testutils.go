@@ -10,9 +10,9 @@ package testutils
 import (
 	"fmt"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/handshake"
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/wire"
+	"github.com/lemon4ksan/sein/internal/quic/internal/handshake"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/wire"
 )
 
 // writePacket returns a new raw packet with the specified header and payload

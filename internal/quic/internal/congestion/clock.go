@@ -5,7 +5,7 @@
 package congestion
 
 import (
-	"github.com/lemon4ksan/aoni/x/quic/internal/monotime"
+	"github.com/lemon4ksan/sein/internal/quic/internal/monotime"
 )
 
 // A Clock returns the current time

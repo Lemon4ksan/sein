@@ -4,7 +4,7 @@
 
 package testutils
 
-import "github.com/lemon4ksan/aoni/x/quic/internal/wire"
+import "github.com/lemon4ksan/sein/internal/quic/internal/wire"
 
 type (
 	Frame                   = wire.Frame

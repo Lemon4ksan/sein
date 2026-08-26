@@ -94,6 +94,9 @@ func NewServerConn(netConn net.Conn, handler ServerHandlerFunc) *ServerConn {
 	sc.closeErr = nil
 	sc.peerMaxFrameSize = defaultMaxLen
 	sc.peerInitialWin = 65535
+	sc.hpackDec.Reset()
+	sc.hpackEnc.Reset()
+	sc.hpackEnc.DisableDynamicTable = true
 	clear(sc.streams)
 	return sc
 }
@@ -323,10 +326,14 @@ func (sc *ServerConn) finishHeaderBlock(st *serverStream) error {
 	defer ReleaseHeaderField(hf)
 
 	for len(rawBlock) > 0 {
+		hf.Reset()
 		var err error
 		rawBlock, err = sc.hpackDec.Next(hf, rawBlock)
 		if err != nil {
 			return err
+		}
+		if hf.Empty() {
+			continue
 		}
 
 		k := string(hf.KeyBytes())
@@ -406,20 +413,16 @@ func (sc *ServerConn) dispatchStream(st *serverStream) {
 }
 
 func (sc *ServerConn) writeResponse(streamID uint32, res *ServerResponse) error {
-	sc.encMu.Lock()
-	defer sc.encMu.Unlock()
-
-	// 1. Serialize HPACK Headers
-	hFrame := AcquireFrame(FrameHeaders).(*Headers)
-	defer ReleaseFrame(hFrame)
-
-	SerializeResponseHeaders(hFrame, sc.hpackEnc, res.StatusCode, res.Headers, len(res.Body))
-
 	sc.writeMu.Lock()
 	defer sc.writeMu.Unlock()
 
 	hdrFr := AcquireFrameHeader()
 	defer ReleaseFrameHeader(hdrFr)
+
+	sc.encMu.Lock()
+	hFrame := AcquireFrame(FrameHeaders).(*Headers)
+	SerializeResponseHeaders(hFrame, sc.hpackEnc, res.StatusCode, res.Headers, len(res.Body))
+	sc.encMu.Unlock()
 
 	hdrFr.SetStream(streamID)
 	hdrFr.SetFlags(FlagEndHeaders)
@@ -455,7 +458,6 @@ func (sc *ServerConn) writeResponse(streamID uint32, res *ServerResponse) error 
 		dataFr.SetBody(dFrame)
 
 		_, err := dataFr.WriteTo(sc.bw)
-		ReleaseFrame(dFrame)
 		ReleaseFrameHeader(dataFr)
 
 		if err != nil {

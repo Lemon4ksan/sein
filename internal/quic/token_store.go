@@ -8,7 +8,7 @@ package quic
 import (
 	"sync"
 
-	list "github.com/lemon4ksan/aoni/x/quic/internal/utils/linkedlist"
+	list "github.com/lemon4ksan/sein/internal/quic/internal/utils/linkedlist"
 )
 
 type singleOriginTokenStore struct {

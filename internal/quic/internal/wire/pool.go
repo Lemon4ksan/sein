@@ -7,7 +7,7 @@ package wire
 import (
 	"sync"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 var pool sync.Pool

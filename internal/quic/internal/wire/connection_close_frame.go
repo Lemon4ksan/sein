@@ -7,8 +7,8 @@ package wire
 import (
 	"io"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/quicvarint"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/quicvarint"
 )
 
 // A ConnectionCloseFrame is a CONNECTION_CLOSE frame

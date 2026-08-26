@@ -17,9 +17,9 @@ import (
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/qerr"
-	"github.com/lemon4ksan/aoni/x/quic/internal/wire"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/qerr"
+	"github.com/lemon4ksan/sein/internal/quic/internal/wire"
 )
 
 func TestStreamsMapOutgoingOpenAndDelete(t *testing.T) {
@@ -173,7 +173,7 @@ func testStreamsMapOutgoingLimits(t *testing.T, perspective protocol.Perspective
 }
 
 // This test checks that OpenStreamSync returns the context error when the context is canceled
-// at the same time that the stream limit is increased (see https://github.com/lemon4ksan/aoni/x/quic/issues/5659).
+// at the same time that the stream limit is increased (see https://github.com/lemon4ksan/sein/internal/quic/issues/5659).
 // The race is inherently hard to trigger: even without the fix, this test only fails intermittently.
 // To gain confidence in the fix, run it many times (e.g. 10000 times) with the race detector enabled.
 func TestStreamsMapOutgoingOpenStreamSyncCancel(t *testing.T) {

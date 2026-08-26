@@ -7,7 +7,7 @@ package congestion
 import (
 	"time"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 // Note(pwestin): the magic clamping numbers come from the original code in

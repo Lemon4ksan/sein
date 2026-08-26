@@ -52,7 +52,7 @@ func (r *RingBuffer[T]) PushBack(t T) {
 // callers might need to check if there are elements in the buffer first.
 func (r *RingBuffer[T]) PopFront() T {
 	if r.Empty() {
-		panic("github.com/lemon4ksan/aoni/x/quic/internal/utils/ringbuffer: pop from an empty queue")
+		panic("github.com/lemon4ksan/sein/internal/quic/internal/utils/ringbuffer: pop from an empty queue")
 	}
 
 	// Shrink first. The backing storage remains accessible through cap,
@@ -74,7 +74,7 @@ func (r *RingBuffer[T]) PopFront() T {
 // callers might need to check if there are elements in the buffer first.
 func (r *RingBuffer[T]) PeekFront() T {
 	if r.Empty() {
-		panic("github.com/lemon4ksan/aoni/x/quic/internal/utils/ringbuffer: peek from an empty queue")
+		panic("github.com/lemon4ksan/sein/internal/quic/internal/utils/ringbuffer: peek from an empty queue")
 	}
 
 	return r.ring[:cap(r.ring)][r.headPos]

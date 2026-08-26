@@ -9,8 +9,8 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/require"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/wire"
-	"github.com/lemon4ksan/aoni/x/quic/quicvarint"
+	"github.com/lemon4ksan/sein/internal/quic/internal/wire"
+	"github.com/lemon4ksan/sein/internal/quic/quicvarint"
 )
 
 func TestMarshalUnmarshalSessionTicket(t *testing.T) {

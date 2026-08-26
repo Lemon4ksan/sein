@@ -13,11 +13,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 // Instead of using an init function, the AEADs are created lazily.
-// For more details see https://github.com/lemon4ksan/aoni/x/quic/issues/4894.
+// For more details see https://github.com/lemon4ksan/sein/internal/quic/issues/4894.
 var (
 	retryAEADv1 cipher.AEAD // used for QUIC v1 (RFC 9000)
 	retryAEADv2 cipher.AEAD // used for QUIC v2 (RFC 9369)

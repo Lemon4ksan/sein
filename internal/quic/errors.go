@@ -8,7 +8,7 @@ package quic
 import (
 	"fmt"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/qerr"
+	"github.com/lemon4ksan/sein/internal/quic/internal/qerr"
 )
 
 type (

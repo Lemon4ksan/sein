@@ -125,6 +125,31 @@ func NewH2Request(method, path, authority, remoteAddr string, rawHeaders http.He
 	return req
 }
 
+// NewH3Request creates a Request wrapping a native H3 stream request.
+func NewH3Request(method, path, authority, remoteAddr string, rawHeaders http.Header, body []byte, params map[string]string) *Request {
+	req := &Request{
+		ctx:        context.Background(),
+		method:     method,
+		path:       path,
+		proto:      "HTTP/3.0",
+		host:       authority,
+		remoteAddr: remoteAddr,
+		bodyBuf:    body,
+		params:     params,
+		scope:      borrow.NewScope(),
+	}
+	if rawHeaders != nil {
+		h := h1.NewHeadersWithCapacity(len(rawHeaders))
+		for k, vv := range rawHeaders {
+			for _, v := range vv {
+				h.Set(k, v)
+			}
+		}
+		req.h1Headers = &h
+	}
+	return req
+}
+
 // Hijack takes over the raw underlying TCP connection from the server.
 // Once hijacked, the server will not write any HTTP response and will not close the connection.
 func (r *Request) Hijack() (net.Conn, *bufio.ReadWriter, error) {
@@ -171,6 +196,11 @@ func (r *Request) Context() context.Context {
 func (r *Request) WithContext(ctx context.Context) *Request {
 	r.ctx = ctx
 	return r
+}
+
+// SetContext sets a new context on the request.
+func (r *Request) SetContext(ctx context.Context) {
+	r.ctx = ctx
 }
 
 // Raw returns the underlying *http.Request for advanced compatibility if available.
@@ -243,6 +273,45 @@ func (r *Request) Header(key string) string {
 	return ""
 }
 
+// Cookie returns the named cookie provided in the request or an error if not present.
+func (r *Request) Cookie(name string) (string, error) {
+	cookieHdr := r.Header(header.Cookie)
+	if cookieHdr == "" {
+		return "", errors.New("http: named cookie not present")
+	}
+
+	for _, part := range strings.Split(cookieHdr, ";") {
+		part = strings.TrimSpace(part)
+		if k, v, found := strings.Cut(part, "="); found {
+			if strings.TrimSpace(k) == name {
+				return strings.TrimSpace(v), nil
+			}
+		}
+	}
+	return "", errors.New("http: named cookie not present")
+}
+
+// Cookies parses and returns the HTTP cookies sent with the request.
+func (r *Request) Cookies() []*http.Cookie {
+	cookieHdr := r.Header(header.Cookie)
+	if cookieHdr == "" {
+		return nil
+	}
+
+	parts := strings.Split(cookieHdr, ";")
+	cookies := make([]*http.Cookie, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if k, v, found := strings.Cut(part, "="); found {
+			cookies = append(cookies, &http.Cookie{
+				Name:  strings.TrimSpace(k),
+				Value: strings.TrimSpace(v),
+			})
+		}
+	}
+	return cookies
+}
+
 // BearerToken extracts the token from the "Authorization: Bearer <token>" header.
 func (r *Request) BearerToken() (string, bool) {
 	auth := r.Header(header.Authorization)
@@ -280,6 +349,17 @@ func (r *Request) ClientIP() string {
 		if err == nil {
 			return host
 		}
+		return r.raw.RemoteAddr
+	}
+	return ""
+}
+
+// RemoteAddr returns the raw remote network address (IP:port).
+func (r *Request) RemoteAddr() string {
+	if r.remoteAddr != "" {
+		return r.remoteAddr
+	}
+	if r.raw != nil {
 		return r.raw.RemoteAddr
 	}
 	return ""

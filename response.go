@@ -243,3 +243,21 @@ func Redirect(targetURL string, status ...int) Response[any] {
 	r := Response[any]{Status: code}
 	return r.WithHeader(header.Location, targetURL)
 }
+
+// StatusWith creates a response with custom status, body, and headers.
+func StatusWith[T any](status int, body T, headers http.Header) Response[T] {
+	return Response[T]{
+		Status:  status,
+		Body:    body,
+		Headers: headers,
+	}
+}
+
+// HTML creates an HTML response (text/html; charset=utf-8).
+func HTML(content string) Response[string] {
+	r := Response[string]{
+		Status: http.StatusOK,
+		Body:   content,
+	}
+	return r.WithHeader(header.ContentType, "text/html; charset=utf-8")
+}

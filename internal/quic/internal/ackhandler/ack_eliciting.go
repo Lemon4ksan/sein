@@ -4,7 +4,7 @@
 
 package ackhandler
 
-import "github.com/lemon4ksan/aoni/x/quic/internal/wire"
+import "github.com/lemon4ksan/sein/internal/quic/internal/wire"
 
 // IsFrameTypeAckEliciting returns true if the frame is ack-eliciting.
 func IsFrameTypeAckEliciting(t wire.FrameType) bool {

@@ -21,8 +21,8 @@ import (
 	"github.com/lemon4ksan/foundation/testkit/require"
 	"golang.org/x/crypto/cryptobyte"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
-	"github.com/lemon4ksan/aoni/x/quic/internal/testdata"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/testdata"
 )
 
 func checkClientHello(clientHello []byte) error {

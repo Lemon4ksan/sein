@@ -16,7 +16,7 @@ import (
 	"github.com/lemon4ksan/foundation/testkit/gomock"
 	"github.com/lemon4ksan/foundation/testkit/require"
 
-	"github.com/lemon4ksan/aoni/x/quic/internal/protocol"
+	"github.com/lemon4ksan/sein/internal/quic/internal/protocol"
 )
 
 func getPacketWithContents(b []byte) *packetBuffer {

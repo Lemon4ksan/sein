@@ -12,6 +12,7 @@ import (
 type routeNode struct {
 	pathSegment string
 	isParam     bool
+	isWildcard  bool
 	paramName   string
 	handler     RawHandler
 	children    []*routeNode
@@ -35,7 +36,7 @@ func (r *Router) Add(method, pattern string, handler RawHandler) {
 	defer r.mu.Unlock()
 
 	// 1. If pattern has no dynamic parameters, register into O(1) static lookup table
-	if !strings.Contains(pattern, ":") && !strings.Contains(pattern, "*") {
+	if !strings.Contains(pattern, ":") && !strings.Contains(pattern, "*") && !strings.Contains(pattern, "...") {
 		if r.static[method] == nil {
 			r.static[method] = make(map[string]RawHandler)
 		}
@@ -57,19 +58,28 @@ func (r *Router) Add(method, pattern string, handler RawHandler) {
 			continue
 		}
 
-		isParam := strings.HasPrefix(seg, ":")
+		isWildcard := strings.HasPrefix(seg, "*") || seg == "..."
+		isParam := !isWildcard && strings.HasPrefix(seg, ":")
 		paramName := ""
 		if isParam {
 			paramName = seg[1:]
+		} else if isWildcard {
+			if strings.HasPrefix(seg, "*") {
+				paramName = seg[1:]
+			}
 		}
 
 		var child *routeNode
 		for _, c := range curr.children {
+			if isWildcard && c.isWildcard && c.paramName == paramName {
+				child = c
+				break
+			}
 			if isParam && c.isParam && c.paramName == paramName {
 				child = c
 				break
 			}
-			if !isParam && !c.isParam && c.pathSegment == seg {
+			if !isParam && !isWildcard && !c.isParam && !c.isWildcard && c.pathSegment == seg {
 				child = c
 				break
 			}
@@ -79,6 +89,7 @@ func (r *Router) Add(method, pattern string, handler RawHandler) {
 			child = &routeNode{
 				pathSegment: seg,
 				isParam:     isParam,
+				isWildcard:  isWildcard,
 				paramName:   paramName,
 			}
 			curr.children = append(curr.children, child)
@@ -122,6 +133,12 @@ func matchNode(curr *routeNode, segments []string, params map[string]string) (Ra
 		if curr.handler != nil {
 			return curr.handler, true
 		}
+		// Check for wildcard matching empty suffix
+		for _, child := range curr.children {
+			if child.isWildcard && child.handler != nil {
+				return child.handler, true
+			}
+		}
 		return nil, false
 	}
 
@@ -130,7 +147,7 @@ func matchNode(curr *routeNode, segments []string, params map[string]string) (Ra
 
 	// 1. Try exact match first
 	for _, child := range curr.children {
-		if !child.isParam && child.pathSegment == seg {
+		if !child.isParam && !child.isWildcard && child.pathSegment == seg {
 			if h, ok := matchNode(child, remaining, params); ok {
 				return h, true
 			}
@@ -148,6 +165,18 @@ func matchNode(curr *routeNode, segments []string, params map[string]string) (Ra
 		}
 	}
 
+	// 3. Try wildcard match
+	for _, child := range curr.children {
+		if child.isWildcard {
+			if child.paramName != "" {
+				params[child.paramName] = strings.Join(segments, "/")
+			}
+			if child.handler != nil {
+				return child.handler, true
+			}
+		}
+	}
+
 	return nil, false
 }
 
@@ -157,4 +186,26 @@ func splitPath(path string) []string {
 		return nil
 	}
 	return strings.Split(trimmed, "/")
+}
+
+// HasPath returns true if any HTTP method is registered for the path.
+func (r *Router) HasPath(path string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, m := range r.static {
+		if _, ok := m[path]; ok {
+			return true
+		}
+	}
+
+	segments := splitPath(path)
+	params := make(map[string]string)
+	for _, root := range r.routes {
+		if _, ok := matchNode(root, segments, params); ok {
+			return true
+		}
+	}
+
+	return false
 }
