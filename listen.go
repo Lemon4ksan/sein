@@ -215,7 +215,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	var firstErr error
 	if s.h1Server != nil {
-		if err := s.h1Server.Shutdown(ctx); err != nil && firstErr == nil {
+		if err := s.h1Server.Shutdown(ctx); err != nil {
 			firstErr = err
 		}
 	}

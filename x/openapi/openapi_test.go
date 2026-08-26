@@ -13,7 +13,7 @@ import (
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
 	"github.com/lemon4ksan/sein"
-	"github.com/lemon4ksan/sein/openapi"
+	"github.com/lemon4ksan/sein/x/openapi"
 )
 
 type UpdateUserDTO struct {
