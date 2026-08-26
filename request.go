@@ -5,6 +5,7 @@
 package sein
 
 import (
+	"slices"
 	"bufio"
 	"bytes"
 	"context"
@@ -273,24 +274,6 @@ func (r *Request) Header(key string) string {
 	return ""
 }
 
-// Cookie returns the named cookie provided in the request or an error if not present.
-func (r *Request) Cookie(name string) (string, error) {
-	cookieHdr := r.Header(header.Cookie)
-	if cookieHdr == "" {
-		return "", errors.New("http: named cookie not present")
-	}
-
-	for _, part := range strings.Split(cookieHdr, ";") {
-		part = strings.TrimSpace(part)
-		if k, v, found := strings.Cut(part, "="); found {
-			if strings.TrimSpace(k) == name {
-				return strings.TrimSpace(v), nil
-			}
-		}
-	}
-	return "", errors.New("http: named cookie not present")
-}
-
 // Cookies parses and returns the HTTP cookies sent with the request.
 func (r *Request) Cookies() []*http.Cookie {
 	cookieHdr := r.Header(header.Cookie)
@@ -323,19 +306,29 @@ func (r *Request) BearerToken() (string, bool) {
 	return "", false
 }
 
-// ClientIP returns the real client IP address, checking CF-Connecting-IP, X-Real-IP, X-Forwarded-For and RemoteAddr.
+// ClientIP returns the real client IP address, checking platform headers (CF-Connecting-IP, Fly-Client-IP, True-Client-IP, X-Real-IP),
+// and safely parsing X-Forwarded-For right-to-left to prevent IP spoofing attacks.
 func (r *Request) ClientIP() string {
 	if cfIP := r.Header(header.CFConnectingIP); cfIP != "" {
 		return strings.TrimSpace(cfIP)
+	}
+	if flyIP := r.Header("Fly-Client-IP"); flyIP != "" {
+		return strings.TrimSpace(flyIP)
+	}
+	if trueIP := r.Header("True-Client-IP"); trueIP != "" {
+		return strings.TrimSpace(trueIP)
 	}
 	if realIP := r.Header(header.XRealIP); realIP != "" {
 		return strings.TrimSpace(realIP)
 	}
 	if fwd := r.Header(header.XForwardedFor); fwd != "" {
-		if ip, _, found := strings.Cut(fwd, ","); found {
-			return strings.TrimSpace(ip)
+		items := strings.Split(fwd, ",")
+		for _, item := range slices.Backward(items) {
+			ip := strings.TrimSpace(item)
+			if ip != "" && net.ParseIP(ip) != nil {
+				return ip
+			}
 		}
-		return strings.TrimSpace(fwd)
 	}
 	if r.remoteAddr != "" {
 		host, _, err := net.SplitHostPort(r.remoteAddr)
