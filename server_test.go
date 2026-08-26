@@ -36,7 +36,6 @@ func TestPureHandler(t *testing.T) {
 	app := sein.New()
 
 	// Pure Handler: (context.Context, Req) -> (Res, error)
-	// No HTTP framework objects in business logic!
 	createUser := func(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
 		if req.Name == "" {
 			return UserResponse{}, sein.ErrBadRequest("name cannot be empty")
@@ -48,7 +47,7 @@ func TestPureHandler(t *testing.T) {
 		}, nil
 	}
 
-	sein.POST(app, "/api/v1/users", createUser)
+	app.Post("/api/v1/users", createUser)
 
 	// Test 1: Successful creation
 	body, _ := json.Marshal(CreateUserDTO{Name: "Alice", Email: "alice@example.com"})
@@ -92,14 +91,14 @@ func TestRequestParamsAndTypedContext(t *testing.T) {
 			if !ok || token != "secret-token" {
 				return nil, sein.ErrUnauthorized("missing or invalid bearer token")
 			}
-			// Store typed session (Zero string keys, zero type assertions)
+			// Store typed session in L1-cache
 			sein.Set(req, UserSession{UserID: 100, Role: "admin"})
 			return next(req)
 		}
 	}
 
 	// Handler with Request view
-	sein.GETReq(app, "/api/v1/users/:id", func(req *sein.Request) (sein.Response[UserResponse], error) {
+	app.GetReq("/api/v1/users/:id", func(req *sein.Request) (sein.Response[UserResponse], error) {
 		session, ok := sein.Get[UserSession](req)
 		if !ok {
 			return sein.Response[UserResponse]{}, sein.ErrUnauthorized("session missing")
@@ -158,7 +157,7 @@ func TestPanicRecovery(t *testing.T) {
 	app := sein.New()
 	app.Use(sein.Recovery())
 
-	sein.GET(app, "/panic", func(ctx context.Context) (string, error) {
+	app.Get("/panic", func(ctx context.Context) (string, error) {
 		panic("unexpected explosion!")
 	})
 
@@ -177,8 +176,8 @@ type mockUserController struct {
 }
 
 func (c *mockUserController) Mount(g *sein.Group) {
-	g.GETReq("/:id", c.get)
-	g.POST("", c.create)
+	g.GetReq("/:id", c.get)
+	g.Post("", c.create)
 }
 
 func (c *mockUserController) get(req *sein.Request) (UserResponse, error) {
@@ -243,9 +242,8 @@ var (
 func TestDomainErrors(t *testing.T) {
 	app := sein.New()
 
-	app.POST("/api/v1/register", func(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
+	app.Post("/api/v1/register", func(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
 		if req.Email == "taken@example.com" {
-			// Zero manual strings, zero manual status codes
 			return UserResponse{}, ErrUserEmailBusy
 		}
 		if req.Email == "banned@example.com" {
@@ -309,7 +307,7 @@ var (
 func TestTypedParamDescriptors(t *testing.T) {
 	app := sein.New()
 
-	app.GETReq("/items/:id", func(req *sein.Request) (map[string]any, error) {
+	app.GetReq("/items/:id", func(req *sein.Request) (map[string]any, error) {
 		id, err := ParamTestID.Get(req)
 		if err != nil {
 			return nil, err
@@ -363,7 +361,7 @@ func (v ValidatedUserDTO) Validate() error {
 func TestValidatableDTO(t *testing.T) {
 	app := sein.New()
 
-	app.POST("/validate", func(ctx context.Context, req ValidatedUserDTO) (string, error) {
+	app.Post("/validate", func(ctx context.Context, req ValidatedUserDTO) (string, error) {
 		return "OK: " + req.Name, nil
 	})
 
@@ -409,7 +407,7 @@ func TestBearerAuthMiddleware(t *testing.T) {
 	})
 
 	protected := app.Group("/admin", authMW)
-	protected.GETReq("/dashboard", func(req *sein.Request) (UserSession, error) {
+	protected.GetReq("/dashboard", func(req *sein.Request) (UserSession, error) {
 		session, ok := sein.Get[UserSession](req)
 		if !ok {
 			return UserSession{}, sein.Internal("SESSION_MISSING")
@@ -462,7 +460,7 @@ func (c ComplexUserDTO) Validate() error {
 func TestMultiSourceDTOIngestion(t *testing.T) {
 	app := sein.New()
 
-	app.POST("/users/:id/action", func(ctx context.Context, req ComplexUserDTO) (map[string]any, error) {
+	app.Post("/users/:id/action", func(ctx context.Context, req ComplexUserDTO) (map[string]any, error) {
 		return map[string]any{
 			"id":      req.ID,
 			"dry_run": req.DryRun,
@@ -505,8 +503,3 @@ func TestMultiSourceDTOIngestion(t *testing.T) {
 		t.Fatalf("expected email gordon@blackmesa.gov, got %v", res["email"])
 	}
 }
-
-
-
-
-

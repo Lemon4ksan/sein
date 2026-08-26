@@ -61,79 +61,79 @@ func (s *Server) registerRoute(method, path string, handler RawHandler, mw ...Mi
 	Handle(s, method, path, handler, mw...)
 }
 
-// POST registers a pure POST handler on the server: (ctx, Req) -> (Res, error)
-func (s *Server) POST[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	POST(s, path, fn, mw...)
+// Post registers a pure POST handler on the server: (ctx, Req) -> (Res, error)
+func (s *Server) Post[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	routePost(s, path, fn, mw...)
 }
 
-// POSTDTO registers a pure POST handler with explicit DTO naming on the server: (ctx, Req) -> (Res, error)
-func (s *Server) POSTDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	POSTDTO(s, path, fn, mw...)
+// PostWith is an alias for Post on the server: (ctx, Req) -> (Res, error)
+func (s *Server) PostWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	routePost(s, path, fn, mw...)
 }
 
-// POSTReq registers a POST handler with Request metadata on the server: (req, Req) -> (Res, error)
-func (s *Server) POSTReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
-	POSTReq(s, path, fn, mw...)
+// PostReq registers a POST handler with Request metadata on the server: (req, Req) -> (Res, error)
+func (s *Server) PostReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
+	routePostReq(s, path, fn, mw...)
 }
 
-// GET registers a pure GET handler on the server: (ctx) -> (Res, error)
-func (s *Server) GET[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
-	GET(s, path, fn, mw...)
+// Get registers a pure GET handler on the server: (ctx) -> (Res, error)
+func (s *Server) Get[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
+	routeGet(s, path, fn, mw...)
 }
 
-// GETDTO registers a pure GET handler with Path/Query/Header DTO on the server: (ctx, Req) -> (Res, error)
-func (s *Server) GETDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	GETDTO(s, path, fn, mw...)
+// GetWith registers a pure GET handler with Path/Query/Header DTO on the server: (ctx, Req) -> (Res, error)
+func (s *Server) GetWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	routeGetWith(s, path, fn, mw...)
 }
 
-// GETReq registers a GET handler with Request metadata on the server: (req) -> (Res, error)
-func (s *Server) GETReq[Res any](path string, fn func(*Request) (Res, error), mw ...Middleware) {
-	GETReq(s, path, fn, mw...)
+// GetReq registers a GET handler with Request metadata on the server: (req) -> (Res, error)
+func (s *Server) GetReq[Res any](path string, fn func(*Request) (Res, error), mw ...Middleware) {
+	routeGetReq(s, path, fn, mw...)
 }
 
-// PUT registers a pure PUT handler on the server: (ctx, Req) -> (Res, error)
-func (s *Server) PUT[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	PUT(s, path, fn, mw...)
+// Put registers a pure PUT handler on the server: (ctx, Req) -> (Res, error)
+func (s *Server) Put[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	routePut(s, path, fn, mw...)
 }
 
-// PUTDTO registers a pure PUT handler with explicit DTO naming on the server: (ctx, Req) -> (Res, error)
-func (s *Server) PUTDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	PUTDTO(s, path, fn, mw...)
+// PutWith is an alias for Put on the server: (ctx, Req) -> (Res, error)
+func (s *Server) PutWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	routePut(s, path, fn, mw...)
 }
 
-// PUTReq registers a PUT handler with Request metadata on the server: (req, Req) -> (Res, error)
-func (s *Server) PUTReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
-	PUTReq(s, path, fn, mw...)
+// PutReq registers a PUT handler with Request metadata on the server: (req, Req) -> (Res, error)
+func (s *Server) PutReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
+	routePutReq(s, path, fn, mw...)
 }
 
-// PATCH registers a pure PATCH handler on the server: (ctx, Req) -> (Res, error)
-func (s *Server) PATCH[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	PATCH(s, path, fn, mw...)
+// Patch registers a pure PATCH handler on the server: (ctx, Req) -> (Res, error)
+func (s *Server) Patch[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	routePatch(s, path, fn, mw...)
 }
 
-// PATCHDTO registers a pure PATCH handler with explicit DTO naming on the server: (ctx, Req) -> (Res, error)
-func (s *Server) PATCHDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	PATCHDTO(s, path, fn, mw...)
+// PatchWith is an alias for Patch on the server: (ctx, Req) -> (Res, error)
+func (s *Server) PatchWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	routePatch(s, path, fn, mw...)
 }
 
-// PATCHReq registers a PATCH handler with Request metadata on the server: (req, Req) -> (Res, error)
-func (s *Server) PATCHReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
-	PATCHReq(s, path, fn, mw...)
+// PatchReq registers a PATCH handler with Request metadata on the server: (req, Req) -> (Res, error)
+func (s *Server) PatchReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
+	routePatchReq(s, path, fn, mw...)
 }
 
-// DELETE registers a pure DELETE handler on the server: (ctx) -> (Res, error)
-func (s *Server) DELETE[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
-	DELETE(s, path, fn, mw...)
+// Delete registers a pure DELETE handler on the server: (ctx) -> (Res, error)
+func (s *Server) Delete[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
+	routeDelete(s, path, fn, mw...)
 }
 
-// DELETEDTO registers a pure DELETE handler with Path/Query DTO on the server: (ctx, Req) -> (Res, error)
-func (s *Server) DELETEDTO[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	DELETEDTO(s, path, fn, mw...)
+// DeleteWith registers a pure DELETE handler with Path/Query DTO on the server: (ctx, Req) -> (Res, error)
+func (s *Server) DeleteWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
+	routeDeleteWith(s, path, fn, mw...)
 }
 
-// DELETEReq registers a DELETE handler with Request metadata on the server: (req) -> (Res, error)
-func (s *Server) DELETEReq[Res any](path string, fn func(*Request) (Res, error), mw ...Middleware) {
-	DELETEReq(s, path, fn, mw...)
+// DeleteReq registers a DELETE handler with Request metadata on the server: (req) -> (Res, error)
+func (s *Server) DeleteReq[Res any](path string, fn func(*Request) (Res, error), mw ...Middleware) {
+	routeDeleteReq(s, path, fn, mw...)
 }
 
 // ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib.
