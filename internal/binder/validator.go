@@ -6,12 +6,16 @@ package binder
 
 import (
 	"fmt"
+	"math"
+	"net/url"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/refkit"
+	"github.com/lemon4ksan/foundation/types/uuid"
 )
 
 // ValidationError indicates a failed declarative validation rule.
@@ -26,10 +30,11 @@ func (e ValidationError) Error() string {
 // CompileValidators builds an array of precompiled validator functions for a field pipeline.
 func CompileValidators(b *FieldBinding) []ValidatorFunc {
 	var validators []ValidatorFunc
+	key := b.Key
 
+	// 1. Length constraint
 	if b.HasLen {
 		lenVal := b.LenVal
-		key := b.Key
 		validators = append(validators, func(s string) error {
 			if len(s) != lenVal {
 				return ValidationError{Message: fmt.Sprintf("%s length must be exactly %d", key, lenVal)}
@@ -38,8 +43,20 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 		})
 	}
 
+	// 2. Precompiled Regex Pattern Matching
+	if b.Pattern != "" {
+		pat := regexp.MustCompile(b.Pattern)
+		patternStr := b.Pattern
+		validators = append(validators, func(s string) error {
+			if s != "" && !pat.MatchString(s) {
+				return ValidationError{Message: fmt.Sprintf("%s must match pattern %q", key, patternStr)}
+			}
+			return nil
+		})
+	}
+
+	// 3. Email Validation
 	if b.IsEmail {
-		key := b.Key
 		validators = append(validators, func(s string) error {
 			if s != "" && (!strings.Contains(s, "@") || !strings.Contains(s, ".")) {
 				return ValidationError{Message: fmt.Sprintf("%s must be a valid email address", key)}
@@ -48,20 +65,41 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 		})
 	}
 
-	if len(b.EnumVals) > 0 {
-		lowerEnums := generic.Map(b.EnumVals, strings.ToLower)
-		enumSet := generic.NewSet(lowerEnums...)
-		key := b.Key
-		enumListStr := strings.Join(b.EnumVals, ", ")
+	// 4. UUID Validation (using SIMD/LLVM foundation/types/uuid)
+	if b.IsUUID {
+		validators = append(validators, func(s string) error {
+			if s != "" && !uuid.IsValid(s) {
+				return ValidationError{Message: fmt.Sprintf("%s must be a valid UUID", key)}
+			}
+			return nil
+		})
+	}
 
+	// 5. URL Validation
+	if b.IsURL {
 		validators = append(validators, func(s string) error {
 			if s == "" {
 				return nil
 			}
-			if !enumSet.Has(strings.ToLower(s)) {
-				return ValidationError{Message: fmt.Sprintf("%s must be one of [%s], got %q", key, enumListStr, s)}
+			u, err := url.ParseRequestURI(s)
+			if err != nil || u.Scheme == "" || u.Host == "" {
+				return ValidationError{Message: fmt.Sprintf("%s must be a valid absolute URL", key)}
 			}
 			return nil
+		})
+	}
+
+	// 6. Enum Values
+	if len(b.EnumVals) > 0 {
+		lowerEnums := generic.Map(b.EnumVals, strings.ToLower)
+		enumSet := generic.NewSet(lowerEnums...)
+		enumListStr := strings.Join(b.EnumVals, ", ")
+
+		validators = append(validators, func(s string) error {
+			if s == "" || enumSet.Has(strings.ToLower(s)) {
+				return nil
+			}
+			return ValidationError{Message: fmt.Sprintf("%s must be one of [%s], got %q", key, enumListStr, s)}
 		})
 	}
 
@@ -70,9 +108,9 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 		targetKind = b.ElemKind
 	}
 
+	// 7. String / Numeric Min & Max
 	if b.HasMin {
 		minVal := b.MinVal
-		key := b.Key
 		if targetKind == reflect.String {
 			validators = append(validators, func(s string) error {
 				if float64(len(s)) < minVal {
@@ -85,10 +123,8 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 				if s == "" {
 					return nil
 				}
-				if num, err := strconv.ParseFloat(s, 64); err == nil {
-					if num < minVal {
-						return ValidationError{Message: fmt.Sprintf("%s value must be at least %v", key, minVal)}
-					}
+				if num, err := strconv.ParseFloat(s, 64); err == nil && num < minVal {
+					return ValidationError{Message: fmt.Sprintf("%s value must be at least %v", key, minVal)}
 				}
 				return nil
 			})
@@ -97,7 +133,6 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 
 	if b.HasMax {
 		maxVal := b.MaxVal
-		key := b.Key
 		if targetKind == reflect.String {
 			validators = append(validators, func(s string) error {
 				if float64(len(s)) > maxVal {
@@ -110,9 +145,77 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 				if s == "" {
 					return nil
 				}
+				if num, err := strconv.ParseFloat(s, 64); err == nil && num > maxVal {
+					return ValidationError{Message: fmt.Sprintf("%s value must be at most %v", key, maxVal)}
+				}
+				return nil
+			})
+		}
+	}
+
+	// 8. Mathematical Numeric Boundaries (gt, ge, lt, le, multiple_of)
+	if refkit.IsNumeric(targetKind) {
+		if b.HasGT {
+			gtVal := b.GTVal
+			validators = append(validators, func(s string) error {
+				if s == "" {
+					return nil
+				}
+				if num, err := strconv.ParseFloat(s, 64); err == nil && num <= gtVal {
+					return ValidationError{Message: fmt.Sprintf("%s must be greater than %v", key, gtVal)}
+				}
+				return nil
+			})
+		}
+
+		if b.HasGE {
+			geVal := b.GEVal
+			validators = append(validators, func(s string) error {
+				if s == "" {
+					return nil
+				}
+				if num, err := strconv.ParseFloat(s, 64); err == nil && num < geVal {
+					return ValidationError{Message: fmt.Sprintf("%s must be greater than or equal to %v", key, geVal)}
+				}
+				return nil
+			})
+		}
+
+		if b.HasLT {
+			ltVal := b.LTVal
+			validators = append(validators, func(s string) error {
+				if s == "" {
+					return nil
+				}
+				if num, err := strconv.ParseFloat(s, 64); err == nil && num >= ltVal {
+					return ValidationError{Message: fmt.Sprintf("%s must be less than %v", key, ltVal)}
+				}
+				return nil
+			})
+		}
+
+		if b.HasLE {
+			leVal := b.LEVal
+			validators = append(validators, func(s string) error {
+				if s == "" {
+					return nil
+				}
+				if num, err := strconv.ParseFloat(s, 64); err == nil && num > leVal {
+					return ValidationError{Message: fmt.Sprintf("%s must be less than or equal to %v", key, leVal)}
+				}
+				return nil
+			})
+		}
+
+		if b.HasMultipleOf && b.MultipleOfVal > 0 {
+			mVal := b.MultipleOfVal
+			validators = append(validators, func(s string) error {
+				if s == "" {
+					return nil
+				}
 				if num, err := strconv.ParseFloat(s, 64); err == nil {
-					if num > maxVal {
-						return ValidationError{Message: fmt.Sprintf("%s value must be at most %v", key, maxVal)}
+					if math.Mod(num, mVal) != 0 {
+						return ValidationError{Message: fmt.Sprintf("%s must be a multiple of %v", key, mVal)}
 					}
 				}
 				return nil

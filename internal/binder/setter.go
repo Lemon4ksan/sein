@@ -6,6 +6,7 @@ package binder
 
 import (
 	"encoding"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -15,6 +16,9 @@ import (
 	"strings"
 	"time"
 	"unsafe"
+
+	"github.com/lemon4ksan/foundation/silicon/hex"
+	"github.com/lemon4ksan/foundation/types/uuid"
 )
 
 // TypedSetter writes a parsed string directly into field memory pointer with zero runtime reflection switch.
@@ -26,6 +30,7 @@ var (
 	durationType        = reflect.TypeFor[time.Duration]()
 	netIPTypePtr        = reflect.TypeFor[net.IP]()
 	netipAddrType       = reflect.TypeFor[netip.Addr]()
+	uuidType            = reflect.TypeFor[uuid.UUID]()
 )
 
 // ScalarError represents a value parsing or conversion error on a field.
@@ -44,17 +49,60 @@ func (e ScalarError) Unwrap() error {
 }
 
 // CompileSetter precompiles a typed, non-branching memory writer for typ and kind at startup.
-func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key string, format string) TypedSetter {
-	if typ.Implements(textUnmarshalerType) {
+func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key string, format string, isHex, isBase64 bool) TypedSetter {
+	if s := compileBinarySetter(typ, isHex, isBase64, src, key); s != nil {
+		return s
+	}
+	if s := compileUnmarshalerSetter(typ, src, key); s != nil {
+		return s
+	}
+	if s := compileSpecialTypeSetter(typ, src, key, format); s != nil {
+		return s
+	}
+	if s := compileNumericSetter(kind, src, key); s != nil {
+		return s
+	}
+	if s := compilePrimitiveSetter(kind, src, key); s != nil {
+		return s
+	}
+
+	return func(ptr unsafe.Pointer, raw string) error {
+		return nil
+	}
+}
+
+func compileBinarySetter(typ reflect.Type, isHex, isBase64 bool, src ParamSource, key string) TypedSetter {
+	if typ != bytesSliceType {
+		return nil
+	}
+
+	if isHex {
 		return func(ptr unsafe.Pointer, raw string) error {
-			val := reflect.NewAt(typ, ptr).Interface().(encoding.TextUnmarshaler)
-			if err := val.UnmarshalText([]byte(raw)); err != nil {
+			data, err := hex.DecodeString(raw)
+			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
+			*(*[]byte)(ptr) = data
 			return nil
 		}
 	}
-	if reflect.PointerTo(typ).Implements(textUnmarshalerType) {
+
+	if isBase64 {
+		return func(ptr unsafe.Pointer, raw string) error {
+			data, err := base64.StdEncoding.DecodeString(raw)
+			if err != nil {
+				return ScalarError{Source: src, Key: key, Cause: err}
+			}
+			*(*[]byte)(ptr) = data
+			return nil
+		}
+	}
+
+	return nil
+}
+
+func compileUnmarshalerSetter(typ reflect.Type, src ParamSource, key string) TypedSetter {
+	if typ.Implements(textUnmarshalerType) || reflect.PointerTo(typ).Implements(textUnmarshalerType) {
 		return func(ptr unsafe.Pointer, raw string) error {
 			val := reflect.NewAt(typ, ptr).Interface().(encoding.TextUnmarshaler)
 			if err := val.UnmarshalText([]byte(raw)); err != nil {
@@ -64,7 +112,21 @@ func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key str
 		}
 	}
 
+	return nil
+}
+
+func compileSpecialTypeSetter(typ reflect.Type, src ParamSource, key, format string) TypedSetter {
 	switch typ {
+	case uuidType:
+		return func(ptr unsafe.Pointer, raw string) error {
+			u, err := uuid.Parse(raw)
+			if err != nil {
+				return ScalarError{Source: src, Key: key, Cause: err}
+			}
+			*(*uuid.UUID)(ptr) = u
+			return nil
+		}
+
 	case timeType:
 		return func(ptr unsafe.Pointer, raw string) error {
 			t, err := ParseTime(raw, format)
@@ -104,15 +166,14 @@ func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key str
 			*(*netip.Addr)(ptr) = addr
 			return nil
 		}
+
+	default:
+		return nil
 	}
+}
 
+func compileNumericSetter(kind reflect.Kind, src ParamSource, key string) TypedSetter {
 	switch kind {
-	case reflect.String:
-		return func(ptr unsafe.Pointer, raw string) error {
-			*(*string)(ptr) = raw
-			return nil
-		}
-
 	case reflect.Uint64, reflect.Uint:
 		return func(ptr unsafe.Pointer, raw string) error {
 			v, err := strconv.ParseUint(raw, 10, 64)
@@ -153,23 +214,13 @@ func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key str
 			return nil
 		}
 
-	case reflect.Int64:
+	case reflect.Int64, reflect.Int:
 		return func(ptr unsafe.Pointer, raw string) error {
 			v, err := strconv.ParseInt(raw, 10, 64)
 			if err != nil {
 				return ScalarError{Source: src, Key: key, Cause: err}
 			}
 			*(*int64)(ptr) = v
-			return nil
-		}
-
-	case reflect.Int:
-		return func(ptr unsafe.Pointer, raw string) error {
-			v, err := strconv.ParseInt(raw, 10, 64)
-			if err != nil {
-				return ScalarError{Source: src, Key: key, Cause: err}
-			}
-			*(*int)(ptr) = int(v)
 			return nil
 		}
 
@@ -203,16 +254,6 @@ func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key str
 			return nil
 		}
 
-	case reflect.Bool:
-		return func(ptr unsafe.Pointer, raw string) error {
-			v, err := parseCustomBool(raw)
-			if err != nil {
-				return ScalarError{Source: src, Key: key, Cause: err}
-			}
-			*(*bool)(ptr) = v
-			return nil
-		}
-
 	case reflect.Float64:
 		return func(ptr unsafe.Pointer, raw string) error {
 			v, err := strconv.ParseFloat(raw, 64)
@@ -232,9 +273,31 @@ func CompileSetter(typ reflect.Type, kind reflect.Kind, src ParamSource, key str
 			*(*float32)(ptr) = float32(v)
 			return nil
 		}
-	}
 
-	return func(ptr unsafe.Pointer, raw string) error {
+	default:
+		return nil
+	}
+}
+
+func compilePrimitiveSetter(kind reflect.Kind, src ParamSource, key string) TypedSetter {
+	switch kind {
+	case reflect.String:
+		return func(ptr unsafe.Pointer, raw string) error {
+			*(*string)(ptr) = raw
+			return nil
+		}
+
+	case reflect.Bool:
+		return func(ptr unsafe.Pointer, raw string) error {
+			v, err := parseCustomBool(raw)
+			if err != nil {
+				return ScalarError{Source: src, Key: key, Cause: err}
+			}
+			*(*bool)(ptr) = v
+			return nil
+		}
+
+	default:
 		return nil
 	}
 }

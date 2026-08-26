@@ -35,7 +35,7 @@ func CompileFieldStep(b *FieldBinding) FieldStep {
 }
 
 func compileScalarStep(b *FieldBinding, extract StringExtractorFunc, transforms []TransformFunc, validators []ValidatorFunc) FieldStep {
-	setter := CompileSetter(b.FieldType, b.Kind, b.Source, b.Key, b.Format)
+	setter := CompileSetter(b.FieldType, b.Kind, b.Source, b.Key, b.Format, b.IsHex, b.IsBase64)
 	offset := b.Offset
 
 	return func(req RequestView, structPtr unsafe.Pointer) error {
@@ -53,7 +53,7 @@ func compileScalarStep(b *FieldBinding, extract StringExtractorFunc, transforms 
 
 func compilePointerStep(b *FieldBinding, extract StringExtractorFunc, transforms []TransformFunc, validators []ValidatorFunc) FieldStep {
 	elemType := b.FieldType.Elem()
-	setter := CompileSetter(elemType, b.ElemKind, b.Source, b.Key, b.Format)
+	setter := CompileSetter(elemType, b.ElemKind, b.Source, b.Key, b.Format, b.IsHex, b.IsBase64)
 	offset := b.Offset
 
 	return func(req RequestView, structPtr unsafe.Pointer) error {
@@ -74,10 +74,11 @@ func compilePointerStep(b *FieldBinding, extract StringExtractorFunc, transforms
 }
 
 func compileSliceStep(b *FieldBinding, extract StringExtractorFunc, transforms []TransformFunc) FieldStep {
-	elemSetter := CompileSetter(b.FieldType.Elem(), b.SliceElemKind, b.Source, b.Key, b.Format)
+	elemSetter := CompileSetter(b.FieldType.Elem(), b.SliceElemKind, b.Source, b.Key, b.Format, false, false)
 	sliceType := b.FieldType
 	key := b.Key
 	source := b.Source
+	sep := b.Separator
 	hasMin, minVal := b.HasMin, b.MinVal
 	hasMax, maxVal := b.HasMax, b.MaxVal
 	offset := b.Offset
@@ -88,7 +89,7 @@ func compileSliceStep(b *FieldBinding, extract StringExtractorFunc, transforms [
 			return err
 		}
 
-		vals := extractSliceValues(req, source, key, opt.MustValue())
+		vals := extractSliceValues(req, source, key, opt.MustValue(), sep)
 		if hasMin && float64(len(vals)) < minVal {
 			return ValidationError{Message: fmt.Sprintf("%s slice length must be at least %v", key, minVal)}
 		}
@@ -124,11 +125,11 @@ func processRaw(raw string, transforms []TransformFunc, validators []ValidatorFu
 	return raw, nil
 }
 
-func extractSliceValues(req RequestView, source ParamSource, key, raw string) []string {
+func extractSliceValues(req RequestView, source ParamSource, key, raw, sep string) []string {
 	var vals []string
 	if source == SourceQuery {
 		for _, sv := range req.RawURLQuery()[key] {
-			for _, item := range strings.Split(sv, ",") {
+			for item := range strings.SplitSeq(sv, sep) {
 				if item = strings.TrimSpace(item); item != "" {
 					vals = append(vals, item)
 				}
@@ -136,7 +137,7 @@ func extractSliceValues(req RequestView, source ParamSource, key, raw string) []
 		}
 	}
 	if len(vals) == 0 && raw != "" {
-		for _, item := range strings.Split(raw, ",") {
+		for item := range strings.SplitSeq(raw, sep) {
 			if item = strings.TrimSpace(item); item != "" {
 				vals = append(vals, item)
 			}

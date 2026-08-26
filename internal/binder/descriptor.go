@@ -42,6 +42,8 @@ type FieldBinding struct {
 	Required      bool
 	DefaultValue  string
 	Format        string
+	Separator     string
+	Pattern       string
 	IsPtr         bool
 	ElemKind      reflect.Kind
 	IsSlice       bool
@@ -54,15 +56,31 @@ type FieldBinding struct {
 	SingleSpace bool
 	DigitsOnly  bool
 
-	// Declarative Constraints
-	HasMin   bool
-	MinVal   float64
-	HasMax   bool
-	MaxVal   float64
-	HasLen   bool
-	LenVal   int
-	EnumVals []string
+	// Specialized Type Validators / Decoders
 	IsEmail  bool
+	IsUUID   bool
+	IsURL    bool
+	IsBase64 bool
+	IsHex    bool
+
+	// Declarative Constraints
+	HasMin        bool
+	MinVal        float64
+	HasMax        bool
+	MaxVal        float64
+	HasGT         bool
+	GTVal         float64
+	HasGE         bool
+	GEVal         float64
+	HasLT         bool
+	LTVal         float64
+	HasLE         bool
+	LEVal         float64
+	HasMultipleOf bool
+	MultipleOfVal float64
+	HasLen        bool
+	LenVal        int
+	EnumVals      []string
 }
 
 // StructDescriptor caches the precompiled pipeline steps and layout of a struct type.
@@ -103,16 +121,56 @@ func populateFieldBinding(tag refkit.Tag, b *FieldBinding) {
 	b.Required = tag.Has("required")
 	b.DefaultValue = tag.Get("default")
 	b.Format = tag.Get("format")
+	b.Separator = generic.Coalesce(tag.Get("sep"), ",")
+	b.Pattern = tag.Get("pattern")
 	b.Trim = tag.Has("trim")
 	b.Lower = tag.Has("lower")
 	b.Upper = tag.Has("upper")
 	b.SingleSpace = tag.Has("single_space") || tag.Has("squish")
 	b.DigitsOnly = tag.Has("digits_only")
 	b.IsEmail = tag.Has("email")
+	b.IsUUID = tag.Has("uuid")
+	b.IsURL = tag.Has("url")
+	b.IsBase64 = tag.Has("base64")
+	b.IsHex = tag.Has("hex")
+
 	b.MinVal, b.HasMin = tag.GetFloat("min")
 	b.MaxVal, b.HasMax = tag.GetFloat("max")
 	b.LenVal, b.HasLen = tag.GetInt("len")
 	b.EnumVals = tag.SplitOption("enum", "|")
+
+	if v, ok := tag.GetFloat("gt"); ok {
+		b.HasGT = true
+		b.GTVal = v
+	}
+	if v, ok := tag.GetFloat("ge"); ok {
+		b.HasGE = true
+		b.GEVal = v
+	}
+	if v, ok := tag.GetFloat("lt"); ok {
+		b.HasLT = true
+		b.LTVal = v
+	}
+	if v, ok := tag.GetFloat("le"); ok {
+		b.HasLE = true
+		b.LEVal = v
+	}
+	if tag.Has("positive") {
+		b.HasGT = true
+		b.GTVal = 0
+	}
+	if tag.Has("negative") {
+		b.HasLT = true
+		b.LTVal = 0
+	}
+	if tag.Has("non_negative") {
+		b.HasGE = true
+		b.GEVal = 0
+	}
+	if v, ok := tag.GetFloat("multiple_of"); ok {
+		b.HasMultipleOf = true
+		b.MultipleOfVal = v
+	}
 }
 
 // GetDescriptor retrieves or compiles a cached StructDescriptor for typ.

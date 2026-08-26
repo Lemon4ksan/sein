@@ -19,6 +19,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
+	"github.com/lemon4ksan/foundation/types/uuid"
 
 	"github.com/lemon4ksan/sein"
 )
@@ -499,3 +500,78 @@ func TestUnifiedDTO_FileUpload(t *testing.T) {
 	assert.Equal(t, "profile.png", res["filename"])
 	assert.Equal(t, "fake-image-bytes-12345", res["file_data"])
 }
+
+type PydanticFeaturesDTO struct {
+	UserID    uuid.UUID           `path:"id,uuid"`
+	Username  string              `query:"username,pattern=^[a-z0-9_]{3,16}$"`
+	Callback  string              `query:"callback,url"`
+	Step      int                 `query:"step,positive,multiple_of=5,le=100"`
+	Tags      []string            `query:"tags,sep=|"`
+	BinaryHex []byte              `query:"hash,hex"`
+	BinaryB64 []byte              `query:"b64,base64"`
+	Password  sein.Secret[string] `json:"password"`
+}
+
+func TestUnifiedDTO_PydanticGradeFeatures(t *testing.T) {
+	app := sein.New()
+
+	app.Post("/users/:id/action", func(ctx context.Context, req PydanticFeaturesDTO) (map[string]any, error) {
+		return map[string]any{
+			"user_id":     req.UserID.String(),
+			"username":    req.Username,
+			"callback":    req.Callback,
+			"step":        req.Step,
+			"tags":        req.Tags,
+			"hash_str":    string(req.BinaryHex),
+			"b64_str":     string(req.BinaryB64),
+			"pass_masked": req.Password.String(),
+			"pass_raw":    req.Password.Value(),
+		}, nil
+	})
+
+	bodyJSON, err := json.Marshal(map[string]string{
+		"password": "my-ultra-secret-pass",
+	})
+	require.NoError(t, err)
+
+	url := "/users/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/action" +
+		"?username=john_doe_99" +
+		"&callback=https://webhook.site/test" +
+		"&step=25" +
+		"&tags=alpha|beta|gamma" +
+		"&hash=68656c6c6f" +
+		"&b64=d29ybGQ="
+
+	httpReq := httptest.NewRequest(http.MethodPost, url, bytes.NewReader(bodyJSON))
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, httpReq)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var res map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+
+	assert.Equal(t, "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", res["user_id"])
+	assert.Equal(t, "john_doe_99", res["username"])
+	assert.Equal(t, "https://webhook.site/test", res["callback"])
+	assert.Equal(t, float64(25), res["step"])
+	assert.Equal(t, []any{"alpha", "beta", "gamma"}, res["tags"])
+	assert.Equal(t, "hello", res["hash_str"])
+	assert.Equal(t, "world", res["b64_str"])
+	assert.Equal(t, "******", res["pass_masked"])
+	assert.Equal(t, "my-ultra-secret-pass", res["pass_raw"])
+}
+
+func TestSecretMasking(t *testing.T) {
+	s := sein.NewSecret("super-secret-key-123")
+
+	assert.Equal(t, "******", s.String())
+	assert.Equal(t, "super-secret-key-123", s.Value())
+	assert.Equal(t, "super-secret-key-123", s.Expose())
+
+	// JSON marshaling must be masked
+	data, err := json.Marshal(s)
+	require.NoError(t, err)
+	assert.Equal(t, "\"******\"", string(data))
+}
+
