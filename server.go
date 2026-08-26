@@ -9,9 +9,11 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
@@ -27,28 +29,53 @@ type Option func(s *Server)
 // ErrorMapper translates arbitrary errors into typed DomainErrors.
 type ErrorMapper func(err error) (DomainError, bool)
 
-// Server is the unified high-performance protocol server.
+// Server represents a high-throughput, multi-protocol HTTP server engine supporting
+// HTTP/1.1, HTTP/2, HTTP/3 (QUIC), and WebSockets with zero net/http overhead.
+//
+// Concurrency: Server is safe for concurrent initialization and request dispatching.
 type Server struct {
-	addr         string
-	router       *Router
-	middlewares  []Middleware
-	errorMappers []ErrorMapper
-	h1Server     *h1.Server
-	mu           sync.Mutex
+	addr                   string
+	router                 *Router
+	middlewares            []Middleware
+	errorMappers           []ErrorMapper
+	h1Server               *h1.Server
+	RedirectTrailingSlash  bool
+	HandleMethodNotAllowed bool
+	noRouteHandler         RawHandler
+	noMethodHandler        RawHandler
+	trustedProxies         []*net.IPNet
+	trustedPlatform        string
+	mu                     sync.Mutex
 }
 
-// WithAddr sets the listening address.
+// WithAddr configures the listening network address (e.g. ":8080" or "127.0.0.1:443").
 func WithAddr(addr string) Option {
 	return func(s *Server) {
 		s.addr = addr
 	}
 }
 
-// New creates a new sein Server instance.
+// WithTrailingSlashRedirect configures whether requests with mismatched trailing slashes are automatically redirected.
+func WithTrailingSlashRedirect(enabled bool) Option {
+	return func(s *Server) {
+		s.RedirectTrailingSlash = enabled
+	}
+}
+
+// WithMethodNotAllowed configures whether 405 Method Not Allowed is returned when path exists on other verbs.
+func WithMethodNotAllowed(enabled bool) Option {
+	return func(s *Server) {
+		s.HandleMethodNotAllowed = enabled
+	}
+}
+
+// New creates a new sein Server instance with production defaults.
 func New(opts ...Option) *Server {
 	s := &Server{
-		addr:   ":8080",
-		router: NewRouter(),
+		addr:                   ":8080",
+		router:                 NewRouter(),
+		RedirectTrailingSlash:  true,
+		HandleMethodNotAllowed: true,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -91,6 +118,91 @@ func (s *Server) Group(prefix string, mw ...Middleware) *Group {
 
 func (s *Server) registerRoute(method, path string, handler RawHandler, mw ...Middleware) {
 	Handle(s, method, path, handler, mw...)
+}
+
+// NoRoute registers a custom fallback handler for requests that match no registered routes (HTTP 404).
+//
+// Usage:
+//
+//	server.NoRoute(func(req *sein.Request) (any, error) {
+//		return sein.StatusWith(404, map[string]string{
+//			"error": "custom 404 not found",
+//		}, nil), nil
+//	})
+func (s *Server) NoRoute(handler RawHandler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.noRouteHandler = handler
+}
+
+// NoMethod registers a custom fallback handler for requests where the route path exists
+// but the requested HTTP verb is unsupported (HTTP 405 Method Not Allowed).
+//
+// Usage:
+//
+//	server.NoMethod(func(req *sein.Request) (any, error) {
+//		return sein.StatusWith(405, map[string]string{
+//			"error": "method not allowed",
+//		}, nil), nil
+//	})
+func (s *Server) NoMethod(handler RawHandler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.noMethodHandler = handler
+}
+
+// Routes returns an immutable snapshot list of all registered route patterns and methods in this server.
+func (s *Server) Routes() []RouteInfo {
+	return s.router.Routes()
+}
+
+// SetTrustedProxies configures a list of trusted reverse proxy IP addresses or CIDR subnets.
+// When configured, client IP resolution inspects X-Forwarded-For headers only when the request
+// originates from one of the trusted proxy networks.
+//
+// Usage:
+//
+//	err := server.SetTrustedProxies([]string{"127.0.0.1", "10.0.0.0/8", "192.168.0.0/16"})
+func (s *Server) SetTrustedProxies(proxies []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	parsed := make([]*net.IPNet, 0, len(proxies))
+	for _, p := range proxies {
+		if strings.Contains(p, "/") {
+			_, ipNet, err := net.ParseCIDR(p)
+			if err != nil {
+				return err
+			}
+			parsed = append(parsed, ipNet)
+		} else {
+			ip := net.ParseIP(p)
+			if ip == nil {
+				return fmt.Errorf("sein: invalid trusted proxy IP %q", p)
+			}
+			var mask net.IPMask
+			if ip.To4() != nil {
+				mask = net.CIDRMask(32, 32)
+			} else {
+				mask = net.CIDRMask(128, 128)
+			}
+			parsed = append(parsed, &net.IPNet{IP: ip, Mask: mask})
+		}
+	}
+	s.trustedProxies = parsed
+	return nil
+}
+
+// SetTrustedPlatform configures the server to trust client IP addresses from specific cloud platform headers
+// (such as "CF-Connecting-IP" for Cloudflare or "Fly-Client-IP" for Fly.io).
+//
+// Usage:
+//
+//	server.SetTrustedPlatform("CF-Connecting-IP")
+func (s *Server) SetTrustedPlatform(platformHeader string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.trustedPlatform = platformHeader
 }
 
 // MountRaw registers a low-level RawHandler on the specified HTTP method and route pattern.
@@ -178,16 +290,65 @@ func (s *Server) DeleteReq[Res any](path string, fn func(*Request) (Res, error),
 	routeDeleteReq(s, path, fn, mw...)
 }
 
+func (s *Server) resolveRoute(method, path string) (handler RawHandler, params map[string]string, allowHeader string, redirectURL string, redirectCode int, status int) {
+	h, p, found := s.router.Match(method, path)
+	if found {
+		return h, p, "", "", 0, http.StatusOK
+	}
+
+	// 1. Check Trailing Slash Auto-Correction (RFC 9110 §15.4.2)
+	if s.RedirectTrailingSlash {
+		if altPath, ok := s.router.FindTrailingSlash(method, path); ok {
+			code := http.StatusMovedPermanently
+			if method != http.MethodGet && method != http.MethodHead {
+				code = http.StatusTemporaryRedirect
+			}
+			return nil, nil, "", altPath, code, code
+		}
+	}
+
+	// 2. Check OPTIONS Preflight for CORS
+	if method == http.MethodOptions && s.router.HasPath(path) {
+		return func(req *Request) (any, error) {
+			return NoContent(), nil
+		}, nil, "", "", 0, http.StatusOK
+	}
+
+	// 3. Check 405 Method Not Allowed (RFC 9110 §15.5.6)
+	if s.HandleMethodNotAllowed {
+		allowed := s.router.AllowedMethods(path)
+		if len(allowed) > 0 {
+			allowHdr := strings.Join(allowed, ", ")
+			if s.noMethodHandler != nil {
+				return s.noMethodHandler, nil, allowHdr, "", 0, http.StatusMethodNotAllowed
+			}
+			return nil, nil, allowHdr, "", 0, http.StatusMethodNotAllowed
+		}
+	}
+
+	// 4. Check 404 NoRoute Custom Fallback
+	if s.noRouteHandler != nil {
+		return s.noRouteHandler, nil, "", "", 0, http.StatusNotFound
+	}
+
+	return nil, nil, "", "", 0, http.StatusNotFound
+}
+
 // dispatchH1 is the native zero-net/http request pipeline dispatcher.
 func (s *Server) dispatchH1(h1Req *h1.Request, h1Res *h1.Response) error {
-	handler, params, found := s.router.Match(h1Req.Method, h1Req.Path)
-	if !found && h1Req.Method == http.MethodOptions && len(s.middlewares) > 0 && s.router.HasPath(h1Req.Path) {
-		handler = func(req *Request) (any, error) {
-			return NoContent(), nil
-		}
-		found = true
+	handler, params, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h1Req.Method, h1Req.Path)
+	if redirectURL != "" {
+		res := Redirect(redirectURL, redirectCode)
+		return s.serializeH1Result(h1Res, res)
 	}
-	if !found {
+	if handler == nil {
+		if status == http.StatusMethodNotAllowed {
+			if allowHeader != "" {
+				h1Res.Headers.Set(header.Allow, allowHeader)
+			}
+			s.writeH1Error(h1Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+			return nil
+		}
 		s.writeH1Error(h1Res, ErrNotFound("route not found"))
 		return nil
 	}
@@ -303,14 +464,22 @@ func (s *Server) writeH1Error(res *h1.Response, err error) {
 
 // DispatchH2 is the native zero-net/http HTTP/2 stream request dispatcher.
 func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.ServerResponse) error {
-	handler, params, found := s.router.Match(h2Req.Method, h2Req.Path)
-	if !found && h2Req.Method == http.MethodOptions && len(s.middlewares) > 0 && s.router.HasPath(h2Req.Path) {
-		handler = func(req *Request) (any, error) {
-			return NoContent(), nil
-		}
-		found = true
+	handler, params, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h2Req.Method, h2Req.Path)
+	if redirectURL != "" {
+		res := Redirect(redirectURL, redirectCode)
+		return s.serializeH2Result(h2Res, res)
 	}
-	if !found {
+	if handler == nil {
+		if status == http.StatusMethodNotAllowed {
+			if h2Res.Headers == nil {
+				h2Res.Headers = make(http.Header)
+			}
+			if allowHeader != "" {
+				h2Res.Headers.Set(header.Allow, allowHeader)
+			}
+			s.writeH2Error(h2Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+			return nil
+		}
 		s.writeH2Error(h2Res, ErrNotFound("route not found"))
 		return nil
 	}
@@ -454,14 +623,22 @@ func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
 
 // DispatchH3 is the native zero-net/http HTTP/3 stream request dispatcher.
 func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.ServerResponse) error {
-	handler, params, found := s.router.Match(h3Req.Method, h3Req.Path)
-	if !found && h3Req.Method == http.MethodOptions && len(s.middlewares) > 0 && s.router.HasPath(h3Req.Path) {
-		handler = func(req *Request) (any, error) {
-			return NoContent(), nil
-		}
-		found = true
+	handler, params, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h3Req.Method, h3Req.Path)
+	if redirectURL != "" {
+		res := Redirect(redirectURL, redirectCode)
+		return s.serializeH3Result(h3Res, res)
 	}
-	if !found {
+	if handler == nil {
+		if status == http.StatusMethodNotAllowed {
+			if h3Res.Headers == nil {
+				h3Res.Headers = make(http.Header)
+			}
+			if allowHeader != "" {
+				h3Res.Headers.Set(header.Allow, allowHeader)
+			}
+			s.writeH3Error(h3Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+			return nil
+		}
 		s.writeH3Error(h3Res, ErrNotFound("route not found"))
 		return nil
 	}
@@ -605,14 +782,20 @@ func (s *Server) writeH3Error(res *h3engine.ServerResponse, err error) {
 
 // ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib test recorders.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	handler, params, found := s.router.Match(r.Method, r.URL.Path)
-	if !found && r.Method == http.MethodOptions && len(s.middlewares) > 0 && s.router.HasPath(r.URL.Path) {
-		handler = func(req *Request) (any, error) {
-			return NoContent(), nil
-		}
-		found = true
+	handler, params, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(r.Method, r.URL.Path)
+	if redirectURL != "" {
+		w.Header().Set(header.Location, redirectURL)
+		w.WriteHeader(redirectCode)
+		return
 	}
-	if !found {
+	if handler == nil {
+		if status == http.StatusMethodNotAllowed {
+			if allowHeader != "" {
+				w.Header().Set(header.Allow, allowHeader)
+			}
+			s.writeError(w, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+			return
+		}
 		s.writeError(w, ErrNotFound("route not found"))
 		return
 	}

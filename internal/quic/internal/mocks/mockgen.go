@@ -6,9 +6,9 @@
 
 package mocks
 
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination short_header_sealer.go github.com/lemon4ksan/aoni/x/quic/internal/handshake ShortHeaderSealer"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination short_header_opener.go github.com/lemon4ksan/aoni/x/quic/internal/handshake ShortHeaderOpener"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination long_header_opener.go github.com/lemon4ksan/aoni/x/quic/internal/handshake LongHeaderOpener"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination crypto_setup.go github.com/lemon4ksan/aoni/x/quic/internal/handshake CryptoSetup"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination congestion.go github.com/lemon4ksan/aoni/x/quic/internal/congestion SendAlgorithmWithDebugInfos"
-//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mockackhandler -destination ackhandler/sent_packet_handler.go github.com/lemon4ksan/aoni/x/quic/internal/ackhandler SentPacketHandler"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination short_header_sealer.go github.com/lemon4ksan/sein/internal/quic/internal/handshake ShortHeaderSealer"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination short_header_opener.go github.com/lemon4ksan/sein/internal/quic/internal/handshake ShortHeaderOpener"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination long_header_opener.go github.com/lemon4ksan/sein/internal/quic/internal/handshake LongHeaderOpener"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination crypto_setup.go github.com/lemon4ksan/sein/internal/quic/internal/handshake CryptoSetup"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mocks -destination congestion.go github.com/lemon4ksan/sein/internal/quic/internal/congestion SendAlgorithmWithDebugInfos"
+//go:generate sh -c "go tool mockgen -typed -build_flags=\"-tags=gomock\" -package mockackhandler -destination ackhandler/sent_packet_handler.go github.com/lemon4ksan/sein/internal/quic/internal/ackhandler SentPacketHandler"

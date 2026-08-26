@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/textproto"
 	"os"
+	"path/filepath"
 )
 
 // File represents an uploaded multipart form file with zero-allocation streaming and direct disk-save helpers.
@@ -64,20 +65,41 @@ func (f *File) Bytes() ([]byte, error) {
 	return data, nil
 }
 
-// SaveTo writes the uploaded file directly to the specified destination filesystem path.
+// SaveTo streams the uploaded file directly to the specified destination filesystem path,
+// automatically creating parent directories with restricted 0750 permissions if they do not exist.
+//
+// Usage:
+//
+//	file, err := req.FormFile("avatar")
+//	if err == nil {
+//		err = file.SaveTo("/var/uploads/avatars/" + file.Filename)
+//	}
+//
+// Performance:
+// Streams bytes directly from the multipart temporary storage via [io.Copy] without
+// loading the entire payload into heap memory (0 B buffer allocations).
 func (f *File) SaveTo(dstPath string) error {
+	if dir := filepath.Dir(dstPath); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			return ErrInternal("failed to create destination directory", err)
+		}
+	}
+
 	rc, err := f.Open()
 	if err != nil {
 		return err
 	}
 	defer rc.Close()
 
-	out, err := os.Create(dstPath)
+	out, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return err
+		return ErrInternal("failed to create destination file", err)
 	}
 	defer out.Close()
 
 	_, err = io.Copy(out, rc)
-	return err
+	if err != nil {
+		return ErrInternal("failed to copy file payload", err)
+	}
+	return nil
 }

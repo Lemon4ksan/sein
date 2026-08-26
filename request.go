@@ -560,6 +560,25 @@ func (r *Request) FormFiles(key string) ([]*File, error) {
 	return nil, nil
 }
 
+// SaveUploadedFile streams an uploaded multipart file directly to dstPath on disk,
+// automatically creating necessary parent directories with restricted 0750 permissions.
+//
+// Usage:
+//
+//	s.PostReq("/upload", func(req *sein.Request, _ struct{}) (any, error) {
+//		file, err := req.FormFile("document")
+//		if err != nil {
+//			return nil, err
+//		}
+//		return "uploaded", req.SaveUploadedFile(file, "/data/uploads/"+file.Filename)
+//	})
+func (r *Request) SaveUploadedFile(file *File, dstPath string) error {
+	if file == nil {
+		return ErrBadRequest("nil file provided to SaveUploadedFile")
+	}
+	return file.SaveTo(dstPath)
+}
+
 // Body reads and caches the full request body, automatically decompressing if Content-Encoding is present.
 func (r *Request) Body() []byte {
 	r.bodyMu.Lock()
