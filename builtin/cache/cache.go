@@ -9,11 +9,11 @@ package cache
 import (
 	"fmt"
 	"net/http"
-	"slices"
 	"sync"
 	"time"
 
 	"github.com/lemon4ksan/foundation/codec/json"
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 
 	"github.com/lemon4ksan/sein"
@@ -37,21 +37,20 @@ type Store interface {
 }
 
 type memoryStore struct {
+	lru     *generic.LRU[string, *cacheEntry]
 	mu      sync.RWMutex
-	entries map[string]*cacheEntry
+	tagKeys map[string]map[string]struct{}
 }
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
-		entries: make(map[string]*cacheEntry),
+		lru:     generic.NewLRU[string, *cacheEntry](10000),
+		tagKeys: make(map[string]map[string]struct{}),
 	}
 }
 
 func (s *memoryStore) Get(key string) (*cacheEntry, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	entry, ok := s.entries[key]
+	entry, ok := s.lru.Get(key)
 	if !ok || time.Now().After(entry.expiresAt) {
 		return nil, false
 	}
@@ -60,29 +59,34 @@ func (s *memoryStore) Get(key string) (*cacheEntry, bool) {
 }
 
 func (s *memoryStore) Set(key string, entry *cacheEntry) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.lru.Put(key, entry)
 
-	s.entries[key] = entry
+	if len(entry.tags) > 0 {
+		s.mu.Lock()
+		for _, tag := range entry.tags {
+			if s.tagKeys[tag] == nil {
+				s.tagKeys[tag] = make(map[string]struct{})
+			}
+			s.tagKeys[tag][key] = struct{}{}
+		}
+		s.mu.Unlock()
+	}
 }
 
 func (s *memoryStore) Delete(key string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	delete(s.entries, key)
+	s.lru.Delete(key)
 }
 
 func (s *memoryStore) InvalidateTags(tags ...string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for k, entry := range s.entries {
-		for _, targetTag := range tags {
-			if slices.Contains(entry.tags, targetTag) {
-				delete(s.entries, k)
-				break
+	for _, tag := range tags {
+		if keys, ok := s.tagKeys[tag]; ok {
+			for key := range keys {
+				s.lru.Delete(key)
 			}
+			delete(s.tagKeys, tag)
 		}
 	}
 }

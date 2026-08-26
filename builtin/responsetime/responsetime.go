@@ -8,7 +8,8 @@ package responsetime
 
 import (
 	"fmt"
-	"time"
+
+	"github.com/lemon4ksan/foundation/timekit"
 
 	"github.com/lemon4ksan/sein"
 )
@@ -52,9 +53,9 @@ func New(opts ...Option) sein.Middleware {
 
 	return func(next sein.RawHandler) sein.RawHandler {
 		return func(req *sein.Request) (any, error) {
-			start := time.Now()
+			sw := timekit.StartStopwatch()
 			res, err := next(req)
-			latency := time.Since(start)
+			latency := sw.Elapsed()
 
 			durationStr := fmt.Sprintf("%.2fms", float64(latency.Nanoseconds())/1e6)
 

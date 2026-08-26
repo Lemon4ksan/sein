@@ -5,12 +5,13 @@
 package sein
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/lemon4ksan/foundation/codec/json"
 	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 
 	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 )
@@ -165,7 +166,7 @@ func (r Response[T]) WriteResponse(w http.ResponseWriter) error {
 		}
 
 		w.WriteHeader(status)
-		_, err := w.Write([]byte(v))
+		_, err := w.Write(bytesconv.S2B(v))
 
 		return err
 

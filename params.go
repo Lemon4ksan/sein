@@ -16,6 +16,126 @@ type ParamConstraint interface {
 		~int64 | ~int32 | ~int16 | ~int8 | ~int | ~bool | ~float64 | ~float32
 }
 
+// ParamSlot represents a key-value path parameter pair without heap allocation.
+type ParamSlot struct {
+	Key   string
+	Value string
+}
+
+// Params holds parsed URL path parameters with zero heap allocations for up to 8 parameters.
+type Params struct {
+	slots [8]ParamSlot
+	count int
+	extra []ParamSlot
+}
+
+// Get returns the value of the parameter with key, or empty string if not found.
+func (p *Params) Get(key string) string {
+	if p == nil {
+		return ""
+	}
+
+	for i := 0; i < p.count; i++ {
+		if p.slots[i].Key == key {
+			return p.slots[i].Value
+		}
+	}
+
+	for _, slot := range p.extra {
+		if slot.Key == key {
+			return slot.Value
+		}
+	}
+
+	return ""
+}
+
+// Find returns the value of key and true if found.
+func (p *Params) Find(key string) (string, bool) {
+	if p == nil {
+		return "", false
+	}
+
+	for i := 0; i < p.count; i++ {
+		if p.slots[i].Key == key {
+			return p.slots[i].Value, true
+		}
+	}
+
+	for _, slot := range p.extra {
+		if slot.Key == key {
+			return slot.Value, true
+		}
+	}
+
+	return "", false
+}
+
+// Set sets a key-value parameter pair.
+func (p *Params) Set(key, value string) {
+	for i := 0; i < p.count; i++ {
+		if p.slots[i].Key == key {
+			p.slots[i].Value = value
+			return
+		}
+	}
+
+	for i := range p.extra {
+		if p.extra[i].Key == key {
+			p.extra[i].Value = value
+			return
+		}
+	}
+
+	if p.count < len(p.slots) {
+		p.slots[p.count] = ParamSlot{Key: key, Value: value}
+		p.count++
+		return
+	}
+
+	p.extra = append(p.extra, ParamSlot{Key: key, Value: value})
+}
+
+// Reset clears all parameters.
+func (p *Params) Reset() {
+	p.count = 0
+	if len(p.extra) > 0 {
+		p.extra = p.extra[:0]
+	}
+}
+
+// Len returns the number of parameters.
+func (p *Params) Len() int {
+	if p == nil {
+		return 0
+	}
+
+	return p.count + len(p.extra)
+}
+
+// Map returns a copy of parameters as a map[string]string for compatibility.
+func (p *Params) Map() map[string]string {
+	if p == nil {
+		return nil
+	}
+
+	total := p.count + len(p.extra)
+	if total == 0 {
+		return nil
+	}
+
+	m := make(map[string]string, total)
+	for i := 0; i < p.count; i++ {
+		m[p.slots[i].Key] = p.slots[i].Value
+	}
+
+	for _, slot := range p.extra {
+		m[slot.Key] = slot.Value
+	}
+
+	return m
+}
+
 // ParamValue represents a raw path parameter or query string value.
 type ParamValue string
 

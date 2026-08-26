@@ -27,16 +27,24 @@ type UserRequestDTO struct {
 	Password sein.Secret[string] `json:"password" validate:"min=8"`
 }
 
+type ExampleUserResponse struct {
+	Limit    int    `json:"limit"`
+	Password string `json:"password"`
+	Query    string `json:"query"`
+	TraceID  string `json:"trace_id"`
+	UserID   string `json:"user_id"`
+}
+
 func Example() {
 	app := sein.New()
 
-	app.Post("/users/:id", func(ctx context.Context, req UserRequestDTO) (map[string]any, error) {
-		return map[string]any{
-			"user_id":  req.UserID.String(),
-			"query":    req.Query,
-			"limit":    req.Limit,
-			"trace_id": req.TraceID,
-			"password": req.Password.String(), // Returns masked "******"
+	app.Post("/users/:id", func(ctx context.Context, req UserRequestDTO) (ExampleUserResponse, error) {
+		return ExampleUserResponse{
+			UserID:   req.UserID.String(),
+			Query:    req.Query,
+			Limit:    req.Limit,
+			TraceID:  req.TraceID,
+			Password: req.Password.String(), // Returns masked "******"
 		}, nil
 	})
 

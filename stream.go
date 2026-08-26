@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 
 	"github.com/lemon4ksan/sein/internal/fast/h1engine"
@@ -53,12 +54,7 @@ func (s StreamWriterResponse) WithContentType(ct string) StreamWriterResponse {
 
 // WriteToH1 streams data directly into the connection socket buffer via chunked transfer encoding.
 func (s StreamWriterResponse) WriteToH1(res *h1engine.Response) error {
-	status := s.Status
-	if status == 0 {
-		status = http.StatusOK
-	}
-
-	res.StatusCode = status
+	res.StatusCode = generic.Coalesce(s.Status, http.StatusOK)
 
 	if s.ContentType != "" {
 		res.Headers.Set(header.ContentType, s.ContentType)
@@ -77,11 +73,6 @@ func (s StreamWriterResponse) WriteToH1(res *h1engine.Response) error {
 
 // WriteResponse provides compatibility for net/http.
 func (s StreamWriterResponse) WriteResponse(w http.ResponseWriter) error {
-	status := s.Status
-	if status == 0 {
-		status = http.StatusOK
-	}
-
 	if s.ContentType != "" {
 		w.Header().Set(header.ContentType, s.ContentType)
 	}
@@ -92,7 +83,7 @@ func (s StreamWriterResponse) WriteResponse(w http.ResponseWriter) error {
 		}
 	}
 
-	w.WriteHeader(status)
+	w.WriteHeader(generic.Coalesce(s.Status, http.StatusOK))
 
 	flusher, _ := w.(http.Flusher)
 	fw := &flushingWriter{w: w, flusher: flusher}

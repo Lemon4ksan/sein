@@ -26,6 +26,7 @@ import (
 	"github.com/lemon4ksan/foundation/borrow"
 	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 
 	"github.com/lemon4ksan/sein/internal/compress"
 	"github.com/lemon4ksan/sein/internal/fast/h1engine"
@@ -42,9 +43,6 @@ type contextSlot struct {
 	val any
 }
 
-// Request is a lightweight, read-only view of the incoming HTTP request.
-// It has no response-writing methods or mutating side-effects.
-// It includes a flat, inline storage array for 0 B/op typed context lookups in L1 CPU cache.
 type Request struct {
 	ctx           context.Context
 	method        string
@@ -58,7 +56,7 @@ type Request struct {
 	h1Req         *h1engine.Request
 	raw           *http.Request
 	multipartForm *multipart.Form
-	params        map[string]string
+	params        Params
 	scope         *borrow.Scope
 	slots         [8]contextSlot
 	slotCount     int
@@ -67,16 +65,18 @@ type Request struct {
 }
 
 // NewRequest creates a Request wrapping a standard http.Request.
-func NewRequest(r *http.Request, params map[string]string) *Request {
+func NewRequest(r *http.Request, params ...*Params) *Request {
 	req := &Request{
 		ctx:        r.Context(),
 		raw:        r,
 		method:     r.Method,
-		params:     params,
 		scope:      borrow.NewScope(),
 		remoteAddr: r.RemoteAddr,
 		proto:      r.Proto,
 		host:       r.Host,
+	}
+	if len(params) > 0 && params[0] != nil {
+		req.params = *params[0]
 	}
 	if r.URL != nil {
 		req.path = r.URL.Path
@@ -87,8 +87,8 @@ func NewRequest(r *http.Request, params map[string]string) *Request {
 }
 
 // NewH1Request creates a Request wrapping a native zero-net/http h1.Request.
-func NewH1Request(h1Req *h1engine.Request, params map[string]string) *Request {
-	return &Request{
+func NewH1Request(h1Req *h1engine.Request, params ...*Params) *Request {
+	req := &Request{
 		ctx:        context.Background(),
 		method:     h1Req.Method,
 		path:       h1Req.Path,
@@ -99,9 +99,13 @@ func NewH1Request(h1Req *h1engine.Request, params map[string]string) *Request {
 		bodyBuf:    h1Req.Body,
 		h1Headers:  &h1Req.Headers,
 		h1Req:      h1Req,
-		params:     params,
 		scope:      borrow.NewScope(),
 	}
+	if len(params) > 0 && params[0] != nil {
+		req.params = *params[0]
+	}
+
+	return req
 }
 
 // NewH2Request creates a Request wrapping a native H2 stream request.
@@ -109,7 +113,7 @@ func NewH2Request(
 	method, path, authority, remoteAddr string,
 	rawHeaders http.Header,
 	body []byte,
-	params map[string]string,
+	params ...*Params,
 ) *Request {
 	req := &Request{
 		ctx:        context.Background(),
@@ -119,8 +123,10 @@ func NewH2Request(
 		host:       authority,
 		remoteAddr: remoteAddr,
 		bodyBuf:    body,
-		params:     params,
 		scope:      borrow.NewScope(),
+	}
+	if len(params) > 0 && params[0] != nil {
+		req.params = *params[0]
 	}
 	if rawHeaders != nil {
 		h := h1engine.NewHeadersWithCapacity(len(rawHeaders))
@@ -141,7 +147,7 @@ func NewH3Request(
 	method, path, authority, remoteAddr string,
 	rawHeaders http.Header,
 	body []byte,
-	params map[string]string,
+	params ...*Params,
 ) *Request {
 	req := &Request{
 		ctx:        context.Background(),
@@ -151,8 +157,10 @@ func NewH3Request(
 		host:       authority,
 		remoteAddr: remoteAddr,
 		bodyBuf:    body,
-		params:     params,
 		scope:      borrow.NewScope(),
+	}
+	if len(params) > 0 && params[0] != nil {
+		req.params = *params[0]
 	}
 	if rawHeaders != nil {
 		h := h1engine.NewHeadersWithCapacity(len(rawHeaders))
@@ -305,11 +313,17 @@ func (r *Request) SetQuery(query string) {
 
 // Param retrieves a URL path parameter by name (e.g. "id" for "/users/:id").
 func (r *Request) Param(name string) ParamValue {
-	if r.params == nil {
-		return ""
-	}
+	return ParamValue(r.params.Get(name))
+}
 
-	return ParamValue(r.params[name])
+// Params returns the underlying zero-alloc Params struct.
+func (r *Request) Params() *Params {
+	return &r.params
+}
+
+// ParamMap returns a copy of path parameters as a map for compatibility.
+func (r *Request) ParamMap() map[string]string {
+	return r.params.Map()
 }
 
 // Query retrieves a query parameter by key.
@@ -382,18 +396,13 @@ func (r *Request) Cookies() []*http.Cookie {
 		return nil
 	}
 
-	parts := strings.Split(cookieHdr, ";")
-	cookies := make([]*http.Cookie, 0, len(parts))
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if k, v, found := strings.Cut(part, "="); found {
-			// #nosec G124 -- Parsing incoming Cookie header
-			cookies = append(cookies, &http.Cookie{
-				Name:  strings.TrimSpace(k),
-				Value: strings.TrimSpace(v),
-			})
-		}
+	var cookies []*http.Cookie
+	for k, v := range bytesconv.ScanPairs(cookieHdr, ';', '=') {
+		// #nosec G124 -- Parsing incoming Cookie header
+		cookies = append(cookies, &http.Cookie{
+			Name:  strings.TrimSpace(k),
+			Value: strings.TrimSpace(v),
+		})
 	}
 
 	return cookies
