@@ -107,7 +107,7 @@ func handleHTTPConnect(ctx context.Context, srv *Server, conn net.Conn, req *htt
 		_, _ = conn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 		return err
 	}
-	defer outboundConn.Close()
+	defer func() { _ = outboundConn.Close() }()
 
 	if _, err := conn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
 		return err
@@ -129,7 +129,7 @@ func handlePlainHTTPProxy(ctx context.Context, srv *Server, conn net.Conn, req *
 		_, _ = conn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return resp.Write(conn)
 }
@@ -157,7 +157,7 @@ func handleHTTP2TLSInterception(
 		return fmt.Errorf("%w: handshake: %w", ErrMITMFailed, err)
 	}
 
-	defer tlsConn.Close()
+	defer func() { _ = tlsConn.Close() }()
 
 	tlsReader := bufio.NewReader(tlsConn)
 	engine := resolveEngine(srv)
@@ -212,7 +212,7 @@ func processInterceptedRequest(
 		_, _ = tlsConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return resp.Write(tlsConn)
 }

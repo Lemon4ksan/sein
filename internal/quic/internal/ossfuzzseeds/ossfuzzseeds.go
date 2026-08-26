@@ -73,7 +73,7 @@ func (h *Helper) writeCorpusEntry(args ...any) {
 
 	h.Logf("writing corpus entry %s", path)
 
-	if err := os.WriteFile(path, entry, 0o644); err != nil {
+	if err := os.WriteFile(path, entry, 0o600); err != nil {
 		h.Errorf("failed to write corpus entry %s: %v", path, err)
 	}
 }

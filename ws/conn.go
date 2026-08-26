@@ -179,7 +179,7 @@ func (c *Conn) ReadMessage() (int, []byte, error) {
 
 		case OpClose:
 			var (
-				code   int = StatusNormalClosure
+				code   = StatusNormalClosure
 				reason string
 			)
 			if payloadLen >= 2 {

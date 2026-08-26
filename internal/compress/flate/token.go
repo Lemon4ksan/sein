@@ -15,6 +15,11 @@ import (
 	"math"
 )
 
+var (
+	_ = indexTokens
+	_ = (token).typ
+)
+
 const (
 	// bits 0-16  	xoffset = offset - MIN_OFFSET_SIZE, or literal - 16 bits
 	// bits 16-22	offsetcode - 5 bits

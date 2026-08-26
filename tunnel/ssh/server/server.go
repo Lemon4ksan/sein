@@ -101,7 +101,8 @@ func (s *Server) ListenAndServe() error {
 		addr = ":22"
 	}
 
-	l, err := net.Listen("tcp", addr)
+	var lc net.ListenConfig
+	l, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return err
 	}
@@ -221,7 +222,7 @@ func (s *Server) handleConn(c net.Conn, config *ssh.ServerConfig) {
 		_ = c.Close()
 		return
 	}
-	defer sConn.Close()
+	defer func() { _ = sConn.Close() }()
 
 	sessionID := hex.EncodeToString(sConn.SessionID())
 	ctx := newContext(context.Background(), sConn.User(), sConn.RemoteAddr(), sConn.LocalAddr(), sessionID)
@@ -261,7 +262,7 @@ func (s *Server) handleNewChannel(ctx Context, newChan ssh.NewChannel) {
 }
 
 func (s *Server) handleSessionChannel(ctx Context, ch ssh.Channel, reqs <-chan *ssh.Request) {
-	defer ch.Close()
+	defer func() { _ = ch.Close() }()
 
 	sess := newSession(ch, ctx)
 
@@ -351,7 +352,7 @@ func (s *Server) dispatchSessionRequest(sess *session, req *ssh.Request) (finish
 }
 
 func (s *Server) handleDirectTcpipChannel(ch ssh.Channel, reqs <-chan *ssh.Request, extra []byte) {
-	defer ch.Close()
+	defer func() { _ = ch.Close() }()
 
 	go ssh.DiscardRequests(reqs)
 
@@ -375,7 +376,7 @@ func (s *Server) handleDirectTcpipChannel(ch ssh.Channel, reqs <-chan *ssh.Reque
 	if err != nil {
 		return
 	}
-	defer destConn.Close()
+	defer func() { _ = destConn.Close() }()
 
 	var wg sync.WaitGroup
 	wg.Add(2)

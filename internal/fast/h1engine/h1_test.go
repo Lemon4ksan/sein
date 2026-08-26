@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package h1_test
+package h1engine_test
 
 import (
 	"bufio"
@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/sein/internal/h1"
+	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 )
 
 func TestRequestParsing_BasicGET(t *testing.T) {
@@ -26,7 +26,7 @@ func TestRequestParsing_BasicGET(t *testing.T) {
 
 	br := bufio.NewReader(stringsReader(rawReq))
 
-	var req h1.Request
+	var req h1engine.Request
 
 	err := req.ReadRequest(br, nil, 1024*1024)
 	if err != nil {
@@ -69,7 +69,7 @@ func TestRequestParsing_POSTWithBody(t *testing.T) {
 
 	br := bufio.NewReader(stringsReader(rawReq))
 
-	var req h1.Request
+	var req h1engine.Request
 
 	err := req.ReadRequest(br, nil, 1024*1024)
 	if err != nil {
@@ -97,7 +97,7 @@ func TestRequestParsing_ChunkedBody(t *testing.T) {
 
 	br := bufio.NewReader(stringsReader(rawReq))
 
-	var req h1.Request
+	var req h1engine.Request
 
 	err := req.ReadRequest(br, nil, 1024*1024)
 	if err != nil {
@@ -111,7 +111,7 @@ func TestRequestParsing_ChunkedBody(t *testing.T) {
 }
 
 func TestResponseSerialization(t *testing.T) {
-	var res h1.Response
+	var res h1engine.Response
 
 	res.StatusCode = 201
 	res.Headers.Set("Content-Type", "application/json")
@@ -156,9 +156,9 @@ func TestResponseSerialization(t *testing.T) {
 func TestConnHandler_EndToEndKeepAlive(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 
-	handler := &h1.ConnHandler{
+	handler := &h1engine.ConnHandler{
 		MaxBodySize: 1024 * 1024,
-		Handler: func(req *h1.Request, res *h1.Response) error {
+		Handler: func(req *h1engine.Request, res *h1engine.Response) error {
 			res.StatusCode = 200
 			res.Headers.Set("Content-Type", "text/plain")
 			res.Body = []byte("Hello, " + req.Path)
@@ -222,7 +222,7 @@ func TestConnHandler_EndToEndKeepAlive(t *testing.T) {
 }
 
 func TestServer_GracefulShutdown(t *testing.T) {
-	srv := h1.NewServer(func(req *h1.Request, res *h1.Response) error {
+	srv := h1engine.NewServer(func(req *h1engine.Request, res *h1engine.Response) error {
 		res.StatusCode = 200
 		res.Body = []byte("OK")
 		return nil
@@ -251,9 +251,9 @@ func TestServer_GracefulShutdown(t *testing.T) {
 func TestRequest_Expect100Continue(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 
-	handler := &h1.ConnHandler{
+	handler := &h1engine.ConnHandler{
 		MaxBodySize: 1024 * 1024,
-		Handler: func(req *h1.Request, res *h1.Response) error {
+		Handler: func(req *h1engine.Request, res *h1engine.Response) error {
 			res.StatusCode = 200
 			res.Body = []byte("Received: " + string(req.Body))
 			return nil
@@ -298,9 +298,9 @@ func TestRequest_Expect100Continue(t *testing.T) {
 func TestRequest_Hijack(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 
-	handler := &h1.ConnHandler{
+	handler := &h1engine.ConnHandler{
 		MaxBodySize: 1024 * 1024,
-		Handler: func(req *h1.Request, res *h1.Response) error {
+		Handler: func(req *h1engine.Request, res *h1engine.Response) error {
 			conn, rw, err := req.Hijack()
 			if err != nil {
 				return err
@@ -342,7 +342,7 @@ func TestRequestParsing_RFC9112_LeadingCRLF(t *testing.T) {
 	rawReq := "\r\n\r\nGET /ping HTTP/1.1\r\nHost: localhost\r\n\r\n"
 	br := bufio.NewReader(stringsReader(rawReq))
 
-	var req h1.Request
+	var req h1engine.Request
 
 	err := req.ReadRequest(br, nil, 1024)
 	if err != nil {
@@ -359,7 +359,7 @@ func TestRequestParsing_RFC9112_MissingHost(t *testing.T) {
 	rawReq := "GET /ping HTTP/1.1\r\nUser-Agent: test\r\n\r\n"
 	br := bufio.NewReader(stringsReader(rawReq))
 
-	var req h1.Request
+	var req h1engine.Request
 
 	err := req.ReadRequest(br, nil, 1024)
 	if err == nil {

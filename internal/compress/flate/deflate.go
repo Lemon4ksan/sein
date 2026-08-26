@@ -15,6 +15,8 @@ import (
 	"github.com/lemon4ksan/foundation/silicon/endian"
 )
 
+var _ = (*compressor).writeBlockSkip
+
 const (
 	NoCompression      = 0
 	BestSpeed          = 1

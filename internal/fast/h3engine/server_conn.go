@@ -10,7 +10,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"sync"
 	"sync/atomic"
 
 	"github.com/lemon4ksan/sein/internal/quic"
@@ -174,7 +173,7 @@ func (sc *ServerConn) handleUniStream(stream *quic.ReceiveStream) {
 }
 
 func (sc *ServerConn) handleRequestStream(stream *quic.Stream) {
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	qr := quicvarint.NewReader(stream)
 

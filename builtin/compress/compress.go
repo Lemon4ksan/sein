@@ -9,6 +9,7 @@ package compress
 import (
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -29,6 +30,8 @@ type Config struct {
 	BrotliLevel int
 	// GzipLevel is the Gzip compression level (1-9). Default is 6.
 	GzipLevel int
+	// MaxDecompressedSize is the maximum allowed size in bytes for incoming compressed request bodies. Default is 32 MB.
+	MaxDecompressedSize int64
 }
 
 // Option configures compression settings.
@@ -52,6 +55,13 @@ func WithZstdLevel(level zstd.EncoderLevel) Option {
 func WithBrotliLevel(level int) Option {
 	return func(c *Config) {
 		c.BrotliLevel = level
+	}
+}
+
+// WithMaxDecompressedSize sets the maximum allowed size in bytes for decompressed request bodies.
+func WithMaxDecompressedSize(size int64) Option {
+	return func(c *Config) {
+		c.MaxDecompressedSize = size
 	}
 }
 
@@ -175,6 +185,46 @@ func New(opts ...Option) sein.Middleware {
 			}
 
 			return res, nil
+		}
+	}
+}
+
+// RequestDecompressor creates a middleware that automatically inspects and decompresses
+// incoming compressed request bodies (Content-Encoding: zstd, br, gzip, deflate) with strict
+// decompression bomb protection capped at [Config.MaxDecompressedSize].
+func RequestDecompressor(opts ...Option) sein.Middleware {
+	cfg := Config{
+		MaxDecompressedSize: 32 << 20, // 32 MB default
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	return func(next sein.RawHandler) sein.RawHandler {
+		return func(req *sein.Request) (any, error) {
+			contentEncoding := req.Header(header.ContentEncoding)
+			if contentEncoding == "" || strings.EqualFold(contentEncoding, "identity") {
+				return next(req)
+			}
+
+			body := req.RawBody()
+			if len(body) == 0 {
+				return next(req)
+			}
+
+			decompressed, err := compress.DecompressLimit(contentEncoding, body, cfg.MaxDecompressedSize)
+			if err != nil {
+				if errors.Is(err, compress.ErrDecompressionLimit) {
+					return nil, sein.ErrRequestEntityTooLarge("decompression payload limit exceeded")
+				}
+
+				return nil, sein.ErrBadRequest("failed to decompress request payload", err)
+			}
+
+			req.SetBody(decompressed)
+			req.DelHeader(header.ContentEncoding)
+
+			return next(req)
 		}
 	}
 }

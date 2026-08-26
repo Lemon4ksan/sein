@@ -45,33 +45,29 @@ func (e *fastEncoder) Encode(blk *blockEnc, src []byte) {
 	)
 
 	// Protect against e.cur wraparound.
-	for e.cur >= e.bufferReset-int32(len(e.hist)) {
+	if e.cur >= e.bufferReset-int32(len(e.hist)) {
 		if len(e.hist) == 0 {
 			for i := range e.table[:] {
 				e.table[i] = tableEntry{}
 			}
 
 			e.cur = e.maxMatchOff
+		} else {
+			// Shift down everything in the table that isn't already too far away.
+			minOff := e.cur + int32(len(e.hist)) - e.maxMatchOff
+			for i := range e.table[:] {
+				v := e.table[i].offset
+				if v < minOff {
+					v = 0
+				} else {
+					v = v - e.cur + e.maxMatchOff
+				}
 
-			break
-		}
-
-		// Shift down everything in the table that isn't already too far away.
-		minOff := e.cur + int32(len(e.hist)) - e.maxMatchOff
-		for i := range e.table[:] {
-			v := e.table[i].offset
-			if v < minOff {
-				v = 0
-			} else {
-				v = v - e.cur + e.maxMatchOff
+				e.table[i].offset = v
 			}
 
-			e.table[i].offset = v
+			e.cur = e.maxMatchOff
 		}
-
-		e.cur = e.maxMatchOff
-
-		break
 	}
 
 	s := e.addBlock(src)

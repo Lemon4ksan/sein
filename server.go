@@ -20,7 +20,7 @@ import (
 
 	"github.com/lemon4ksan/sein/internal/fast/h2engine"
 	"github.com/lemon4ksan/sein/internal/fast/h3engine"
-	"github.com/lemon4ksan/sein/internal/h1"
+	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 	"github.com/lemon4ksan/sein/internal/quic"
 )
 
@@ -39,9 +39,10 @@ type Server struct {
 	router                 *Router
 	middlewares            []Middleware
 	errorMappers           []ErrorMapper
-	h1Server               *h1.Server
+	h1Server               *h1engine.Server
 	RedirectTrailingSlash  bool
 	HandleMethodNotAllowed bool
+	SkipUnmatchedRoutes    bool
 	noRouteHandler         RawHandler
 	noMethodHandler        RawHandler
 	trustedProxies         []*net.IPNet
@@ -67,6 +68,13 @@ func WithTrailingSlashRedirect(enabled bool) Option {
 func WithMethodNotAllowed(enabled bool) Option {
 	return func(s *Server) {
 		s.HandleMethodNotAllowed = enabled
+	}
+}
+
+// WithSkipUnmatchedRoutes configures whether global middlewares are bypassed for unmatched routes (404/405).
+func WithSkipUnmatchedRoutes(enabled bool) Option {
+	return func(s *Server) {
+		s.SkipUnmatchedRoutes = enabled
 	}
 }
 
@@ -355,7 +363,7 @@ func (s *Server) resolveRoute(
 }
 
 // dispatchH1 is the native zero-net/http request pipeline dispatcher.
-func (s *Server) dispatchH1(h1Req *h1.Request, h1Res *h1.Response) error {
+func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) error {
 	handler, params, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h1Req.Method, h1Req.Path)
 	if redirectURL != "" {
 		res := Redirect(redirectURL, redirectCode)
@@ -381,10 +389,12 @@ func (s *Server) dispatchH1(h1Req *h1.Request, h1Res *h1.Response) error {
 	req := NewH1Request(h1Req, params)
 	defer req.Release()
 
-	// Wrap in global middlewares
+	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
 	finalHandler := handler
-	for _, v := range slices.Backward(s.middlewares) {
-		finalHandler = v(finalHandler)
+	if !s.SkipUnmatchedRoutes || (status != http.StatusNotFound && status != http.StatusMethodNotAllowed) {
+		for _, v := range slices.Backward(s.middlewares) {
+			finalHandler = v(finalHandler)
+		}
 	}
 
 	// Execute handler
@@ -401,7 +411,7 @@ func (s *Server) dispatchH1(h1Req *h1.Request, h1Res *h1.Response) error {
 	return s.serializeH1Result(h1Res, result)
 }
 
-func (s *Server) serializeH1Result(res *h1.Response, result any) error {
+func (s *Server) serializeH1Result(res *h1engine.Response, result any) error {
 	res.StatusCode = http.StatusOK
 
 	switch v := result.(type) {
@@ -448,7 +458,7 @@ type errorResponse struct {
 	Details map[string]any `json:"details,omitempty"`
 }
 
-func (s *Server) writeH1Error(res *h1.Response, err error) {
+func (s *Server) writeH1Error(res *h1engine.Response, err error) {
 	for _, mapper := range s.errorMappers {
 		if mapped, ok := mapper(err); ok {
 			err = mapped
@@ -533,10 +543,12 @@ func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.Serve
 	req := NewH2Request(h2Req.Method, h2Req.Path, h2Req.Authority, h2Req.RemoteAddr, h2Req.Headers, h2Req.Body, params)
 	defer req.Release()
 
-	// Wrap in global middlewares
+	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
 	finalHandler := handler
-	for _, v := range slices.Backward(s.middlewares) {
-		finalHandler = v(finalHandler)
+	if !s.SkipUnmatchedRoutes || (status != http.StatusNotFound && status != http.StatusMethodNotAllowed) {
+		for _, v := range slices.Backward(s.middlewares) {
+			finalHandler = v(finalHandler)
+		}
 	}
 
 	// Execute handler
@@ -718,10 +730,12 @@ func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.Serve
 	req := NewH3Request(h3Req.Method, h3Req.Path, h3Req.Authority, h3Req.RemoteAddr, h3Req.Headers, h3Req.Body, params)
 	defer req.Release()
 
-	// Wrap in global middlewares
+	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
 	finalHandler := handler
-	for _, v := range slices.Backward(s.middlewares) {
-		finalHandler = v(finalHandler)
+	if !s.SkipUnmatchedRoutes || (status != http.StatusNotFound && status != http.StatusMethodNotAllowed) {
+		for _, v := range slices.Backward(s.middlewares) {
+			finalHandler = v(finalHandler)
+		}
 	}
 
 	// Execute handler
@@ -900,9 +914,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req := NewRequest(r, params)
 	defer req.Release()
 
+	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
 	finalHandler := handler
-	for _, v := range slices.Backward(s.middlewares) {
-		finalHandler = v(finalHandler)
+	if !s.SkipUnmatchedRoutes || (status != http.StatusNotFound && status != http.StatusMethodNotAllowed) {
+		for _, v := range slices.Backward(s.middlewares) {
+			finalHandler = v(finalHandler)
+		}
 	}
 
 	result, err := finalHandler(req)
@@ -977,7 +994,7 @@ func (s *Server) writeError(w http.ResponseWriter, err error) {
 // Serve starts the native H1 zero-net/http server on the provided net.Listener.
 func (s *Server) Serve(ln net.Listener) error {
 	s.mu.Lock()
-	s.h1Server = h1.NewServer(s.dispatchH1)
+	s.h1Server = h1engine.NewServer(s.dispatchH1)
 	s.mu.Unlock()
 
 	return s.h1Server.Serve(ln)
@@ -990,7 +1007,8 @@ func (s *Server) ListenAndServe() error {
 		addr = ":8080"
 	}
 
-	ln, err := net.Listen("tcp", addr)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return err
 	}
@@ -1001,7 +1019,7 @@ func (s *Server) ListenAndServe() error {
 // ListenAndServeTLS starts listening on s.addr with TLS using native H1 engine.
 func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
 	s.mu.Lock()
-	s.h1Server = h1.NewServer(s.dispatchH1)
+	s.h1Server = h1engine.NewServer(s.dispatchH1)
 	s.h1Server.Addr = s.addr
 	s.mu.Unlock()
 
@@ -1034,7 +1052,7 @@ func (s *Server) ListenAndServeQUIC(addr, certFile, keyFile string) error {
 	if err != nil {
 		return err
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	for {
 		conn, err := ln.Accept(context.Background())

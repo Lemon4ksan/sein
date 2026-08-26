@@ -113,7 +113,9 @@ func (sc *ServerConn) Release() {
 
 // Serve runs the main HTTP/2 server connection loop.
 func (sc *ServerConn) Serve() error {
-	defer sc.conn.Close()
+	defer func() {
+		_ = sc.conn.Close()
+	}()
 
 	// 1. Read and verify 24-byte client connection preface (RFC 9113 §3.4)
 	if !ReadPreface(sc.br) {

@@ -4,7 +4,7 @@
 
 //go:build (!amd64 && !arm64) || purego
 
-package h1
+package h1engine
 
 const HasVectorChunk = false
 

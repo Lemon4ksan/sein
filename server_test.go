@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -839,5 +840,54 @@ func TestNativeH1Server_ConditionalETagAnd304(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	require.NoError(t, app.Shutdown(ctx))
+}
+
+func TestSkipUnmatchedRoutes(t *testing.T) {
+	var (
+		mwExecutedCount atomic.Int64
+	)
+
+	trackingMW := func(next sein.RawHandler) sein.RawHandler {
+		return func(req *sein.Request) (any, error) {
+			mwExecutedCount.Add(1)
+			return next(req)
+		}
+	}
+
+	app := sein.New(sein.WithSkipUnmatchedRoutes(true))
+	app.Use(trackingMW)
+
+	app.Get("/active", func(ctx context.Context) (string, error) {
+		return "OK", nil
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	addr := ln.Addr().String()
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 1. Matched route -> middleware executed
+	resp1, err := client.Get("http://" + addr + "/active")
+	require.NoError(t, err)
+	defer func() { _ = resp1.Body.Close() }()
+	assert.Equal(t, http.StatusOK, resp1.StatusCode)
+	assert.Equal(t, int64(1), mwExecutedCount.Load())
+
+	// 2. Unmatched route (404) -> middleware SKIPPED
+	resp2, err := client.Get("http://" + addr + "/non-existent-endpoint")
+	require.NoError(t, err)
+	defer func() { _ = resp2.Body.Close() }()
+	assert.Equal(t, http.StatusNotFound, resp2.StatusCode)
+	// mwExecutedCount must remain 1
+	assert.Equal(t, int64(1), mwExecutedCount.Load())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
 }

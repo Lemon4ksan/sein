@@ -43,7 +43,8 @@ func NewCAFromPEM(keyPEM []byte, passphrase string) (*CA, error) {
 
 // NewCAFromFile loads a CA private key from a disk file path.
 func NewCAFromFile(path, passphrase string) (*CA, error) {
-	pemBytes, err := os.ReadFile(path)
+	// #nosec G304 -- Admin loaded CA path
+	pemBytes, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return nil, err
 	}
@@ -198,5 +199,5 @@ func (c *CA) SaveCAKeys(dir string) error {
 
 	pubPath := filepath.Join(dir, "ca_key.pub")
 
-	return os.WriteFile(pubPath, c.AuthorizedKey(), 0o644)
+	return os.WriteFile(pubPath, c.AuthorizedKey(), 0o600)
 }

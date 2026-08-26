@@ -14,6 +14,8 @@ import (
 	"github.com/lemon4ksan/foundation/silicon/endian"
 )
 
+var _ = (*huffmanBitWriter).writeBlock
+
 const (
 	// The largest offset code.
 	offsetCodeCount = 30

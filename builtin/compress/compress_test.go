@@ -165,3 +165,47 @@ func TestInboundCompressedRequestBodyDecompression(t *testing.T) {
 
 	require.NoError(t, app.Shutdown(ctx))
 }
+
+func TestRequestDecompressor_DecompressionBomb(t *testing.T) {
+	app := sein.New()
+	// Set strict 1KB limit on decompressed payloads
+	app.Use(compress.RequestDecompressor(compress.WithMaxDecompressedSize(1024)))
+
+	type EchoDTO struct {
+		Data string `json:"data"`
+	}
+
+	app.Post("/echo-bomb", func(ctx context.Context, req EchoDTO) (string, error) {
+		return "Received: " + req.Data[:10], nil
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	addr := ln.Addr().String()
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// Create a 50KB payload compressed to small bytes (bomb)
+	bigJSON, _ := json.Marshal(EchoDTO{Data: strings.Repeat("A", 50*1024)})
+	compressed, err := intCompress.CompressGzip(bigJSON, 6)
+	require.NoError(t, err)
+
+	req, _ := http.NewRequest(http.MethodPost, "http://"+addr+"/echo-bomb", bytes.NewReader(compressed))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	// Should be rejected with 413 Request Entity Too Large
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, app.Shutdown(ctx))
+}

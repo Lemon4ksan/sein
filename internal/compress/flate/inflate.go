@@ -93,12 +93,26 @@ func (e InternalError) Error() string { return "flate: internal error: " + strin
 // A ReadError reports an error encountered while reading input.
 //
 // Deprecated: No longer returned.
-type ReadError = flate.ReadError
+type ReadError struct {
+	Offset int64
+	Err    error
+}
+
+func (e *ReadError) Error() string {
+	return "flate: read error: " + e.Err.Error()
+}
 
 // A WriteError reports an error encountered while writing output.
 //
 // Deprecated: No longer returned.
-type WriteError = flate.WriteError
+type WriteError struct {
+	Offset int64
+	Err    error
+}
+
+func (e *WriteError) Error() string {
+	return "flate: write error: " + e.Err.Error()
+}
 
 // Resetter resets a ReadCloser returned by NewReader or NewReaderDict to
 // to switch to a new underlying Reader. This permits reusing a ReadCloser

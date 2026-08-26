@@ -58,7 +58,7 @@ func handleSOCKS5Conn(ctx context.Context, srv *Server, conn net.Conn, br *bufio
 		_ = sendSOCKS5Reply(conn, socksRespCmdFail, nil, 0)
 		return err
 	}
-	defer outboundConn.Close()
+	defer func() { _ = outboundConn.Close() }()
 
 	if err := sendSOCKS5Reply(conn, socksRespSuccess, net.ParseIP("127.0.0.1"), targetPort); err != nil {
 		return err

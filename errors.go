@@ -196,9 +196,19 @@ func ErrConflict(message string, cause ...error) HTTPError {
 	return NewError(http.StatusConflict, message, cause...)
 }
 
+// ErrRequestEntityTooLarge creates a 413 Request Entity Too Large ad-hoc error.
+func ErrRequestEntityTooLarge(message string, cause ...error) HTTPError {
+	return NewError(http.StatusRequestEntityTooLarge, message, cause...)
+}
+
 // ErrUnprocessable creates a 422 Unprocessable Entity ad-hoc error.
 func ErrUnprocessable(message string, cause ...error) HTTPError {
 	return NewError(http.StatusUnprocessableEntity, message, cause...)
+}
+
+// ErrTooEarly creates a 425 Too Early ad-hoc error (RFC 8470).
+func ErrTooEarly(message string, cause ...error) HTTPError {
+	return NewError(http.StatusTooEarly, message, cause...)
 }
 
 // ErrTooManyRequests creates a 429 Too Many Requests ad-hoc error.

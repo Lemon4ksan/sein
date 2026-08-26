@@ -43,7 +43,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "sein reverse tunnel: 502 Bad Gateway (Tunnel Connection Failed)", http.StatusBadGateway)
 		return
 	}
-	defer targetConn.Close()
+	defer func() { _ = targetConn.Close() }()
 
 	if req.Header.Get("Upgrade") == "websocket" {
 		g.proxyHijackedWebSocket(w, req, targetConn)
@@ -64,7 +64,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
@@ -91,7 +91,7 @@ func (g *Gateway) proxyHijackedWebSocket(w http.ResponseWriter, req *http.Reques
 		http.Error(w, "sein reverse tunnel: WebSocket hijack failed", http.StatusInternalServerError)
 		return
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	if err := req.Write(targetConn); err != nil {
 		return

@@ -15,6 +15,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"reflect"
 	"slices"
@@ -27,7 +28,7 @@ import (
 	"github.com/lemon4ksan/foundation/net/http/header"
 
 	"github.com/lemon4ksan/sein/internal/compress"
-	"github.com/lemon4ksan/sein/internal/h1"
+	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 )
 
 // Validatable is an interface for request DTOs that validate their own invariants.
@@ -53,8 +54,8 @@ type Request struct {
 	host          string
 	remoteAddr    string
 	bodyBuf       []byte
-	h1Headers     *h1.Headers
-	h1Req         *h1.Request
+	h1Headers     *h1engine.Headers
+	h1Req         *h1engine.Request
 	raw           *http.Request
 	multipartForm *multipart.Form
 	params        map[string]string
@@ -86,7 +87,7 @@ func NewRequest(r *http.Request, params map[string]string) *Request {
 }
 
 // NewH1Request creates a Request wrapping a native zero-net/http h1.Request.
-func NewH1Request(h1Req *h1.Request, params map[string]string) *Request {
+func NewH1Request(h1Req *h1engine.Request, params map[string]string) *Request {
 	return &Request{
 		ctx:        context.Background(),
 		method:     h1Req.Method,
@@ -122,7 +123,7 @@ func NewH2Request(
 		scope:      borrow.NewScope(),
 	}
 	if rawHeaders != nil {
-		h := h1.NewHeadersWithCapacity(len(rawHeaders))
+		h := h1engine.NewHeadersWithCapacity(len(rawHeaders))
 		for k, vv := range rawHeaders {
 			for _, v := range vv {
 				h.Set(k, v)
@@ -154,7 +155,7 @@ func NewH3Request(
 		scope:      borrow.NewScope(),
 	}
 	if rawHeaders != nil {
-		h := h1.NewHeadersWithCapacity(len(rawHeaders))
+		h := h1engine.NewHeadersWithCapacity(len(rawHeaders))
 		for k, vv := range rawHeaders {
 			for _, v := range vv {
 				h.Set(k, v)
@@ -268,7 +269,7 @@ func (r *Request) Param(name string) ParamValue {
 // Query retrieves a query parameter by key.
 func (r *Request) Query(key string) ParamValue {
 	if r.query != "" {
-		for _, pair := range strings.Split(r.query, "&") {
+		for pair := range strings.SplitSeq(r.query, "&") {
 			if k, v, found := strings.Cut(pair, "="); found {
 				if k == key {
 					unescaped, err := url.QueryUnescape(v)
@@ -306,6 +307,28 @@ func (r *Request) Header(key string) string {
 	return ""
 }
 
+// SetHeader sets or replaces a request header value.
+func (r *Request) SetHeader(key, val string) {
+	if r.h1Headers != nil {
+		r.h1Headers.Set(key, val)
+	}
+
+	if r.raw != nil {
+		r.raw.Header.Set(key, val)
+	}
+}
+
+// DelHeader removes a request header.
+func (r *Request) DelHeader(key string) {
+	if r.h1Headers != nil {
+		r.h1Headers.Del(key)
+	}
+
+	if r.raw != nil {
+		r.raw.Header.Del(key)
+	}
+}
+
 // Cookies parses and returns the HTTP cookies sent with the request.
 func (r *Request) Cookies() []*http.Cookie {
 	cookieHdr := r.Header(header.Cookie)
@@ -314,8 +337,8 @@ func (r *Request) Cookies() []*http.Cookie {
 	}
 
 	parts := strings.Split(cookieHdr, ";")
-
 	cookies := make([]*http.Cookie, 0, len(parts))
+
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if k, v, found := strings.Cut(part, "="); found {
@@ -335,17 +358,58 @@ func (r *Request) BearerToken() (string, bool) {
 	auth := r.Header(header.Authorization)
 
 	prefix := header.ValueBearer + " "
-	if strings.HasPrefix(auth, prefix) {
-		token := strings.TrimPrefix(auth, prefix)
+	if token, ok :=strings.CutPrefix(auth, prefix); ok  {
 		return strings.TrimSpace(token), true
 	}
 
 	return "", false
 }
 
+// DefaultTrustedProxies defines common private and loopback network ranges for trusted proxy resolution.
+var DefaultTrustedProxies = []netip.Prefix{
+	netip.MustParsePrefix("127.0.0.0/8"),    // IPv4 Loopback
+	netip.MustParsePrefix("::1/128"),        // IPv6 Loopback
+	netip.MustParsePrefix("10.0.0.0/8"),     // RFC 1918 Class A
+	netip.MustParsePrefix("172.16.0.0/12"),  // RFC 1918 Class B
+	netip.MustParsePrefix("192.168.0.0/16"), // RFC 1918 Class C
+	netip.MustParsePrefix("169.254.0.0/16"), // Link-Local IPv4
+	netip.MustParsePrefix("fe80::/10"),      // Link-Local IPv6
+	netip.MustParsePrefix("fc00::/7"),       // Unique Local IPv6 (ULA)
+}
+
+// IP returns the real client IP address.
+func (r *Request) IP() string {
+	return r.ClientIP()
+}
+
+// IPs returns all IP addresses from the X-Forwarded-For chain in order.
+func (r *Request) IPs() []string {
+	fwd := r.Header(header.XForwardedFor)
+	if fwd == "" {
+		return nil
+	}
+
+	parts := strings.Split(fwd, ",")
+	ips := make([]string, 0, len(parts))
+	for _, p := range parts {
+		ip := strings.TrimSpace(p)
+		if ip != "" && net.ParseIP(ip) != nil {
+			ips = append(ips, ip)
+		}
+	}
+
+	return ips
+}
+
 // ClientIP returns the real client IP address, checking platform headers (CF-Connecting-IP, Fly-Client-IP, True-Client-IP, X-Real-IP),
-// and safely parsing X-Forwarded-For right-to-left to prevent IP spoofing attacks.
+// and safely parsing X-Forwarded-For right-to-left using [DefaultTrustedProxies] to prevent IP spoofing attacks.
 func (r *Request) ClientIP() string {
+	return r.ClientIPWithTrust(DefaultTrustedProxies)
+}
+
+// ClientIPWithTrust returns the real client IP address by traversing the X-Forwarded-For chain right-to-left,
+// skipping any intermediate proxies matching the provided trusted IP prefixes.
+func (r *Request) ClientIPWithTrust(trustedProxies []netip.Prefix) string {
 	if cfIP := r.Header(header.CFConnectingIP); cfIP != "" {
 		return strings.TrimSpace(cfIP)
 	}
@@ -364,11 +428,38 @@ func (r *Request) ClientIP() string {
 
 	if fwd := r.Header(header.XForwardedFor); fwd != "" {
 		items := strings.Split(fwd, ",")
+		var firstValidIP string
+
 		for _, item := range slices.Backward(items) {
-			ip := strings.TrimSpace(item)
-			if ip != "" && net.ParseIP(ip) != nil {
-				return ip
+			rawIP := strings.TrimSpace(item)
+			if rawIP == "" {
+				continue
 			}
+
+			addr, err := netip.ParseAddr(rawIP)
+			if err != nil {
+				continue
+			}
+
+			if firstValidIP == "" {
+				firstValidIP = addr.String()
+			}
+
+			isTrusted := false
+			for _, prefix := range trustedProxies {
+				if prefix.Contains(addr) {
+					isTrusted = true
+					break
+				}
+			}
+
+			if !isTrusted {
+				return addr.String()
+			}
+		}
+
+		if firstValidIP != "" {
+			return firstValidIP
 		}
 	}
 
@@ -419,10 +510,34 @@ func (r *Request) Protocol() string {
 	return ""
 }
 
-// Scheme returns the request scheme ("https" or "http").
+// Scheme returns the normalized request scheme ("https" or "http").
+// It strictly validates X-Forwarded-Proto and Forwarded headers to prevent Open Redirect
+// and header injection vulnerabilities.
 func (r *Request) Scheme() string {
 	if proto := r.Header(header.XForwardedProto); proto != "" {
-		return proto
+		if strings.EqualFold(proto, "https") {
+			return "https"
+		}
+
+		if strings.EqualFold(proto, "http") {
+			return "http"
+		}
+	}
+
+	if fwd := r.Header(header.Forwarded); fwd != "" {
+		for _, part := range strings.Split(fwd, ";") {
+			k, v, found := strings.Cut(strings.TrimSpace(part), "=")
+			if found && strings.EqualFold(k, "proto") {
+				v = strings.Trim(v, `"`)
+				if strings.EqualFold(v, "https") {
+					return "https"
+				}
+
+				if strings.EqualFold(v, "http") {
+					return "http"
+				}
+			}
+		}
 	}
 
 	if r.raw != nil {
@@ -431,7 +546,13 @@ func (r *Request) Scheme() string {
 		}
 
 		if r.raw.URL != nil && r.raw.URL.Scheme != "" {
-			return r.raw.URL.Scheme
+			if strings.EqualFold(r.raw.URL.Scheme, "https") {
+				return "https"
+			}
+
+			if strings.EqualFold(r.raw.URL.Scheme, "http") {
+				return "http"
+			}
 		}
 	}
 
@@ -649,6 +770,29 @@ func (r *Request) SaveUploadedFile(file *File, dstPath string) error {
 	return file.SaveTo(dstPath)
 }
 
+// RawBody returns the raw, un-decompressed request payload bytes.
+func (r *Request) RawBody() []byte {
+	r.bodyMu.Lock()
+	defer r.bodyMu.Unlock()
+
+	if r.bodyBuf != nil {
+		return r.bodyBuf
+	}
+
+	if r.raw != nil && r.raw.Body != nil {
+		data, err := io.ReadAll(r.raw.Body)
+		if err != nil {
+			return nil
+		}
+
+		r.bodyBuf = data
+
+		return data
+	}
+
+	return nil
+}
+
 // Body reads and caches the full request body, automatically decompressing if Content-Encoding is present.
 func (r *Request) Body() []byte {
 	r.bodyMu.Lock()
@@ -684,6 +828,14 @@ func (r *Request) Body() []byte {
 	}
 
 	return nil
+}
+
+// SetBody overrides the request payload buffer.
+func (r *Request) SetBody(body []byte) {
+	r.bodyMu.Lock()
+	defer r.bodyMu.Unlock()
+
+	r.bodyBuf = body
 }
 
 // BindJSON decodes the JSON request body into dest and executes automatic validation if dest implements Validatable.

@@ -6,6 +6,7 @@ package server
 
 import (
 	"os"
+	"path/filepath"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -54,7 +55,8 @@ func WithHostKeyPEM(pemBytes []byte) Option {
 // WithHostKeyFile appends a host key from a private key file path.
 func WithHostKeyFile(path string) Option {
 	return func(s *Server) error {
-		pemBytes, err := os.ReadFile(path)
+		// #nosec G304 -- Admin loaded host key path
+		pemBytes, err := os.ReadFile(filepath.Clean(path))
 		if err != nil {
 			return err
 		}
@@ -131,7 +133,8 @@ func WithUserCAPEM(pemBytes []byte) Option {
 // WithUserCAFile registers trusted User CA public keys loaded from file path.
 func WithUserCAFile(path string) Option {
 	return func(s *Server) error {
-		data, err := os.ReadFile(path)
+		// #nosec G304 -- Admin loaded CA path
+		data, err := os.ReadFile(filepath.Clean(path))
 		if err != nil {
 			return err
 		}

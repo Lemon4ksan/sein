@@ -199,7 +199,6 @@ func EstimateSizes(in []byte, s *Scratch) (tableSz, dataSz, reuseSz int, err err
 	}
 
 	// Create histogram, if none was provided.
-	tableSz, dataSz, reuseSz = -1, -1, -1
 	maxCount := s.maxCount
 
 	canReuse := false
@@ -207,12 +206,6 @@ func EstimateSizes(in []byte, s *Scratch) (tableSz, dataSz, reuseSz int, err err
 		maxCount, canReuse = s.countSimple(in)
 	} else {
 		canReuse = s.canUseTable(s.prevTable)
-	}
-
-	// We want the output size to be less than this:
-	wantSize := len(in)
-	if s.WantLogLess > 0 {
-		wantSize -= wantSize >> s.WantLogLess
 	}
 
 	// Reset for next run.

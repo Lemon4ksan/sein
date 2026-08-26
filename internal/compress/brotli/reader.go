@@ -39,15 +39,28 @@ func (r *Reader) Reset(src io.Reader) error {
 		// undefined. Clear out everything but the buffers.
 		*r = Reader{
 			buf:              r.buf,
-			customDictionary: r.customDictionary,
+			block_type_trees: r.block_type_trees,
+			literal_hgroup: huffmanTreeGroup{
+				htrees: r.literal_hgroup.htrees,
+				codes:  r.literal_hgroup.codes,
+			},
+			distance_hgroup: huffmanTreeGroup{
+				htrees: r.distance_hgroup.htrees,
+				codes:  r.distance_hgroup.codes,
+			},
+			insert_copy_hgroup: huffmanTreeGroup{
+				htrees: r.insert_copy_hgroup.htrees,
+				codes:  r.insert_copy_hgroup.codes,
+			},
 		}
-	} else {
-		decoderStateCleanup(r)
-		decoderStateInit(r)
 	}
 
+	decoderStateInit(r)
+
 	r.src = src
-	r.in = nil
+	if r.buf == nil {
+		r.buf = make([]byte, readBufSize)
+	}
 
 	return nil
 }

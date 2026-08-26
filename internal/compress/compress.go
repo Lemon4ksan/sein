@@ -94,7 +94,7 @@ func CompressBrotli(src []byte, level int) ([]byte, error) {
 		defer brotliWriterStorage.Put(w)
 	default:
 		w = brotli.NewWriterLevel(&buf, level)
-		defer w.Close()
+		defer func() { _ = w.Close() }()
 
 		_, err := w.Write(src)
 		if err != nil {
@@ -191,7 +191,7 @@ func DecompressGzip(src []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	var buf bytes.Buffer
 	if _, err := io.Copy(&buf, r); err != nil {
@@ -222,7 +222,7 @@ func CompressZstd(src []byte, level zstd.EncoderLevel) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer enc.Close()
+		defer func() { _ = enc.Close() }()
 	}
 
 	return enc.EncodeAll(src, make([]byte, 0, len(src))), nil
@@ -262,37 +262,115 @@ func CompressDeflate(src []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Decompress automatically decodes src based on Content-Encoding header value.
-func Decompress(encoding string, src []byte) ([]byte, error) {
+// ErrDecompressionLimit is returned when decompressed payload size exceeds the configured safety ceiling.
+var ErrDecompressionLimit = errors.New("compress: decompression limit exceeded")
+
+// DecompressLimit automatically decodes src based on Content-Encoding up to maxBytes to protect against decompression bombs.
+// If maxBytes <= 0, it defaults to 64 MB (64 << 20).
+func DecompressLimit(encoding string, src []byte, maxBytes int64) ([]byte, error) {
 	if len(src) == 0 {
 		return nil, nil
+	}
+
+	if maxBytes <= 0 {
+		maxBytes = 64 << 20
 	}
 
 	encoding = strings.TrimSpace(strings.ToLower(encoding))
 	switch encoding {
 	case "zstd":
-		return DecompressZstd(src)
+		dec := zstdDecoderStorage.Get()
+		defer zstdDecoderStorage.Put(dec)
+
+		out, err := dec.DecodeAll(src, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if int64(len(out)) > maxBytes {
+			return nil, ErrDecompressionLimit
+		}
+
+		return out, nil
+
 	case "br":
-		return DecompressBrotli(src)
-	case "gzip", "x-gzip":
-		return DecompressGzip(src)
-	case "deflate":
-		zr := flate.NewReader(bytes.NewReader(src))
-		defer zr.Close()
+		r := brotliReaderStorage.Get()
+		defer brotliReaderStorage.Put(r)
+
+		if err := r.Reset(bytes.NewReader(src)); err != nil {
+			return nil, err
+		}
 
 		var buf bytes.Buffer
-		// #nosec G110 -- Capped buffer read protects against decompression bombs
-		if _, err := io.Copy(&buf, io.LimitReader(zr, 64<<20)); err != nil {
+		lr := io.LimitReader(r, maxBytes+1)
+
+		n, err := io.Copy(&buf, lr)
+		if err != nil {
 			return nil, err
+		}
+
+		if n > maxBytes {
+			return nil, ErrDecompressionLimit
+		}
+
+		return buf.Bytes(), nil
+
+	case "gzip", "x-gzip":
+		r := gzipReaderStorage.Get()
+		defer gzipReaderStorage.Put(r)
+
+		if err := r.Reset(bytes.NewReader(src)); err != nil {
+			return nil, err
+		}
+		defer func() { _ = r.Close() }()
+
+		var buf bytes.Buffer
+		lr := io.LimitReader(r, maxBytes+1)
+
+		n, err := io.Copy(&buf, lr)
+		if err != nil {
+			return nil, err
+		}
+
+		if n > maxBytes {
+			return nil, ErrDecompressionLimit
+		}
+
+		return buf.Bytes(), nil
+
+	case "deflate":
+		zr := flate.NewReader(bytes.NewReader(src))
+		defer func() { _ = zr.Close() }()
+
+		var buf bytes.Buffer
+		lr := io.LimitReader(zr, maxBytes+1)
+
+		n, err := io.Copy(&buf, lr)
+		if err != nil {
+			return nil, err
+		}
+
+		if n > maxBytes {
+			return nil, ErrDecompressionLimit
 		}
 
 		return buf.Bytes(), nil
 
 	case "", "identity":
+		if int64(len(src)) > maxBytes {
+			return nil, ErrDecompressionLimit
+		}
+
 		return src, nil
+
 	default:
 		return nil, ErrUnsupportedEncoding
 	}
+}
+
+// Decompress automatically decodes src based on Content-Encoding header value with default 64MB limit.
+func Decompress(encoding string, src []byte) ([]byte, error) {
+	return DecompressLimit(encoding, src, 64<<20)
 }
 
 // NewBrotliWriter returns a pooled Brotli writer wrapping w.

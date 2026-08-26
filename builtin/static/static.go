@@ -111,7 +111,7 @@ func createStaticServer(cfg Config) sein.RawHandler {
 			}
 		}
 
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		// Compute ETag from ModTime and Size
 		etag := fmt.Sprintf(`W/"%x-%x"`, modTime.Unix(), size)
@@ -292,7 +292,8 @@ func openFile(cfg Config, requestPath string) (fileReadSeeker, time.Time, int64,
 	if cfg.Root != "" {
 		fullPath := filepath.Join(cfg.Root, filepath.FromSlash(relPath))
 
-		f, err := os.Open(fullPath)
+		// #nosec G304 -- Sanitized static asset path
+		f, err := os.Open(filepath.Clean(fullPath))
 		if err != nil {
 			return nil, time.Time{}, 0, "", false
 		}

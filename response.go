@@ -12,7 +12,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 
-	"github.com/lemon4ksan/sein/internal/h1"
+	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 )
 
 // Responder is an interface that allows custom types to control their exact wire serialization for net/http.
@@ -22,7 +22,7 @@ type Responder interface {
 
 // DirectH1Responder is an interface for direct serialization to the native H1 response.
 type DirectH1Responder interface {
-	WriteToH1(res *h1.Response) error
+	WriteToH1(res *h1engine.Response) error
 }
 
 // ResponseHolder allows middlewares to inspect response metadata and payload.
@@ -62,7 +62,7 @@ func (r Response[T]) ResponseCookies() []*http.Cookie {
 }
 
 // WriteToH1 serializes the response directly into an h1.Response with zero net/http allocations.
-func (r Response[T]) WriteToH1(res *h1.Response) error {
+func (r Response[T]) WriteToH1(res *h1engine.Response) error {
 	for k, vv := range r.Headers {
 		for _, v := range vv {
 			res.Headers.Add(k, v)

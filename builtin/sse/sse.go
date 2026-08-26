@@ -15,7 +15,7 @@ import (
 	"github.com/lemon4ksan/foundation/codec/json"
 	"github.com/lemon4ksan/foundation/net/http/header"
 
-	"github.com/lemon4ksan/sein/internal/h1"
+	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 )
 
 // Event represents an individual W3C Server-Sent Event message.
@@ -201,7 +201,7 @@ func (s SSEStreamResponse) WriteResponse(w http.ResponseWriter) error {
 }
 
 // WriteToH1 streams SSE events via native H1 response.
-func (s SSEStreamResponse) WriteToH1(res *h1.Response) error {
+func (s SSEStreamResponse) WriteToH1(res *h1engine.Response) error {
 	res.Headers.Set(header.ContentType, "text/event-stream")
 	res.Headers.Set(header.CacheControl, "no-cache")
 	res.Headers.Set(header.Connection, "keep-alive")

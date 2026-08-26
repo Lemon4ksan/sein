@@ -14,7 +14,7 @@ import (
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 
-	"github.com/lemon4ksan/sein/internal/h1"
+	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 )
 
 // StreamWriterResponse provides streaming chunked output to the client over HTTP/1.1.
@@ -52,7 +52,7 @@ func (s StreamWriterResponse) WithContentType(ct string) StreamWriterResponse {
 }
 
 // WriteToH1 streams data directly into the connection socket buffer via chunked transfer encoding.
-func (s StreamWriterResponse) WriteToH1(res *h1.Response) error {
+func (s StreamWriterResponse) WriteToH1(res *h1engine.Response) error {
 	status := s.Status
 	if status == 0 {
 		status = http.StatusOK
@@ -213,7 +213,7 @@ func (r SSEResponse) WithHeader(key, val string) SSEResponse {
 }
 
 // WriteToH1 configures SSE headers and binds SSESender for direct H1 delivery.
-func (r SSEResponse) WriteToH1(res *h1.Response) error {
+func (r SSEResponse) WriteToH1(res *h1engine.Response) error {
 	res.StatusCode = http.StatusOK
 	res.Headers.Set(header.ContentType, "text/event-stream")
 	res.Headers.Set(header.CacheControl, "no-cache")

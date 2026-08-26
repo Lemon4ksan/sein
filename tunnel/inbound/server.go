@@ -120,7 +120,7 @@ func (srv *Server) Serve(ctx context.Context, ln net.Listener) error {
 }
 
 func (srv *Server) handleConn(ctx context.Context, conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	br := bufio.NewReader(conn)
 
