@@ -7,6 +7,7 @@ package metadata
 
 import (
 	"context"
+	"net/http"
 	"strings"
 )
 
@@ -53,10 +54,18 @@ func (md MD) Append(k string, vals ...string) {
 	md[k] = append(md[k], vals...)
 }
 
-// Delete removes the values for a given key.
+// Delete removes the values for key.
 func (md MD) Delete(k string) {
-	k = strings.ToLower(k)
-	delete(md, k)
+	delete(md, strings.ToLower(k))
+}
+
+// CopyToHTTP copies all metadata key-value pairs into the provided http.Header.
+func (md MD) CopyToHTTP(dst http.Header) {
+	for k, vals := range md {
+		for _, val := range vals {
+			dst.Add(k, val)
+		}
+	}
 }
 
 // New creates an MD from a given key-value map.

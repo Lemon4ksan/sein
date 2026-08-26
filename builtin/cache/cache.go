@@ -170,13 +170,8 @@ func New(opts ...Option) (sein.Middleware, Store) {
 				age := int(time.Since(entry.createdAt).Seconds())
 				resp := sein.OK[any](entry.bodyBytes).
 					WithStatus(entry.status).
+					WithHeaders(entry.headers).
 					WithHeader(header.Age, fmt.Sprintf("%d", age))
-
-				for k, vv := range entry.headers {
-					for _, v := range vv {
-						resp = resp.WithHeader(k, v)
-					}
-				}
 
 				if cfg.CacheHeader {
 					resp = resp.WithHeader("X-Cache", "HIT")

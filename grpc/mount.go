@@ -36,11 +36,7 @@ func (g grpcResponder) WriteToH1(res *h1engine.Response) error {
 	g.srv.ServeHTTP(rec, httpReq)
 
 	res.StatusCode = rec.Code
-	for k, vv := range rec.Header() {
-		for _, v := range vv {
-			res.Headers.Add(k, v)
-		}
-	}
+	res.Headers.AddFromHTTP(rec.Header())
 	res.Body = append(res.Body[:0], rec.Body.Bytes()...)
 
 	return nil

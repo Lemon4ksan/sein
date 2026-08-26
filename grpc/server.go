@@ -274,11 +274,7 @@ func (s *Server) handleUnary(
 	h.Set("Content-Type", "application/grpc")
 	h.Set("Grpc-Status", strconv.Itoa(int(codes.OK)))
 	h.Set("Grpc-Message", "")
-	for k, vals := range sm.Header {
-		for _, val := range vals {
-			h.Add(k, val)
-		}
-	}
+	sm.Header.CopyToHTTP(h)
 
 	// 2. Set trailers before writing body (Go net/http trailer mechanism)
 	h.Set("Trailer", "Grpc-Status, Grpc-Message")
@@ -294,11 +290,7 @@ func (s *Server) handleUnary(
 	}
 
 	// 4. Set final trailers
-	for k, vals := range sm.Trailer {
-		for _, val := range vals {
-			h.Add(k, val)
-		}
-	}
+	sm.Trailer.CopyToHTTP(h)
 }
 
 func (s *Server) handleStream(
@@ -329,22 +321,17 @@ func (s *Server) handleStream(
 
 	st := status.Convert(err)
 
-	// Finalize stream trailers
+	if !ss.headerSent {
+		ss.writeHeaderLocked()
+	}
+
 	h := w.Header()
 	h.Set("Grpc-Status", strconv.Itoa(int(st.Code())))
 	if msg := st.Message(); msg != "" {
 		h.Set("Grpc-Message", url.QueryEscape(msg))
 	}
-	for k, vals := range ss.trailerMD {
-		for _, val := range vals {
-			h.Add(k, val)
-		}
-	}
-	for k, vals := range sm.Trailer {
-		for _, val := range vals {
-			h.Add(k, val)
-		}
-	}
+	ss.trailerMD.CopyToHTTP(h)
+	sm.Trailer.CopyToHTTP(h)
 }
 
 // Stop stops the gRPC server. It immediately closes all open connections and listeners.

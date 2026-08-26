@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/lemon4ksan/foundation/codec/json"
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 
@@ -16,16 +17,21 @@ import (
 	"github.com/lemon4ksan/sein/internal/fast/h3engine"
 )
 
+// copyHTTPHeaders copies all key-value pairs from src into dst.
+func copyHTTPHeaders(dst, src http.Header) {
+	for k, vv := range src {
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
+	}
+}
+
 // serializePayload resolves any return value into an HTTP status code, headers, and body bytes.
 func serializePayload(result any) (statusCode int, headers http.Header, body []byte, cookies []*http.Cookie, err error) {
 	statusCode = http.StatusOK
 
 	if holder, ok := result.(ResponseHolder); ok {
-		statusCode = holder.StatusCode()
-		if statusCode == 0 {
-			statusCode = http.StatusOK
-		}
-
+		statusCode = generic.Coalesce(holder.StatusCode(), http.StatusOK)
 		headers = holder.ResponseHeaders()
 		if headers == nil {
 			headers = make(http.Header)
@@ -83,11 +89,7 @@ func (s *Server) serializeH1Result(res *h1engine.Response, result any) error {
 	}
 
 	res.StatusCode = status
-	for k, vv := range headers {
-		for _, v := range vv {
-			res.Headers.Add(k, v)
-		}
-	}
+	res.Headers.AddFromHTTP(headers)
 	res.Cookies = append(res.Cookies, cookies...)
 	res.Body = body
 
@@ -104,11 +106,7 @@ func (s *Server) serializeH2Result(res *h2engine.ServerResponse, result any) err
 	if res.Headers == nil {
 		res.Headers = make(http.Header, len(headers))
 	}
-	for k, vv := range headers {
-		for _, v := range vv {
-			res.Headers.Add(k, v)
-		}
-	}
+	copyHTTPHeaders(res.Headers, headers)
 	res.Body = body
 
 	return nil
@@ -124,11 +122,7 @@ func (s *Server) serializeH3Result(res *h3engine.ServerResponse, result any) err
 	if res.Headers == nil {
 		res.Headers = make(http.Header, len(headers))
 	}
-	for k, vv := range headers {
-		for _, v := range vv {
-			res.Headers.Add(k, v)
-		}
-	}
+	copyHTTPHeaders(res.Headers, headers)
 	res.Body = body
 
 	return nil

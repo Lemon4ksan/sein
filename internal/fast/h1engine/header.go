@@ -52,6 +52,15 @@ func (h *Headers) Add(key, val string) {
 	h.entries = append(h.entries, HeaderEntry{Key: key, Value: val})
 }
 
+// AddFromHTTP copies all header key-value pairs from an http.Header map.
+func (h *Headers) AddFromHTTP(src map[string][]string) {
+	for k, vv := range src {
+		for _, v := range vv {
+			h.entries = append(h.entries, HeaderEntry{Key: k, Value: v})
+		}
+	}
+}
+
 // Get retrieves the first value associated with key (case-insensitive ASCII).
 func (h *Headers) Get(key string) string {
 	for i := range h.entries {

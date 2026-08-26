@@ -5,13 +5,13 @@
 package sein
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/lemon4ksan/foundation/codec/json"
 	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 
@@ -60,12 +60,7 @@ func (s StreamWriterResponse) WriteToH1(res *h1engine.Response) error {
 		res.Headers.Set(header.ContentType, s.ContentType)
 	}
 
-	for k, vv := range s.Headers {
-		for _, v := range vv {
-			res.Headers.Add(k, v)
-		}
-	}
-
+	res.Headers.AddFromHTTP(s.Headers)
 	res.StreamWriter = s.WriterFunc
 
 	return nil
@@ -77,12 +72,7 @@ func (s StreamWriterResponse) WriteResponse(w http.ResponseWriter) error {
 		w.Header().Set(header.ContentType, s.ContentType)
 	}
 
-	for k, vv := range s.Headers {
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
-
+	copyHTTPHeaders(w.Header(), s.Headers)
 	w.WriteHeader(generic.Coalesce(s.Status, http.StatusOK))
 
 	flusher, _ := w.(http.Flusher)
@@ -210,11 +200,7 @@ func (r SSEResponse) WriteToH1(res *h1engine.Response) error {
 	res.Headers.Set(header.CacheControl, "no-cache")
 	res.Headers.Set(header.Connection, "keep-alive")
 
-	for k, vv := range r.Headers {
-		for _, v := range vv {
-			res.Headers.Add(k, v)
-		}
-	}
+	res.Headers.AddFromHTTP(r.Headers)
 
 	res.StreamWriter = func(w io.Writer) error {
 		if r.StreamFunc != nil {
@@ -233,12 +219,7 @@ func (r SSEResponse) WriteResponse(w http.ResponseWriter) error {
 	w.Header().Set(header.CacheControl, "no-cache")
 	w.Header().Set(header.Connection, "keep-alive")
 
-	for k, vv := range r.Headers {
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
-
+	copyHTTPHeaders(w.Header(), r.Headers)
 	w.WriteHeader(http.StatusOK)
 
 	flusher, _ := w.(http.Flusher)

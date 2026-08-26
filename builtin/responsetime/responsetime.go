@@ -62,13 +62,8 @@ func New(opts ...Option) sein.Middleware {
 			if holder, ok := res.(sein.ResponseHolder); ok {
 				resp := sein.OK[any](holder.ResponseBody()).
 					WithStatus(holder.StatusCode()).
+					WithHeaders(holder.ResponseHeaders()).
 					WithHeader(cfg.Header, durationStr)
-
-				for k, vv := range holder.ResponseHeaders() {
-					for _, v := range vv {
-						resp = resp.WithHeader(k, v)
-					}
-				}
 
 				if cfg.ServerTiming {
 					resp = resp.WithHeader("Server-Timing", fmt.Sprintf("total;dur=%.2f", float64(latency.Nanoseconds())/1e6))

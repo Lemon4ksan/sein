@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/foundation/codec/json"
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 
@@ -64,19 +65,10 @@ func (r Response[T]) ResponseCookies() []*http.Cookie {
 
 // WriteToH1 serializes the response directly into an h1.Response with zero net/http allocations.
 func (r Response[T]) WriteToH1(res *h1engine.Response) error {
-	for k, vv := range r.Headers {
-		for _, v := range vv {
-			res.Headers.Add(k, v)
-		}
-	}
-
+	res.Headers.AddFromHTTP(r.Headers)
 	res.Cookies = append(res.Cookies, r.Cookies...)
 
-	status := r.Status
-	if status == 0 {
-		status = http.StatusOK
-	}
-
+	status := generic.Coalesce(r.Status, http.StatusOK)
 	res.StatusCode = status
 
 	if status == http.StatusNoContent || status == http.StatusNotModified {
@@ -100,7 +92,7 @@ func (r Response[T]) WriteToH1(res *h1engine.Response) error {
 			res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
 		}
 
-		res.Body = append(res.Body, v...)
+		res.Body = append(res.Body, bytesconv.S2B(v)...)
 
 		return nil
 
@@ -122,22 +114,13 @@ func (r Response[T]) WriteToH1(res *h1engine.Response) error {
 
 // WriteResponse serializes the response to the given http.ResponseWriter.
 func (r Response[T]) WriteResponse(w http.ResponseWriter) error {
-	// Write headers
-	for k, vv := range r.Headers {
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
+	copyHTTPHeaders(w.Header(), r.Headers)
 
-	// Write cookies
 	for _, c := range r.Cookies {
 		http.SetCookie(w, c)
 	}
 
-	status := r.Status
-	if status == 0 {
-		status = http.StatusOK
-	}
+	status := generic.Coalesce(r.Status, http.StatusOK)
 
 	// 204 No Content or 304 Not Modified
 	if status == http.StatusNoContent || status == http.StatusNotModified {
@@ -188,6 +171,21 @@ func (r Response[T]) WithHeader(key, value string) Response[T] {
 	}
 
 	r.Headers.Set(key, value)
+
+	return r
+}
+
+// WithHeaders merges all key-value pairs from headers into the response.
+func (r Response[T]) WithHeaders(headers http.Header) Response[T] {
+	if len(headers) == 0 {
+		return r
+	}
+
+	if r.Headers == nil {
+		r.Headers = make(http.Header, len(headers))
+	}
+
+	copyHTTPHeaders(r.Headers, headers)
 
 	return r
 }
