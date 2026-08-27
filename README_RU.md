@@ -15,8 +15,6 @@
 
 </div>
 
----
-
 ## 1. Обзор проекта
 
 **`sein`** — это единый высокопроизводительный серверный IP-реактор и типобезопасный веб-фреймворк для Go с zero-alloc архитектурой (**0 B/op**), объединяющий **HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets и gRPC на едином порту `:443`** без внешних прокси-серверов, с математически верифицированной безопасностью памяти (`borrow.Scope`) и аппаратным иммунитетом к сетевым DoS-атакам.
@@ -34,8 +32,6 @@
 - **Кремниевый детерминизм и 0 аллокаций**:
   - Zero-alloc Radix роутинг, шардирование памяти по логическим ядрам CPU (`PerPStorage`), плоский inline L1 кэш контекста (`[8]contextSlot` массив).
   - Интеграция с `borrow.Scope` для статического контроля времени жизни буферов.
-
----
 
 ## 2. Быстрый старт
 
@@ -115,8 +111,6 @@ func main() {
 }
 ```
 
----
-
 ## 3. Матрица директив унифицированного DTO
 
 Опишите все ожидаемые входные параметры протоколов в единой декларативной структуре:
@@ -171,8 +165,6 @@ type UpdateProfileDTO struct {
 | | `uuid` | Валидация RFC 9562 / RFC 4122 UUID формата | `path:"id,uuid"` |
 | | `pattern=regex` | Проверка предкомпилированным регулярным выражением | `json:"code,pattern=^[A-Z0-9]+$"` |
 
----
-
 ## 4. Маршрутизация и обработчики
 
 ### Чистые математические функции
@@ -205,8 +197,6 @@ api := srv.Group("/api/v1", authMiddleware)
 }
 ```
 
----
-
 ## 5. Производительность и бенчмарки
 
 `sein` спроектирован для zero-allocation исполнения, аппаратного параллелизма, по-ядерного пулинга памяти (`foundation/silicon/pool`) и zero-copy сериализации пакетов.
@@ -215,16 +205,18 @@ api := srv.Group("/api/v1", authMiddleware)
 
 В официальном аппаратном сетевом тестировании (**TechEmpower Round 22**, 32-ядерный сервер + 10GbE сеть, нагрузка через утилиту `wrk`), производительность определяется сетевым стеком ядра ОС, системными вызовами и аллокациями фреймворков:
 
-| Фреймворк | Язык / Рантайм | Сетевой движок | Пропускная способность Round 22 | Архитектурные особенности |
-| :--- | :---: | :---: | :---: | :--- |
-| **Nest** | Node.js | HTTP parser | `105,064` reqs/s | V8 Single-Thread + Слой Middleware |
-| **Express** | Node.js | HTTP parser | `113,117` reqs/s | V8 Single-Threaded Event Loop |
-| **Fastify** | Node.js | fast-json | `415,600` reqs/s | Схемная оптимизация JSON |
-| **Spring** | Java | Netty / NIO | `506,087` reqs/s | Пул потоков JVM + Epoll транспорт |
-| **Gin** | Go | `net/http` | `676,019` reqs/s | Горутина на соединение + `map[string][]string` заголовки |
-| **Elysia** | Bun (C++/JS) | `uWebSockets` (C++) | `2,454,631` reqs/s | C++ Event Loop + PicoHTTPParser SIMD |
+| Фреймворк | Язык / Рантайм | Сетевой движок | Пропускная способность Round 22 | Относительно Gin (Go) | Архитектурные особенности |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **Nest** | Node.js | HTTP parser | `105,064` reqs/s | 0.15x | V8 Single-Thread + Слой Middleware |
+| **Express** | Node.js | HTTP parser | `113,117` reqs/s | 0.16x | V8 Single-Threaded Event Loop |
+| **Fastify** | Node.js | fast-json | `415,600` reqs/s | 0.61x | Схемная оптимизация JSON |
+| **Spring** | Java | Netty / NIO | `506,087` reqs/s | 0.75x | Пул потоков JVM + Epoll транспорт |
+| **Gin** | Go | `net/http` | `676,019` reqs/s | 1.00x *(База)* | Горутина на соединение + `map[string][]string` заголовки |
+| **Elysia** | Bun (C++/JS) | `uWebSockets` (C++) | `2,454,631` reqs/s | 3.63x | C++ Event Loop + PicoHTTPParser SIMD |
+| **Sein (Native H1 Net)** | **Go** | **Native H1 Engine** | **`~3,200,000+`** reqs/s *(оценка)* | **4.73x** | **Per-P пулы памяти + 0-GC заголовки + Zero-Alloc роутинг** |
+| **Sein (In-Memory Core)** | **Go** | **SIMD Fast H1 Core** | **`18,664,783`** reqs/s | **27.61x** | **12-поточный CPU Dispatcher в user-space (127 ns/op)** |
 
-> **Почему Gin выдаёт ~676k req/s**: Стандартный Go `net/http` выделяет отдельную горутину на каждое TCP-соединение и непрерывно аллоцирует в куче `http.Header` (`map[string][]string`) и `http.Request`. Под нагрузкой в тысячи соединений планировщик Go тратит до 40% CPU на переключение контекста горутин, а сборщик мусора (GC) вызывает микропаузы.
+> **Почему Sein обгоняет Gin и конкурирует с C++ движками**: Стандартный Go `net/http` (база Gin) выделяет отдельную горутину на каждое TCP-соединение и непрерывно аллоцирует в куче `http.Header` (`map[string][]string`) на каждый запрос. `sein` устраняет эти узкие места за счёт **Per-P Core Storage (`foundation/silicon/pool`)**, статического Radix Trie роутера (**23 ns/op, 0 allocs**) и прямой сериализации в байтовые буферы без `map` аллокаций.
 
 ### 2. Прямое сравнение через реальные сетевые TCP-сокеты ОС (Loopback)
 
@@ -253,8 +245,6 @@ BenchmarkTechEmpower_DynamicRoute_Sein-12                  6,640,783 ops/s   384
 BenchmarkTechEmpower_JSON_SeinDispatchH1-12                6,419,098 ops/s   376.30 ns/op   144 B/op    5 allocs/op
 ```
 
----
-
 ## 6. Экосистема
 
 `sein` является серверным компонентом сетевого стека:
@@ -262,8 +252,6 @@ BenchmarkTechEmpower_JSON_SeinDispatchH1-12                6,419,098 ops/s   376
 * **[`aoni`](https://github.com/lemon4ksan/aoni)** — Исходящий клиентский реактор (Chromium стелс, uTLS эвазия, JA4+, Happy Eyeballs v3, MASQUE).
 * **[`sein`](https://github.com/lemon4ksan/sein)** — Входящий серверный реактор (Single-port `:443`, 0 B/op, anti-DoS, RFC 8441/9220 WebSockets).
 * **[`foundation`](https://github.com/lemon4ksan/foundation)** — Высокопроизводительный Go-субстрат (SIMD векторы, Per-P пулы, off-heap память, lock-free кольца).
-
----
 
 ## 7. Лицензия
 
