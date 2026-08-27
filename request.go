@@ -28,6 +28,7 @@ import (
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 	"github.com/lemon4ksan/foundation/silicon/pool"
 
+	"github.com/lemon4ksan/sein/internal/binder"
 	"github.com/lemon4ksan/sein/internal/compress"
 	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 )
@@ -454,6 +455,26 @@ func (r *Request) Cookies() []*http.Cookie {
 
 	return cookies
 }
+
+// Bind ingests the request path parameters, query parameters, headers, and payload into dest using the precompiled binder.
+func (r *Request) Bind(dest any) error {
+	if dest == nil {
+		return errors.New("sein: dest cannot be nil")
+	}
+
+	val := reflect.ValueOf(dest)
+	if val.Kind() != reflect.Pointer || val.IsNil() {
+		return errors.New("sein: dest must be a non-nil pointer")
+	}
+
+	adapter := newRequestAdapter(r)
+	if err := binder.IngestType(adapter, val.Type().Elem(), dest); err != nil {
+		return mapBinderError(err)
+	}
+
+	return nil
+}
+
 
 // BearerToken extracts the token from the "Authorization: Bearer <token>" header.
 func (r *Request) BearerToken() (string, bool) {

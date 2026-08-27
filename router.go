@@ -300,6 +300,7 @@ func (r *Router) AllowedMethods(path string) []string {
 		}
 	}
 
+	slices.Sort(allowed)
 	return allowed
 }
 
