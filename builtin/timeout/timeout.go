@@ -71,6 +71,7 @@ func New(opts ...Option) sein.Middleware {
 
 			select {
 			case <-ctx.Done():
+				req.Detach()
 				return cfg.ErrorHandler(req)
 			case r := <-done:
 				return r.res, r.err

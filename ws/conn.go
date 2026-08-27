@@ -305,9 +305,30 @@ func (c *Conn) WriteMessage(messageType int, data []byte) error {
 	return c.bw.Flush()
 }
 
-// WriteText sends a UTF-8 text message.
+// WriteText sends a UTF-8 text message with zero memory allocations.
 func (c *Conn) WriteText(text string) error {
-	return c.WriteMessage(OpText, []byte(text))
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	if c.isClosed.Load() {
+		return ErrConnectionClosed
+	}
+
+	var hdrBuf [10]byte
+
+	n := BuildFrameHeader(hdrBuf[:], OpText, len(text), false, false)
+
+	if _, err := c.bw.Write(hdrBuf[:n]); err != nil {
+		return err
+	}
+
+	if len(text) > 0 {
+		if _, err := c.bw.WriteString(text); err != nil {
+			return err
+		}
+	}
+
+	return c.bw.Flush()
 }
 
 // WriteJSON serializes v into JSON and sends it as a Text message.

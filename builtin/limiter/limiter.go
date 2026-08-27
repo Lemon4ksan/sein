@@ -87,6 +87,15 @@ func (rl *rateLimiter) allow(key string) (allowed bool, remaining, resetInSecs i
 
 		b, exists = shard.entries[key]
 		if !exists {
+			// Periodic cleanup if shard map grows beyond capacity
+			if len(shard.entries) > 2048 {
+				for k, v := range shard.entries {
+					if now >= atomic.LoadInt64(&v.resetTime) {
+						delete(shard.entries, k)
+					}
+				}
+			}
+
 			b = &bucket{
 				count:     1,
 				resetTime: now + rl.windowSecs,
@@ -144,7 +153,7 @@ func New(config ...Config) sein.Middleware {
 	keyGen := cfg.KeyGenerator
 	if keyGen == nil {
 		keyGen = func(req *sein.Request) string {
-			return req.RemoteAddr()
+			return req.ClientIP()
 		}
 	}
 

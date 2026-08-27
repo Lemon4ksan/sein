@@ -18,6 +18,15 @@ type DomainError interface {
 	ErrorCode() string
 }
 
+// ErrorMap represents a domain error translation pair from an underlying sentinel error to a DomainError.
+type ErrorMap struct {
+	From error
+	To   DomainError
+}
+
+// Errors represents a list of [ErrorMap] declarations enabling clean composite literals.
+type Errors []ErrorMap
+
 // DefinedError is an immutable, zero-allocation domain error sentinel.
 type DefinedError struct {
 	status  int

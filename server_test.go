@@ -268,9 +268,11 @@ func TestGroupMapError(t *testing.T) {
 	api := app.Group("/api/v1")
 	users := api.Group("/users")
 
-	// Map errors locally on group
-	users.MapError(errDatabaseDuplicate, sein.Conflict("USER_EXISTS", "User already registered")).
-		MapError(errUserNotFound, sein.NotFound("USER_NOT_FOUND", "User entity not found"))
+	// Map errors locally on group using clean tuple table
+	users.MapErrors(sein.Errors{
+		{errDatabaseDuplicate, sein.Conflict("USER_EXISTS", "User already registered")},
+		{errUserNotFound, sein.NotFound("USER_NOT_FOUND", "User entity not found")},
+	}...)
 
 	users.Post("/create", func(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
 		if req.Email == "duplicate@example.com" {

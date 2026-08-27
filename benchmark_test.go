@@ -39,6 +39,27 @@ func BenchmarkH1_SIMDRequestParsing(b *testing.B) {
 	}
 }
 
+func BenchmarkH1_NativeResponseWriteTo(b *testing.B) {
+	res := &h1engine.Response{
+		StatusCode: 200,
+		Body:       []byte("Hello, World!"),
+		Headers:    h1engine.NewHeadersWithCapacity(4),
+	}
+
+	var buf bytes.Buffer
+	buf.Grow(512)
+	bw := bufio.NewWriter(&buf)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		buf.Reset()
+		bw.Reset(&buf)
+		_ = res.WriteTo(bw, true, false)
+	}
+}
+
 func BenchmarkH1_ResponseSerialization(b *testing.B) {
 	res := sein.OK([]byte("Hello, World!"))
 

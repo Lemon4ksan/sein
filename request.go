@@ -62,6 +62,7 @@ type Request struct {
 	slotCount     int
 	overflow      map[reflect.Type]any
 	bodyMu        sync.Mutex
+	orphaned      bool
 }
 
 var requestStorage = pool.NewPerPStorage(func() *Request {
@@ -89,14 +90,20 @@ func (r *Request) reset() {
 	r.multipartForm = nil
 	r.params.Reset()
 	r.slotCount = 0
+	r.orphaned = false
 	if r.overflow != nil {
 		clear(r.overflow)
 	}
 }
 
+// Detach prevents this Request from being returned to the memory pool upon completion (e.g. when abandoned to a background goroutine on timeout).
+func (r *Request) Detach() {
+	r.orphaned = true
+}
+
 // Release returns the Request and its internal borrow arena to the sharded per-P memory pool.
 func (r *Request) Release() {
-	if r == nil {
+	if r == nil || r.orphaned {
 		return
 	}
 	if r.scope != nil {

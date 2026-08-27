@@ -54,7 +54,7 @@ type TraceHook func(t *TraceInfo)
 //
 // # Thread Safety
 //
-// 100% thread-safe for concurrent request execution. Configuration methods (e.g. [Server.Use], [Server.GET])
+// 100% thread-safe for concurrent request execution. Configuration methods (e.g. [Server.Use], [Server.Get])
 // should be called during server setup prior to calling [Server.Listen].
 //
 // # Example
@@ -168,6 +168,27 @@ func (s *Server) MapError(target error, domainErr DomainError) *Server {
 
 		return nil, false
 	})
+
+	return s
+}
+
+// MapErrors registers multiple domain error mapping pairs at once.
+func (s *Server) MapErrors(mappings ...ErrorMap) *Server {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, m := range mappings {
+		target := m.From
+		domainErr := m.To
+
+		s.errorMappers = append(s.errorMappers, func(err error) (DomainError, bool) {
+			if errors.Is(err, target) {
+				return domainErr, true
+			}
+
+			return nil, false
+		})
+	}
 
 	return s
 }

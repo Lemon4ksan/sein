@@ -368,19 +368,19 @@ func (hp *HPACK) search(hf *HeaderField) (n uint64, fullMatch bool) {
 		}
 
 		n = idx
-	}
+	} else {
+		for i, hf2 := range staticTable {
+			if !bytes.Equal(hf.key, hf2.key) {
+				continue
+			}
 
-	for i, hf2 := range staticTable {
-		if !bytes.Equal(hf.key, hf2.key) {
-			continue
-		}
+			if bytes.Equal(hf.value, hf2.value) {
+				return uint64(i + 1), true
+			}
 
-		if bytes.Equal(hf.value, hf2.value) {
-			return uint64(i + 1), true
-		}
-
-		if n == 0 {
-			n = uint64(i + 1)
+			if n == 0 {
+				n = uint64(i + 1)
+			}
 		}
 	}
 

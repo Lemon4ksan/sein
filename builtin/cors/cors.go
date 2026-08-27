@@ -196,14 +196,9 @@ func matchOrigin(pattern, origin string) bool {
 		return true
 	}
 
-	if !strings.Contains(pattern, "*") {
-		return false
+	if prefix, suffix, found := strings.Cut(pattern, "*"); found {
+		return strings.HasPrefix(origin, prefix) && strings.HasSuffix(origin, suffix)
 	}
 
-	parts := strings.Split(pattern, "*")
-	if len(parts) != 2 {
-		return false
-	}
-
-	return strings.HasPrefix(origin, parts[0]) && strings.HasSuffix(origin, parts[1])
+	return false
 }

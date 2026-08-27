@@ -89,6 +89,15 @@ func (g *Group) MapError(target error, domainErr DomainError) *Group {
 	return g
 }
 
+// MapErrors registers multiple scoped domain error mapping pairs at once on this group.
+func (g *Group) MapErrors(mappings ...ErrorMap) *Group {
+	for _, m := range mappings {
+		g.MapError(m.From, m.To)
+	}
+
+	return g
+}
+
 // MapErrorFunc registers a custom scoped error mapping predicate for all routes in this group.
 func (g *Group) MapErrorFunc(fn ErrorMapper) *Group {
 	g.errorMappers = append(g.errorMappers, fn)
@@ -129,6 +138,12 @@ func (gs *GuardScope) MountModule(m Module) *GuardScope {
 // MapError registers a scoped error mapping on the guard scope.
 func (gs *GuardScope) MapError(target error, domainErr DomainError) *GuardScope {
 	gs.Group.MapError(target, domainErr)
+	return gs
+}
+
+// MapErrors registers multiple scoped error mappings on the guard scope.
+func (gs *GuardScope) MapErrors(mappings ...ErrorMap) *GuardScope {
+	gs.Group.MapErrors(mappings...)
 	return gs
 }
 
