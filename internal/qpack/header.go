@@ -17,3 +17,13 @@ type HeaderField struct {
 func (hf HeaderField) IsPseudo() bool {
 	return strings.HasPrefix(hf.Name, ":")
 }
+
+// Size returns the size of the header field in bytes as defined by RFC 9204 (name + value + 32 bytes overhead).
+func (hf HeaderField) Size() int {
+	return len(hf.Name) + len(hf.Value) + 32
+}
+
+// String formats the header field as "Name: Value".
+func (hf HeaderField) String() string {
+	return hf.Name + ": " + hf.Value
+}

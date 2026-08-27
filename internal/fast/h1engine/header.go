@@ -118,6 +118,9 @@ func (h *Headers) ParseHeaderLine(line []byte) bool {
 	}
 
 	key := bytesconv.B2S(trimASCIIByteSpaces(line[:colonIdx]))
+	if len(key) == 0 {
+		return false
+	}
 	val := bytesconv.B2S(trimASCIIByteSpaces(line[colonIdx+1:]))
 
 	h.entries = append(h.entries, HeaderEntry{Key: key, Value: val})

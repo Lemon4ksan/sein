@@ -88,3 +88,27 @@ func TestAppendFrameHeaders(t *testing.T) {
 		t.Fatalf("appendDataHeader failed: type=%d, len=%d, err=%v", fType, pLen, err)
 	}
 }
+
+func TestDecodeSettings_ReservedH2Settings_And_Errors(t *testing.T) {
+	// Test reserved H2 settings IDs: 0x00, 0x02, 0x03, 0x04, 0x05
+	for _, reservedID := range []uint64{0x00, 0x02, 0x03, 0x04, 0x05} {
+		var payload []byte
+		payload = quicvarint.Append(payload, reservedID)
+		payload = quicvarint.Append(payload, 100)
+
+		r := bytes.NewReader(payload)
+		_, err := DecodeSettings(r, uint64(len(payload)))
+		if err != ErrH3SettingsError {
+			t.Fatalf("expected ErrH3SettingsError for reserved setting %d, got %v", reservedID, err)
+		}
+	}
+
+	// Truncated payload
+	var trunc []byte
+	trunc = quicvarint.Append(trunc, SettingMaxFieldSectionSize)
+	r := bytes.NewReader(trunc)
+	_, err := DecodeSettings(r, uint64(len(trunc)))
+	if err == nil {
+		t.Fatal("expected error on truncated settings payload")
+	}
+}

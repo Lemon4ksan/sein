@@ -103,3 +103,69 @@ func TestQPACK_Varint(t *testing.T) {
 		}
 	}
 }
+
+func TestQPACK_DecodeFields_And_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	// 1. DecodeFields with empty data
+	dec := NewDecoder()
+	err := dec.DecodeFields(nil, func(hf HeaderField) bool { return true })
+	require.NoError(t, err)
+
+	// 2. DecodeFields with valid roundtrip
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf)
+	_ = enc.WriteField(HeaderField{Name: ":status", Value: "200"})
+	_ = enc.WriteField(HeaderField{Name: "custom-header", Value: "custom-val"})
+
+	var fields []HeaderField
+	err = dec.DecodeFields(buf.Bytes(), func(hf HeaderField) bool {
+		fields = append(fields, hf)
+		return true
+	})
+	require.NoError(t, err)
+	require.Len(t, fields, 2)
+	assert.Equal(t, ":status", fields[0].Name)
+	assert.Equal(t, "200", fields[0].Value)
+	assert.Equal(t, "custom-header", fields[1].Name)
+	assert.Equal(t, "custom-val", fields[1].Value)
+
+	// 3. Early exit from DecodeFields emit callback
+	var earlyField HeaderField
+	_ = dec.DecodeFields(buf.Bytes(), func(hf HeaderField) bool {
+		earlyField = hf
+		return false // stop early
+	})
+	assert.Equal(t, ":status", earlyField.Name)
+
+	// 4. HeaderField properties
+	hf := HeaderField{Name: "content-type", Value: "application/json"}
+	assert.False(t, hf.IsPseudo())
+	assert.Equal(t, 32+len("content-type")+len("application/json"), hf.Size())
+	assert.Contains(t, hf.String(), "content-type: application/json")
+
+	// 5. Varint error edge cases
+	_, _, err = readInt(8, []byte{})
+	assert.Error(t, err)
+
+	// Truncated multi-byte varint
+	_, _, err = readInt(4, []byte{0x0F})
+	assert.Error(t, err)
+
+	// Invalid static index
+	badIndexedField := []byte{0x00, 0x00, 0x80 | 0x40 | 0x3F, 0xFF, 0xFF}
+	err = dec.DecodeFields(badIndexedField, func(hf HeaderField) bool { return true })
+	assert.Error(t, err)
+
+	// 6. Encoder Reset and nil writer
+	var buf2 bytes.Buffer
+	enc.Reset(&buf2)
+	err = enc.WriteField(HeaderField{Name: "x-custom-short", Value: "val"})
+	require.NoError(t, err)
+	assert.NotEmpty(t, buf2.Bytes())
+
+	// 7. Decode literal name without Huffman
+	encNil := NewEncoder(nil)
+	_ = encNil.WriteField(HeaderField{Name: "short", Value: "v"})
+	assert.NotEmpty(t, encNil.buf)
+}

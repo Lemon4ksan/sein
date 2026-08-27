@@ -224,6 +224,41 @@ func signPayload(input []byte, key any, alg string) ([]byte, error) {
 
 		return rsa.SignPKCS1v15(rand.Reader, privKey, hashType, hashed)
 
+	case ES256, ES384, ES512:
+		privKey, ok := key.(*ecdsa.PrivateKey)
+		if !ok {
+			return nil, errors.New("jwt: ECDSA signing requires *ecdsa.PrivateKey")
+		}
+
+		var (
+			hashed []byte
+			keyLen int
+		)
+		switch alg {
+		case ES256:
+			sum := sha256.Sum256(input)
+			hashed = sum[:]
+			keyLen = 32
+		case ES384:
+			sum := sha512.Sum384(input)
+			hashed = sum[:]
+			keyLen = 48
+		case ES512:
+			sum := sha512.Sum512(input)
+			hashed = sum[:]
+			keyLen = 66
+		}
+
+		r, s, err := ecdsa.Sign(rand.Reader, privKey, hashed)
+		if err != nil {
+			return nil, err
+		}
+
+		sig := make([]byte, keyLen*2)
+		r.FillBytes(sig[:keyLen])
+		s.FillBytes(sig[keyLen:])
+		return sig, nil
+
 	case EdDSA:
 		privKey, ok := key.(ed25519.PrivateKey)
 		if !ok {

@@ -298,3 +298,87 @@ func TestAcquireFrameInArena(t *testing.T) {
 		}
 	})
 }
+
+func TestErrorCodes_And_Settings(t *testing.T) {
+	// ErrorCode strings
+	for _, code := range []ErrorCode{
+		NoError, ProtocolError, InternalError, FlowControlError,
+		SettingsTimeoutError, StreamClosedError, FrameSizeError,
+		RefusedStreamError, StreamCanceled, CompressionError,
+		ConnectionError, EnhanceYourCalm, InadequateSecurity, HTTP11Required,
+	} {
+		if code.String() == "Unknown" || code.Error() == "" {
+			t.Fatalf("expected valid name for code %d", code)
+		}
+	}
+
+	// Unknown error code
+	unknown := ErrorCode(999)
+	if unknown.String() != "Unknown" || unknown.Error() != "999" {
+		t.Fatalf("expected Unknown for error code 999")
+	}
+
+	// Error formatting
+	err := NewError(ProtocolError, "stream error")
+	if err.Code() != ProtocolError || err.Debug() != "stream error" {
+		t.Fatalf("unexpected error fields: %v", err)
+	}
+	if err.Error() != "ProtocolError: stream error" {
+		t.Fatalf("unexpected formatted error: %s", err.Error())
+	}
+	if !err.Is(ProtocolError) {
+		t.Fatal("expected err.Is(ProtocolError) to be true")
+	}
+
+	goAwayErr := NewGoAwayError(EnhanceYourCalm, "flood detected")
+	if goAwayErr.frameType != FrameGoAway {
+		t.Fatalf("expected FrameGoAway frame type")
+	}
+
+	rstErr := NewResetStreamError(StreamCanceled, "canceled by user")
+	if rstErr.frameType != FrameResetStream {
+		t.Fatalf("expected FrameResetStream frame type")
+	}
+
+	// Settings frame serialization roundtrip
+	st := &Settings{}
+	st.SetHeaderTableSize(8192)
+	st.SetMaxConcurrentStreams(250)
+	st.SetMaxWindowSize(1 << 20)
+	st.SetMaxFrameSize(32768)
+	st.SetMaxHeaderListSize(65536)
+	st.SetPush(false)
+	st.SetEnableConnect(true)
+
+	if st.HeaderTableSize() != 8192 || st.MaxConcurrentStreams() != 250 {
+		t.Fatalf("settings getter mismatch")
+	}
+
+	stCopy := &Settings{}
+	st.CopyTo(stCopy)
+	if stCopy.HeaderTableSize() != 8192 || !stCopy.EnableConnect() {
+		t.Fatalf("settings CopyTo mismatch")
+	}
+
+	fhOut := AcquireFrameHeader()
+	fhOut.SetStream(0)
+	fhOut.SetBody(st)
+	defer ReleaseFrameHeader(fhOut)
+
+	var buf bytes.Buffer
+	bw := bufio.NewWriter(&buf)
+	_, _ = fhOut.WriteTo(bw)
+	_ = bw.Flush()
+
+	br := bufio.NewReader(&buf)
+	fhIn, err2 := ReadFrameFrom(br)
+	if err2 != nil {
+		t.Fatalf("failed reading settings frame: %v", err2)
+	}
+	defer ReleaseFrameHeader(fhIn)
+
+	parsedST, ok := fhIn.Body().(*Settings)
+	if !ok || parsedST.HeaderTableSize() != 8192 || parsedST.MaxConcurrentStreams() != 250 {
+		t.Fatalf("deserialized settings mismatch: %v", parsedST)
+	}
+}

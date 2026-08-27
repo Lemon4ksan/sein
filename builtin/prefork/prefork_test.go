@@ -12,6 +12,7 @@ import (
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
 
+	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/builtin/prefork"
 )
 
@@ -46,4 +47,13 @@ func TestOptions(t *testing.T) {
 
 	prefork.WithGracefulTimeout(3 * time.Second)(&cfg)
 	assert.Equal(t, 3*time.Second, cfg.GracefulTimeout)
+}
+
+func TestRun_ChildMode(t *testing.T) {
+	_ = os.Setenv(prefork.EnvPreforkChild, "1")
+	defer func() { _ = os.Unsetenv(prefork.EnvPreforkChild) }()
+
+	app := sein.New()
+	err := prefork.Run(app, "invalid:::99999")
+	assert.Error(t, err)
 }

@@ -9,6 +9,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -88,4 +90,54 @@ func TestFavicon_InMemoryData(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
+}
+
+func TestFavicon_Options_And_File(t *testing.T) {
+	fakeIcon := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	tmpFile := t.TempDir() + "/custom.ico"
+	require.NoError(t, os.WriteFile(tmpFile, fakeIcon, 0o600))
+
+	app := sein.New()
+	favicon.Register(app,
+		favicon.WithFile(tmpFile),
+		favicon.WithURL("/icon.png"),
+		favicon.WithCacheControl("public, max-age=86400"),
+	)
+
+	app.Get("/data", func(ctx context.Context) (string, error) {
+		return "data", nil
+	})
+
+	// 1. GET /icon.png
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/icon.png", nil)
+	app.ServeHTTP(rec1, req1)
+	assert.Equal(t, http.StatusOK, rec1.Code)
+	assert.Equal(t, "image/x-icon", rec1.Header().Get(header.ContentType))
+	assert.Equal(t, "public, max-age=86400", rec1.Header().Get(header.CacheControl))
+	assert.Equal(t, fakeIcon, rec1.Body.Bytes())
+
+	// 2. GET /data passthrough
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/data", nil)
+	app.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusOK, rec2.Code)
+}
+
+func TestFavicon_Middleware(t *testing.T) {
+	app := sein.New()
+	app.Use(favicon.New(favicon.WithURL("/favicon.ico")))
+	app.Get("/*path", func(ctx context.Context) (string, error) {
+		return "fallback", nil
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)
+	app.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+
+	recPost := httptest.NewRecorder()
+	reqPost := httptest.NewRequest(http.MethodPost, "/favicon.ico", nil)
+	app.ServeHTTP(recPost, reqPost)
+	assert.Equal(t, http.StatusMethodNotAllowed, recPost.Code)
 }
