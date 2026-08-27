@@ -23,9 +23,34 @@ func Derive[T any](s *Server, fn ResolverFunc[T]) *Server {
 	return s
 }
 
-// RegisterResolver is an alias for Derive.
+// Provide is an alias for [Derive] to register a request-scoped dependency provider.
+func Provide[T any](s *Server, fn ResolverFunc[T]) *Server {
+	return Derive[T](s, fn)
+}
+
+// RegisterResolver is an alias for [Derive].
 func RegisterResolver[T any](s *Server, fn ResolverFunc[T]) *Server {
 	return Derive[T](s, fn)
+}
+
+// DeriveMiddleware creates a middleware that resolves dependency T and injects it into the request context.
+func DeriveMiddleware[T any](fn ResolverFunc[T]) Middleware {
+	t := reflect.TypeOf((*T)(nil)).Elem()
+	return func(next RawHandler) RawHandler {
+		return func(req *Request) (any, error) {
+			val, err := fn(req)
+			if err != nil {
+				return nil, err
+			}
+			req.ctx = context.WithValue(req.Context(), t, val)
+			return next(req)
+		}
+	}
+}
+
+// ProvideMiddleware is an alias for [DeriveMiddleware].
+func ProvideMiddleware[T any](fn ResolverFunc[T]) Middleware {
+	return DeriveMiddleware[T](fn)
 }
 
 func findServer(r RouteBuilder) *Server {
