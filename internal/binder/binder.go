@@ -5,8 +5,11 @@
 package binder
 
 import (
+	"encoding"
 	"errors"
+	"fmt"
 	"reflect"
+	"strconv"
 	"unsafe"
 )
 
@@ -24,7 +27,7 @@ var (
 // Ingest executes the precompiled field steps across dest with zero runtime switch or allocations.
 func Ingest[T any](req RequestView, dest *T) error {
 	if dest == nil {
-		return errors.New("dest must be a non-nil pointer to struct")
+		return errors.New("dest must be a non-nil pointer")
 	}
 
 	if ing, ok := any(dest).(Ingestable); ok {
@@ -39,6 +42,14 @@ func Ingest[T any](req RequestView, dest *T) error {
 
 	desc := GetDescriptor(typ)
 	if desc == nil {
+		bound, err := bindScalar(req, dest)
+		if err != nil {
+			return err
+		}
+		if bound {
+			return RunValidation(dest)
+		}
+
 		if len(req.Body()) > 0 {
 			if err := req.BindJSON(dest); err != nil {
 				return err
@@ -62,4 +73,57 @@ func Ingest[T any](req RequestView, dest *T) error {
 	}
 
 	return RunValidation(dest)
+}
+
+func bindScalar[T any](req RequestView, dest *T) (bool, error) {
+	raw := req.Param("")
+	if raw == "" {
+		return false, nil
+	}
+
+	if unmarshaler, ok := any(dest).(encoding.TextUnmarshaler); ok {
+		if err := unmarshaler.UnmarshalText([]byte(raw)); err != nil {
+			return true, fmt.Errorf("invalid scalar format: %w", err)
+		}
+		return true, nil
+	}
+
+	typ := reflect.TypeFor[T]()
+	k := typ.Kind()
+
+	switch k {
+	case reflect.String:
+		reflect.ValueOf(dest).Elem().SetString(raw)
+		return true, nil
+	case reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8, reflect.Uint:
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return true, fmt.Errorf("invalid unsigned integer: %w", err)
+		}
+		reflect.ValueOf(dest).Elem().SetUint(v)
+		return true, nil
+	case reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8, reflect.Int:
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return true, fmt.Errorf("invalid integer: %w", err)
+		}
+		reflect.ValueOf(dest).Elem().SetInt(v)
+		return true, nil
+	case reflect.Bool:
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			return true, fmt.Errorf("invalid boolean: %w", err)
+		}
+		reflect.ValueOf(dest).Elem().SetBool(v)
+		return true, nil
+	case reflect.Float64, reflect.Float32:
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return true, fmt.Errorf("invalid float: %w", err)
+		}
+		reflect.ValueOf(dest).Elem().SetFloat(v)
+		return true, nil
+	}
+
+	return false, nil
 }

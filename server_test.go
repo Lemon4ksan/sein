@@ -281,15 +281,11 @@ func TestGroupMapError(t *testing.T) {
 		return UserResponse{ID: 1, Name: req.Name}, nil
 	})
 
-	type testIDDTO struct {
-		ID int `path:"id"`
-	}
-
-	users.GetWith("/:id", func(ctx context.Context, req testIDDTO) (UserResponse, error) {
-		if req.ID == 999 {
+	users.GetWith("/:id", func(ctx context.Context, id uint64) (UserResponse, error) {
+		if id == 999 {
 			return UserResponse{}, errUserNotFound
 		}
-		return UserResponse{ID: uint64(req.ID), Name: "Alice"}, nil
+		return UserResponse{ID: id, Name: "Alice"}, nil
 	})
 
 	// Test 1: Conflict from group error mapping

@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/lemon4ksan/foundation/net/http/rodata"
-	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 	"github.com/lemon4ksan/foundation/silicon/pool"
 )
 
@@ -71,8 +70,8 @@ func (hf *HeaderField) Reset() {
 
 // Size calculates the entry size in octets as len(name) + len(value) + 32 overhead (RFC 7541 §4.1).
 func (hf *HeaderField) Size() uint32       { return uint32(len(hf.key) + len(hf.value) + 32) } //nolint:gosec
-func (hf *HeaderField) Key() string        { return bytesconv.B2S(hf.key) }
-func (hf *HeaderField) Value() string      { return bytesconv.B2S(hf.value) }
+func (hf *HeaderField) Key() string        { return string(hf.key) }
+func (hf *HeaderField) Value() string      { return string(hf.value) }
 func (hf *HeaderField) KeyBytes() []byte   { return hf.key }
 func (hf *HeaderField) ValueBytes() []byte { return hf.value }
 func (hf *HeaderField) IsPseudo() bool     { return len(hf.key) > 0 && hf.key[0] == ':' }

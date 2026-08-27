@@ -39,6 +39,13 @@ func newRequestAdapter(req *Request) *requestAdapter {
 }
 
 func (a *requestAdapter) Param(name string) string {
+	if name == "" {
+		if a.req.params.count > 0 {
+			return a.req.params.slots[0].Value
+		}
+		return ""
+	}
+
 	return string(a.req.Param(name))
 }
 
