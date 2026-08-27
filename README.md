@@ -13,7 +13,7 @@ _«In backends, madness is the default. Let **sein** be your light of sanity.»_
 [![Single-Port Matrix](https://img.shields.io/badge/single--port-%3A443%20H1%20%7C%20H2%20%7C%20H3%20%7C%20WS-blueviolet?style=flat-square)](#protocols--features)
 [![Ecosystem](https://img.shields.io/badge/ecosystem-foundation-orange?style=flat-square)](https://github.com/lemon4ksan/foundation)
 
-**sein** is a server network stack and web framework for Go. It supports running HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets, and gRPC on a single port `:443` without reverse proxies, with contract-first DTO binding and buffer pooling.
+**sein** is a server network stack and web framework for Go. It supports running HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets, and gRPC on a single port `:443` without reverse proxies, with universal handler compilation, contract-first DTO binding, and table-driven domain error mapping.
 
 #### English • [Русский](README_RU.md) • [Architecture Concept](docs/CONCEPT.md)
 
@@ -29,7 +29,7 @@ go get github.com/lemon4ksan/sein
 
 ## Quickstart
 
-Type-safe handlers with declarative validation and DTO binding:
+Universal handlers, declarative validation, and zero-glue domain routing:
 
 ```go
 package main
@@ -65,7 +65,11 @@ func main() {
 		sein.WithMethodNotAllowed(true),
 	)
 
-	// 2. Handler: (ctx, DTO) -> (Result, error)
+	// 2. Universal Handlers: pass pure Go functions directly
+	srv.Get("/health", func(ctx context.Context) (string, error) {
+		return "OK", nil
+	})
+
 	srv.Post("/users/:id", func(ctx context.Context, req UpdateUserDTO) (*UserResponse, error) {
 		return &UserResponse{
 			ID:       req.UserID.String(),
@@ -75,12 +79,7 @@ func main() {
 		}, nil
 	})
 
-	// 3. Simple GET route: (ctx) -> (Result, error)
-	srv.Get("/health", func(ctx context.Context) (string, error) {
-		return "OK", nil
-	})
-
-	// 4. Server-Sent Events (SSE)
+	// 3. Server-Sent Events (SSE)
 	srv.Get("/events", func(ctx context.Context) (sein.SSEResponse, error) {
 		return sein.SSE(func(sse *sein.SSESender) error {
 			_ = sse.SendJSON("connected", map[string]string{"status": "online"})
@@ -93,28 +92,68 @@ func main() {
 }
 ```
 
-## Request Handling & DTOs
+## Universal Routing & Zero-Glue Architecture
 
-### 1. Handler Functions
-Handlers in `sein` receive a context and an optional DTO struct, returning a typed response:
+`sein` features a universal handler compiler: standard HTTP verbs (`Get`, `Post`, `Patch`, `Delete`, `Put`) accept any pure Go function signature without requiring framework-specific glue wrappers.
+
+### 1. Supported Handler Signatures
+
+| Purpose | Handler Signature | Data Extraction | Return Value |
+| :--- | :--- | :--- | :--- |
+| **Action** | `func(ctx context.Context) error` | None (context only) | `200 OK` on `nil` |
+| **Query** | `func(ctx context.Context) (Res, error)` | None (context only) | JSON response |
+| **Direct Path ID** | `func(ctx context.Context, id ID) (Res, error)` | URL parameter `:id` (Snowflake, uint64, string, UUID) | JSON response |
+| **Path ID Action** | `func(ctx context.Context, id ID) error` | URL parameter `:id` | `200 OK` on `nil` |
+| **DTO Payload** | `func(ctx context.Context, req DTO) (Res, error)` | DTO (JSON Body / Query / Headers) | JSON response |
+| **ID + Body Payload** | `func(ctx context.Context, id ID, req DTO) (Res, error)` | `:id` from URL + JSON Body | JSON response |
+| **Raw Request** | `func(req *sein.Request) (Res, error)` | Direct request access | JSON response |
+
+### 2. Zero-Glue Controllers (Service Method Promotion)
+
+Because `sein` handler signatures match standard domain service signatures, you can embed services into modules/controllers and mount methods directly:
 
 ```go
-// GET with DTO: (ctx, DTO) -> (Result, error)
-srv.GetWith("/users/:id", func(ctx context.Context, req GetUserDTO) (*User, error) {
-	return userService.Find(ctx, req.ID)
-})
+type BotController struct {
+	*bots.Service // Auto-promotes Create, Get, Delete, Update, etc.
+}
 
-// POST with custom HTTP status: (ctx, DTO) -> (Response[T], error)
-srv.Post("/users", func(ctx context.Context, req CreateUserDTO) (sein.Response[*User], error) {
-	user, err := userService.Create(ctx, req)
-	if err != nil {
-		return sein.Response[*User]{}, err
-	}
-	return sein.Created(user), nil
+func (c *BotController) Mount(g *sein.Group) {
+	// Table-driven domain error mapping
+	g.MapErrors(sein.Errors{
+		database.ErrNotFound:       ErrBotNotFound,
+		bots.ErrInvalidUserID:      ErrInvalidBotUserID,
+		bots.ErrActiveBot:          ErrBotActiveCannotDelete,
+		bots.ErrAlreadyLinkedAccount: ErrBotAlreadyLinkedAccount,
+	})
+
+	// Direct service method binding with ZERO forwarding shims
+	g.Post("", c.Create)
+	g.Get("/:id", c.Get)
+	g.Patch("/:id", c.Update)       // Takes (ctx, id Snowflake, payload UpdatePayload)
+	g.Patch("/:id/type", c.SetType)
+	g.Delete("/:id", c.Delete)
+	g.Post("/:id/disconnect", c.Disconnect) // Takes (ctx, id Snowflake) error
+}
+```
+
+### 3. Table-Driven Domain Error Mapping
+
+Map internal sentinel errors to typed HTTP domain errors declaratively using `sein.Errors`:
+
+```go
+var (
+	ErrUserNotFound = sein.NotFound("USER_NOT_FOUND", "User does not exist")
+	ErrBusyEmail    = sein.Conflict("EMAIL_EXISTS", "Email is already taken")
+)
+
+users.MapErrors(sein.Errors{
+	database.ErrNotFound:  ErrUserNotFound,
+	users.ErrEmailTaken:   ErrBusyEmail,
 })
 ```
 
-### 2. DTO Structs & Validation
+## DTO Structs & Declarative Validation
+
 Declare all request inputs (path, query, headers, cookies, JSON payload) in a unified DTO struct with automatic validation and sanitization:
 
 ```go
@@ -166,7 +205,8 @@ type UpdateProfileDTO struct {
 
 </details>
 
-### 3. Configuration Presets
+## Configuration Presets
+
 Quick initialization of middleware stacks for production:
 
 ```go
@@ -208,128 +248,6 @@ BenchmarkTechEmpower_RealTCPSocket_Sein-12       3,056 ns/op   178 B/op    7 all
 BenchmarkTechEmpower_RealTCPSocket_StdHTTP-12    4,716 ns/op  2,252 B/op   20 allocs/op   (~210,000 req/s per socket)
 ```
 
-### 3. Pipeline Microbenchmarks (In-Memory)
+## License
 
-```text
-BenchmarkRouter_StaticMatch-12         51,912,769 ops/s     23.22 ns/op      0 B/op    0 allocs/op
-BenchmarkRouter_ParamMatch-12          16,181,142 ops/s     79.65 ns/op      0 B/op    0 allocs/op
-BenchmarkH1_NativeResponseWriteTo-12   21,291,486 ops/s     55.09 ns/op     24 B/op    1 allocs/op
-BenchmarkServer_PlaintextRoute-12       5,161,924 ops/s    227.10 ns/op    120 B/op    4 allocs/op
-BenchmarkZstd_Compress_Fastest-12       2,582,224 ops/s    489.50 ns/op    528 B/op    2 allocs/op
-BenchmarkZstd_Compress_Default-12       1,000,000 ops/s   1038.00 ns/op    528 B/op    2 allocs/op
-BenchmarkGzip_Compress_Default-12         228,234 ops/s   5533.00 ns/op    592 B/op    4 allocs/op
-```
-
-## Protocols & Features
-
-<details>
-<summary><b>1. Single-Port Protocol Matrix (Port :443)</b></summary>
-
-Serve HTTP/1.1, HTTP/2 (ALPN `h2`), HTTP/3 (QUIC ALPN `h3`), and WebSockets on a single listening socket:
-
-```go
-// Starts HTTP/1.1, HTTP/2, WebSockets over TCP, and native HTTP/3 (QUIC) over UDP on port :443
-err := srv.ListenAndServeUniversal(":443", "cert.pem", "key.pem")
-```
-
-</details>
-
-<details>
-<summary><b>2. WebSockets over HTTP/2 & HTTP/3 Extended CONNECT (RFC 8441 & RFC 9220)</b></summary>
-
-Multiplex WebSocket streams inside a single HTTP/2 or HTTP/3 connection:
-
-```go
-import "github.com/lemon4ksan/sein/ws"
-
-hub := ws.NewHub()
-srv.Get("/ws", ws.Upgrade(hub, ws.Config{
-	EnableCompression: true,
-	CheckOrigin: func(r *sein.Request) bool { return true },
-}))
-```
-
-</details>
-
-<details>
-<summary><b>3. Automated OpenAPI 3.1 & Swagger UI Generation</b></summary>
-
-Generate documentation from route definitions and DTO structs:
-
-```go
-import (
-	"github.com/lemon4ksan/sein/x/openapi"
-	"github.com/lemon4ksan/sein/x/swaggerui"
-)
-
-// Generates OpenAPI 3.1 spec and mounts Swagger UI
-spec := openapi.Generate(srv, openapi.Info{
-	Title:   "API",
-	Version: "1.0.0",
-})
-srv.Get("/docs/openapi.json", openapi.Handler(spec))
-srv.Get("/docs", swaggerui.New("/docs/openapi.json"))
-```
-
-</details>
-
-<details>
-<summary><b>4. Reverse SSH Tunneling & MASQUE</b></summary>
-
-Built-in SSH reverse gateway and MASQUE IPAM bridge:
-
-```go
-import "github.com/lemon4ksan/sein/tunnel/ssh/reverse"
-
-gateway := reverse.NewGateway(reverse.Config{
-	Addr:   ":2222",
-	Domain: "tunnel.example.com",
-})
-go gateway.ListenAndServe()
-```
-
-</details>
-
-<details>
-<summary><b>5. Socket.IO v5 / Engine.IO v4 Server</b></summary>
-
-Socket.IO v5 server with room support and typed events:
-
-```go
-import "github.com/lemon4ksan/sein/x/socketio"
-
-sio := socketio.NewServer()
-chat := sio.Of("/chat")
-chat.OnConnect(func(s *socketio.Socket) {
-	s.On("message", func(data []byte) {
-		chat.To("general").Emit("message", data)
-	})
-})
-srv.Get("/socket.io/*", sio.Handler())
-srv.Post("/socket.io/*", sio.Handler())
-```
-
-</details>
-
-## Architecture
-
-1. **Per-P Memory Pools (`pool.PerPStorage`)**:
-   Core-local sharded memory pools eliminate mutex contention under high multi-threaded load.
-2. **SIMD & SWAR Vector Acceleration**:
-   Vectorized delimiter scanning for HTTP/1.1 header blocks and string matching via `foundation/silicon/simd`.
-3. **Flat SSA Inlinable Pipelines**:
-   Route resolution and request dispatching designed with AST budget $<40$ nodes, allowing full compiler inlining. Cold paths (404/405/redirects) are isolated into `//go:noinline` helper routines for maximum L1i instruction cache locality.
-4. **Memory Safety & Lifetime Scoping (`borrow.Scope`)**:
-   Lazy arena scopes allow zero-copy slice usage with compile-time safety and automatic pooling.
-5. **Array Context Storage (`[8]contextSlot`)**:
-   Hot request context values stored in a compact array aligned with L1 CPU cache lines (0 B/op fast-path lookups).
-
-## Related Projects
-
-* **[`aoni`](https://github.com/lemon4ksan/aoni)** — Outbound client stack (Chromium TLS/JA4+ emulation, Happy Eyeballs v3, MASQUE).
-* **[`sein`](https://github.com/lemon4ksan/sein)** — Inbound server framework (Single-port `:443`, RFC 8441/9220 WebSockets).
-* **[`foundation`](https://github.com/lemon4ksan/foundation)** — Low-level primitives (SIMD, Per-P pools, lock-free structures).
-
-## 📄 License
-
-Licensed under the **BSD 3-Clause License**. See [LICENSE](LICENSE) for details.
+`sein` is distributed under the [BSD-3-Clause License](LICENSE).
