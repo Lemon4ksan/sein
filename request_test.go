@@ -178,3 +178,19 @@ func TestRequest_Defer(t *testing.T) {
 		t.Fatalf("expected LIFO order [3, 2, 1], got %v", executionOrder)
 	}
 }
+
+func TestContext_Defer(t *testing.T) {
+	httpReq, _ := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+	req := sein.NewRequest(httpReq, nil)
+	ctx := req.Context()
+
+	executed := false
+	sein.Defer(ctx, func() {
+		executed = true
+	})
+
+	req.Release()
+	if !executed {
+		t.Fatal("expected deferred callback from ctx to be executed on Release")
+	}
+}

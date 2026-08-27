@@ -304,13 +304,44 @@ func (r *Request) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, errors.New("sein: hijacking not supported on this connection")
 }
 
-// Context returns the request-scoped context.
+type requestContextKey struct{}
+
+// Context returns the request-scoped context, automatically binding the active *Request.
 func (r *Request) Context() context.Context {
 	if r.ctx == nil {
-		return context.Background()
+		r.ctx = context.WithValue(context.Background(), requestContextKey{}, r)
+		return r.ctx
+	}
+	if r.ctx.Value(requestContextKey{}) == nil {
+		r.ctx = context.WithValue(r.ctx, requestContextKey{}, r)
 	}
 
 	return r.ctx
+}
+
+// FromContext retrieves the active *Request associated with the context, if present.
+func FromContext(ctx context.Context) (*Request, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	req, ok := ctx.Value(requestContextKey{}).(*Request)
+	return req, ok
+}
+
+// Defer registers a deferred callback on the active request in ctx to execute after the HTTP response is sent.
+// If ctx does not contain an active HTTP request (e.g. cron or worker), fn is executed asynchronously in a goroutine.
+func Defer(ctx context.Context, fn func()) {
+	if fn == nil {
+		return
+	}
+	if req, ok := FromContext(ctx); ok && req != nil {
+		req.Defer(fn)
+		return
+	}
+	go func() {
+		defer func() { _ = recover() }()
+		fn()
+	}()
 }
 
 // WithContext sets a new context on the request.
