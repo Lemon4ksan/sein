@@ -172,18 +172,18 @@ func (s *Server) MapError(target error, domainErr DomainError) *Server {
 	return s
 }
 
-// MapErrors registers multiple domain error mapping pairs at once.
-func (s *Server) MapErrors(mappings ...ErrorMap) *Server {
+// MapErrors registers multiple domain error mappings from a dictionary table at once.
+func (s *Server) MapErrors(errorsMap Errors) *Server {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, m := range mappings {
-		target := m.From
-		domainErr := m.To
+	for target, domainErr := range errorsMap {
+		t := target
+		d := domainErr
 
 		s.errorMappers = append(s.errorMappers, func(err error) (DomainError, bool) {
-			if errors.Is(err, target) {
-				return domainErr, true
+			if errors.Is(err, t) {
+				return d, true
 			}
 
 			return nil, false
@@ -346,6 +346,13 @@ func (s *Server) resolveRoute(
 		return h, "", "", 0, http.StatusOK
 	}
 
+	return s.resolveRouteSlow(method, path)
+}
+
+//go:noinline
+func (s *Server) resolveRouteSlow(
+	method, path string,
+) (handler RawHandler, allowHeader, redirectURL string, redirectCode, status int) {
 	// 1. Check Trailing Slash Auto-Correction (RFC 9110 §15.4.2)
 	if s.RedirectTrailingSlash {
 		if altPath, ok := s.router.FindTrailingSlash(method, path); ok {
@@ -393,116 +400,27 @@ func (s *Server) DispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 
 // dispatchH1 is the native zero-net/http request pipeline dispatcher.
 func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) error {
-	sw := timekit.StartStopwatch()
 	var params Params
 	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h1Req.Method, h1Req.Path, &params)
 	if redirectURL != "" {
-		res := Redirect(redirectURL, redirectCode)
-		return s.serializeH1Result(h1Res, res)
+		return s.serializeH1Result(h1Res, Redirect(redirectURL, redirectCode))
 	}
 
 	req := NewH1Request(h1Req, &params)
 	defer req.Release()
-	defer func() {
-		s.triggerAfterResponse(req, h1Res.StatusCode, sw.Elapsed())
-	}()
 
-	if handler == nil && s.SkipUnmatchedRoutes {
-		if status == http.StatusMethodNotAllowed {
-			if allowHeader != "" {
-				h1Res.Headers.Set(header.Allow, allowHeader)
-			}
-
-			s.writeH1Error(h1Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
-
-			return nil
-		}
-
-		s.writeH1Error(h1Res, ErrNotFound("route not found"))
-
-		return nil
+	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {
+		sw := timekit.StartStopwatch()
+		defer func() {
+			s.triggerAfterResponse(req, h1Res.StatusCode, sw.Elapsed())
+		}()
 	}
 
-	origPath := h1Req.Path
-	origMethod := h1Req.Method
-
-	var result any
-	var err error
-
-	if len(s.middlewares) == 0 && handler != nil {
-		result, err = handler(req)
-	} else {
-		baseHandler := handler
-		if baseHandler == nil {
-			baseHandler = func(r *Request) (any, error) {
-				if r.Path() != origPath || r.Method() != origMethod {
-					r.params.Reset()
-					newHandler, newAllow, newRedir, newRedirCode, newStatus := s.resolveRoute(r.Method(), r.Path(), &r.params)
-					if newRedir != "" {
-						return Redirect(newRedir, newRedirCode), nil
-					}
-
-					if newHandler != nil {
-						return newHandler(r)
-					}
-
-					if newStatus == http.StatusMethodNotAllowed {
-						if newAllow != "" {
-							h1Res.Headers.Set(header.Allow, newAllow)
-						}
-
-						return nil, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
-					}
-				}
-
-				if status == http.StatusMethodNotAllowed {
-					if allowHeader != "" {
-						h1Res.Headers.Set(header.Allow, allowHeader)
-					}
-
-					return nil, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
-				}
-
-				return nil, ErrNotFound("route not found")
-			}
-		} else {
-			actualHandler := baseHandler
-			baseHandler = func(r *Request) (any, error) {
-				if r.Path() != origPath || r.Method() != origMethod {
-					r.params.Reset()
-					newHandler, newAllow, newRedir, newRedirCode, newStatus := s.resolveRoute(r.Method(), r.Path(), &r.params)
-					if newRedir != "" {
-						return Redirect(newRedir, newRedirCode), nil
-					}
-
-					if newHandler != nil {
-						return newHandler(r)
-					}
-
-					if newStatus == http.StatusMethodNotAllowed {
-						if newAllow != "" {
-							h1Res.Headers.Set(header.Allow, newAllow)
-						}
-
-						return nil, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
-					}
-
-					return nil, ErrNotFound("route not found")
-				}
-
-				return actualHandler(r)
-			}
-		}
-
-		finalHandler := baseHandler
-		for _, v := range slices.Backward(s.middlewares) {
-			finalHandler = v(finalHandler)
-		}
-
-		// Execute handler
-		result, err = finalHandler(req)
+	if handler == nil {
+		return s.handleUnmatchedH1(req, h1Req.Method, h1Req.Path, h1Res, status, allowHeader)
 	}
 
+	result, err := s.executePipeline(req, handler)
 	if err != nil {
 		s.writeH1Error(h1Res, err)
 		return nil
@@ -521,50 +439,27 @@ func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 
 // DispatchH2 is the native zero-net/http HTTP/2 stream request dispatcher.
 func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.ServerResponse) error {
-	sw := timekit.StartStopwatch()
 	var params Params
 	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h2Req.Method, h2Req.Path, &params)
 	if redirectURL != "" {
-		res := Redirect(redirectURL, redirectCode)
-		return s.serializeH2Result(h2Res, res)
-	}
-
-	if handler == nil {
-		if status == http.StatusMethodNotAllowed {
-			if h2Res.Headers == nil {
-				h2Res.Headers = make(http.Header)
-			}
-
-			if allowHeader != "" {
-				h2Res.Headers.Set(header.Allow, allowHeader)
-			}
-
-			s.writeH2Error(h2Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
-
-			return nil
-		}
-
-		s.writeH2Error(h2Res, ErrNotFound("route not found"))
-
-		return nil
+		return s.serializeH2Result(h2Res, Redirect(redirectURL, redirectCode))
 	}
 
 	req := NewH2Request(h2Req.Method, h2Req.Path, h2Req.Authority, h2Req.RemoteAddr, h2Req.Headers, h2Req.Body, &params)
 	defer req.Release()
-	defer func() {
-		s.triggerAfterResponse(req, h2Res.StatusCode, sw.Elapsed())
-	}()
 
-	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
-	finalHandler := handler
-	if !s.SkipUnmatchedRoutes || (status != http.StatusNotFound && status != http.StatusMethodNotAllowed) {
-		for _, v := range slices.Backward(s.middlewares) {
-			finalHandler = v(finalHandler)
-		}
+	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {
+		sw := timekit.StartStopwatch()
+		defer func() {
+			s.triggerAfterResponse(req, h2Res.StatusCode, sw.Elapsed())
+		}()
 	}
 
-	// Execute handler
-	result, err := finalHandler(req)
+	if handler == nil {
+		return s.handleUnmatchedH2(h2Res, status, allowHeader)
+	}
+
+	result, err := s.executePipeline(req, handler)
 	if err != nil {
 		s.writeH2Error(h2Res, err)
 		return nil
@@ -575,54 +470,136 @@ func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.Serve
 
 // DispatchH3 is the native zero-net/http HTTP/3 stream request dispatcher.
 func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.ServerResponse) error {
-	sw := timekit.StartStopwatch()
 	var params Params
 	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h3Req.Method, h3Req.Path, &params)
 	if redirectURL != "" {
-		res := Redirect(redirectURL, redirectCode)
-		return s.serializeH3Result(h3Res, res)
-	}
-
-	if handler == nil {
-		if status == http.StatusMethodNotAllowed {
-			if h3Res.Headers == nil {
-				h3Res.Headers = make(http.Header)
-			}
-
-			if allowHeader != "" {
-				h3Res.Headers.Set(header.Allow, allowHeader)
-			}
-
-			s.writeH3Error(h3Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
-
-			return nil
-		}
-
-		s.writeH3Error(h3Res, ErrNotFound("route not found"))
-
-		return nil
+		return s.serializeH3Result(h3Res, Redirect(redirectURL, redirectCode))
 	}
 
 	req := NewH3Request(h3Req.Method, h3Req.Path, h3Req.Authority, h3Req.RemoteAddr, h3Req.Headers, h3Req.Body, &params)
 	defer req.Release()
-	defer func() {
-		s.triggerAfterResponse(req, h3Res.StatusCode, sw.Elapsed())
-	}()
 
-	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
-	finalHandler := handler
-	if !s.SkipUnmatchedRoutes || (status != http.StatusNotFound && status != http.StatusMethodNotAllowed) {
-		for _, v := range slices.Backward(s.middlewares) {
-			finalHandler = v(finalHandler)
-		}
+	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {
+		sw := timekit.StartStopwatch()
+		defer func() {
+			s.triggerAfterResponse(req, h3Res.StatusCode, sw.Elapsed())
+		}()
 	}
 
-	// Execute handler
-	result, err := finalHandler(req)
+	if handler == nil {
+		return s.handleUnmatchedH3(h3Res, status, allowHeader)
+	}
+
+	result, err := s.executePipeline(req, handler)
 	if err != nil {
 		s.writeH3Error(h3Res, err)
 		return nil
 	}
 
 	return s.serializeH3Result(h3Res, result)
+}
+
+func (s *Server) executePipeline(req *Request, handler RawHandler) (any, error) {
+	if len(s.middlewares) == 0 {
+		return handler(req)
+	}
+
+	h := handler
+	for _, m := range slices.Backward(s.middlewares) {
+		h = m(h)
+	}
+
+	return h(req)
+}
+
+//go:noinline
+func (s *Server) handleUnmatchedH1(req *Request, origMethod, origPath string, h1Res *h1engine.Response, status int, allowHeader string) error {
+	if !s.SkipUnmatchedRoutes && len(s.middlewares) > 0 {
+		h := func(r *Request) (any, error) {
+			return s.resolveUnmatched(r, origMethod, origPath, h1Res, status, allowHeader)
+		}
+		for _, m := range slices.Backward(s.middlewares) {
+			h = m(h)
+		}
+		result, err := h(req)
+		if err != nil {
+			s.writeH1Error(h1Res, err)
+			return nil
+		}
+		return s.serializeH1Result(h1Res, result)
+	}
+
+	if status == http.StatusMethodNotAllowed {
+		if allowHeader != "" {
+			h1Res.Headers.Set(header.Allow, allowHeader)
+		}
+		s.writeH1Error(h1Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+		return nil
+	}
+
+	s.writeH1Error(h1Res, ErrNotFound("route not found"))
+	return nil
+}
+
+//go:noinline
+func (s *Server) handleUnmatchedH2(h2Res *h2engine.ServerResponse, status int, allowHeader string) error {
+	if status == http.StatusMethodNotAllowed {
+		if h2Res.Headers == nil {
+			h2Res.Headers = make(http.Header)
+		}
+		if allowHeader != "" {
+			h2Res.Headers.Set(header.Allow, allowHeader)
+		}
+		s.writeH2Error(h2Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+		return nil
+	}
+
+	s.writeH2Error(h2Res, ErrNotFound("route not found"))
+	return nil
+}
+
+//go:noinline
+func (s *Server) handleUnmatchedH3(h3Res *h3engine.ServerResponse, status int, allowHeader string) error {
+	if status == http.StatusMethodNotAllowed {
+		if h3Res.Headers == nil {
+			h3Res.Headers = make(http.Header)
+		}
+		if allowHeader != "" {
+			h3Res.Headers.Set(header.Allow, allowHeader)
+		}
+		s.writeH3Error(h3Res, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+		return nil
+	}
+
+	s.writeH3Error(h3Res, ErrNotFound("route not found"))
+	return nil
+}
+
+func (s *Server) resolveUnmatched(r *Request, origMethod, origPath string, h1Res *h1engine.Response, status int, allowHeader string) (any, error) {
+	if r.Path() != origPath || r.Method() != origMethod {
+		r.params.Reset()
+		newHandler, newAllow, newRedir, newRedirCode, newStatus := s.resolveRoute(r.Method(), r.Path(), &r.params)
+		if newRedir != "" {
+			return Redirect(newRedir, newRedirCode), nil
+		}
+		if newHandler != nil {
+			return newHandler(r)
+		}
+		if newStatus == http.StatusMethodNotAllowed {
+			if newAllow != "" && h1Res != nil {
+				h1Res.Headers.Set(header.Allow, newAllow)
+			}
+			return nil, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		}
+		return nil, ErrNotFound("route not found")
+	}
+
+	if status == http.StatusMethodNotAllowed {
+		if allowHeader != "" && h1Res != nil {
+			h1Res.Headers.Set(header.Allow, allowHeader)
+		}
+		return nil, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+	}
+
+	return nil, ErrNotFound("route not found")
 }

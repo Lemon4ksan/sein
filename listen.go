@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"slices"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/timekit"
@@ -254,47 +253,31 @@ func (sw *statusWriter) WriteHeader(code int) {
 
 // ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib test recorders.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	sw := timekit.StartStopwatch()
-	swWriter := &statusWriter{ResponseWriter: w, statusCode: http.StatusOK}
 	var params Params
 	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(r.Method, r.URL.Path, &params)
 	if redirectURL != "" {
-		swWriter.Header().Set(header.Location, redirectURL)
-		swWriter.WriteHeader(redirectCode)
+		w.Header().Set(header.Location, redirectURL)
+		w.WriteHeader(redirectCode)
 		return
+	}
+
+	swWriter := &statusWriter{ResponseWriter: w, statusCode: http.StatusOK}
+	req := NewRequest(r, &params)
+	defer req.Release()
+
+	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {
+		sw := timekit.StartStopwatch()
+		defer func() {
+			s.triggerAfterResponse(req, swWriter.statusCode, sw.Elapsed())
+		}()
 	}
 
 	if handler == nil {
-		if status == http.StatusMethodNotAllowed {
-			if allowHeader != "" {
-				swWriter.Header().Set(header.Allow, allowHeader)
-			}
-
-			s.writeError(swWriter, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
-
-			return
-		}
-
-		s.writeError(swWriter, ErrNotFound("route not found"))
-
+		s.handleUnmatchedHTTP(swWriter, status, allowHeader)
 		return
 	}
 
-	req := NewRequest(r, &params)
-	defer req.Release()
-	defer func() {
-		s.triggerAfterResponse(req, swWriter.statusCode, sw.Elapsed())
-	}()
-
-	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
-	finalHandler := handler
-	if len(s.middlewares) > 0 && (!s.SkipUnmatchedRoutes || (status != http.StatusNotFound && status != http.StatusMethodNotAllowed)) {
-		for _, v := range slices.Backward(s.middlewares) {
-			finalHandler = v(finalHandler)
-		}
-	}
-
-	result, err := finalHandler(req)
+	result, err := s.executePipeline(req, handler)
 	if err != nil {
 		s.writeError(swWriter, err)
 		return
@@ -309,4 +292,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = OK(result).WriteResponse(swWriter)
+}
+
+//go:noinline
+func (s *Server) handleUnmatchedHTTP(w *statusWriter, status int, allowHeader string) {
+	if status == http.StatusMethodNotAllowed {
+		if allowHeader != "" {
+			w.Header().Set(header.Allow, allowHeader)
+		}
+		s.writeError(w, NewHTTPError(http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed"))
+		return
+	}
+
+	s.writeError(w, ErrNotFound("route not found"))
 }

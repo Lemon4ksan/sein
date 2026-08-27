@@ -109,24 +109,7 @@ func (res *Response) WriteTo(bw *bufio.Writer, keepAlive bool, flush bool) error
 
 	// 7. Streaming Body or Static Body
 	if res.StreamWriter != nil {
-		_ = bw.Flush()
-		cw := NewChunkedWriter(bw)
-		err := res.StreamWriter(cw)
-		closeErr := cw.Close()
-
-		if err != nil {
-			return err
-		}
-
-		if closeErr != nil {
-			return closeErr
-		}
-
-		if flush {
-			return bw.Flush()
-		}
-
-		return nil
+		return res.writeStreamBody(bw)
 	}
 
 	if len(res.Body) > 0 && status != http.StatusNoContent && status != http.StatusNotModified {
@@ -138,4 +121,22 @@ func (res *Response) WriteTo(bw *bufio.Writer, keepAlive bool, flush bool) error
 	}
 
 	return nil
+}
+
+//go:noinline
+func (res *Response) writeStreamBody(bw *bufio.Writer) error {
+	_ = bw.Flush()
+	cw := NewChunkedWriter(bw)
+	err := res.StreamWriter(cw)
+	closeErr := cw.Close()
+
+	if err != nil {
+		return err
+	}
+
+	if closeErr != nil {
+		return closeErr
+	}
+
+	return bw.Flush()
 }

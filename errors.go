@@ -24,8 +24,13 @@ type ErrorMap struct {
 	To   DomainError
 }
 
-// Errors represents a list of [ErrorMap] declarations enabling clean composite literals.
-type Errors []ErrorMap
+// E constructs an [ErrorMap] translation pair.
+func E(from error, to DomainError) ErrorMap {
+	return ErrorMap{From: from, To: to}
+}
+
+// Errors represents a dictionary table of error mappings (Target -> DomainError).
+type Errors map[error]DomainError
 
 // DefinedError is an immutable, zero-allocation domain error sentinel.
 type DefinedError struct {

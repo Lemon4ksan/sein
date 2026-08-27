@@ -89,10 +89,10 @@ func (g *Group) MapError(target error, domainErr DomainError) *Group {
 	return g
 }
 
-// MapErrors registers multiple scoped domain error mapping pairs at once on this group.
-func (g *Group) MapErrors(mappings ...ErrorMap) *Group {
-	for _, m := range mappings {
-		g.MapError(m.From, m.To)
+// MapErrors registers multiple scoped domain error mappings from a dictionary table at once.
+func (g *Group) MapErrors(errorsMap Errors) *Group {
+	for target, domainErr := range errorsMap {
+		g.MapError(target, domainErr)
 	}
 
 	return g
@@ -141,9 +141,9 @@ func (gs *GuardScope) MapError(target error, domainErr DomainError) *GuardScope 
 	return gs
 }
 
-// MapErrors registers multiple scoped error mappings on the guard scope.
-func (gs *GuardScope) MapErrors(mappings ...ErrorMap) *GuardScope {
-	gs.Group.MapErrors(mappings...)
+// MapErrors registers multiple scoped error mappings from an Errors table on the guard scope.
+func (gs *GuardScope) MapErrors(errorsMap Errors) *GuardScope {
+	gs.Group.MapErrors(errorsMap)
 	return gs
 }
 

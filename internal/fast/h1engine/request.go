@@ -213,6 +213,16 @@ func (r *Request) finishRequestRead(br *bufio.Reader, bw *bufio.Writer, maxBodyS
 	hasTE := r.Headers.Has(header.TransferEncoding)
 	hasCL := r.Headers.Has(header.ContentLength)
 
+	// Fast Path: no body payload (GET, HEAD, DELETE, OPTIONS)
+	if !hasTE && !hasCL {
+		return nil
+	}
+
+	return r.finishRequestBodyRead(br, bw, maxBodySize, hasTE, hasCL)
+}
+
+//go:noinline
+func (r *Request) finishRequestBodyRead(br *bufio.Reader, bw *bufio.Writer, maxBodySize int64, hasTE, hasCL bool) error {
 	// RFC 9112 §6.3 Item 3: If both Transfer-Encoding and Content-Length are present,
 	// Transfer-Encoding overrides Content-Length to mitigate Request Smuggling (RFC 9112 §11.2).
 	if hasTE && hasCL {
