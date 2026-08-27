@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -249,6 +250,94 @@ func BenchmarkTechEmpower_Parallel_Throughput(b *testing.B) {
 		for pb.Next() {
 			rw.Body.Reset()
 			app.ServeHTTP(rw, req)
+		}
+	})
+}
+
+// BenchmarkTechEmpower_RealTCPSocket_Sein measures real TCP loopback network socket throughput of Sein.
+func BenchmarkTechEmpower_RealTCPSocket_Sein(b *testing.B) {
+	app := sein.New()
+	app.Get("/plaintext", func(ctx context.Context) (string, error) {
+		return "Hello, World!", nil
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	addr := ln.Addr().String()
+	rawHTTP := []byte("GET /plaintext HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	b.RunParallel(func(pb *testing.PB) {
+		conn, err := net.Dial("tcp", addr)
+		if err != nil {
+			b.Error(err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		buf := make([]byte, 512)
+		for pb.Next() {
+			if _, err := conn.Write(rawHTTP); err != nil {
+				return
+			}
+			if _, err := conn.Read(buf); err != nil {
+				return
+			}
+		}
+	})
+}
+
+// BenchmarkTechEmpower_RealTCPSocket_StdHTTP measures real TCP loopback network socket throughput of net/http.
+func BenchmarkTechEmpower_RealTCPSocket_StdHTTP(b *testing.B) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/plaintext", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("Hello, World!"))
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	srv := &http.Server{Handler: mux}
+	go func() {
+		_ = srv.Serve(ln)
+	}()
+
+	addr := ln.Addr().String()
+	rawHTTP := []byte("GET /plaintext HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	b.RunParallel(func(pb *testing.PB) {
+		conn, err := net.Dial("tcp", addr)
+		if err != nil {
+			b.Error(err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		buf := make([]byte, 512)
+		for pb.Next() {
+			if _, err := conn.Write(rawHTTP); err != nil {
+				return
+			}
+			if _, err := conn.Read(buf); err != nil {
+				return
+			}
 		}
 	})
 }
