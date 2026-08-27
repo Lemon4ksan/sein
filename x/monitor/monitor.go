@@ -24,15 +24,15 @@ const DefaultPath = "/monitor"
 
 // StatsPayload represents the real-time server health metrics payload.
 type StatsPayload struct {
-	Timestamp      string  `json:"timestamp"`
-	Goroutines     int     `json:"goroutines"`
-	AllocMB        float64 `json:"alloc_mb"`
-	TotalAllocMB   float64 `json:"total_alloc_mb"`
-	SysMB          float64 `json:"sys_mb"`
-	NumGC          uint32  `json:"num_gc"`
-	GCCPUFraction  float64 `json:"gc_cpu_fraction"`
-	NumCPU         int     `json:"num_cpu"`
-	RequestsTotal  uint64  `json:"requests_total"`
+	Timestamp     string  `json:"timestamp"`
+	Goroutines    int     `json:"goroutines"`
+	AllocMB       float64 `json:"alloc_mb"`
+	TotalAllocMB  float64 `json:"total_alloc_mb"`
+	SysMB         float64 `json:"sys_mb"`
+	NumGC         uint32  `json:"num_gc"`
+	GCCPUFraction float64 `json:"gc_cpu_fraction"`
+	NumCPU        int     `json:"num_cpu"`
+	RequestsTotal uint64  `json:"requests_total"`
 }
 
 // Config configures the Monitor dashboard.

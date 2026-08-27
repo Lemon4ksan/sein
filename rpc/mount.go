@@ -46,7 +46,7 @@ func Mount(router sein.RouteBuilder, prefix string, service any, mw ...sein.Midd
 		method := typ.Method(i)
 		mTyp := method.Type
 
-		numIn := mTyp.NumIn()   // includes receiver at index 0
+		numIn := mTyp.NumIn() // includes receiver at index 0
 		numOut := mTyp.NumOut()
 
 		if numOut != 2 || !mTyp.Out(1).Implements(errorType) {

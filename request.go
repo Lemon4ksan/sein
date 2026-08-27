@@ -494,13 +494,12 @@ func (r *Request) Bind(dest any) error {
 	return nil
 }
 
-
 // BearerToken extracts the token from the "Authorization: Bearer <token>" header.
 func (r *Request) BearerToken() (string, bool) {
 	auth := r.Header(header.Authorization)
 
 	prefix := header.ValueBearer + " "
-	if token, ok :=strings.CutPrefix(auth, prefix); ok  {
+	if token, ok := strings.CutPrefix(auth, prefix); ok {
 		return strings.TrimSpace(token), true
 	}
 

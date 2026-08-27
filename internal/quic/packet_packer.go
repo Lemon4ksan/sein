@@ -207,8 +207,8 @@ func newPacketPacker(
 		framer:              framer,
 		acks:                acks,
 		// #nosec G404 -- Packet padding length randomizer
-		rand:                *rand.New(rand.NewPCG(binary.BigEndian.Uint64(b[:8]), binary.BigEndian.Uint64(b[8:]))),
-		pnManager:           packetNumberManager,
+		rand:      *rand.New(rand.NewPCG(binary.BigEndian.Uint64(b[:8]), binary.BigEndian.Uint64(b[8:]))),
+		pnManager: packetNumberManager,
 	}
 }
 

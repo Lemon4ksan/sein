@@ -168,4 +168,3 @@ func TestWS_Handle_WithDTO(t *testing.T) {
 		assert.Equal(t, 4003, closeCode)
 	})
 }
-

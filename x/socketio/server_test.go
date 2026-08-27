@@ -370,4 +370,3 @@ func TestTypedBindings(t *testing.T) {
 
 	ackWg.Wait()
 }
-

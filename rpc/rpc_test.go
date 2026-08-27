@@ -86,4 +86,3 @@ func TestRPC_Mount(t *testing.T) {
 	assert.Equal(t, "ord-1234", res.OrderID)
 	assert.Equal(t, "created", res.Status)
 }
-

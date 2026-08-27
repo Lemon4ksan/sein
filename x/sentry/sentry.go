@@ -32,24 +32,24 @@ type Transport interface {
 
 // Event represents a Sentry error event.
 type Event struct {
-	EventID     string         `json:"event_id"`
-	Timestamp   string         `json:"timestamp"`
-	Platform    string         `json:"platform"`
-	Level       string         `json:"level"`
-	Message     string         `json:"message"`
-	StackTrace  string         `json:"stacktrace,omitempty"`
-	RequestInfo map[string]any `json:"request,omitempty"`
+	EventID     string            `json:"event_id"`
+	Timestamp   string            `json:"timestamp"`
+	Platform    string            `json:"platform"`
+	Level       string            `json:"level"`
+	Message     string            `json:"message"`
+	StackTrace  string            `json:"stacktrace,omitempty"`
+	RequestInfo map[string]any    `json:"request,omitempty"`
 	Tags        map[string]string `json:"tags,omitempty"`
 }
 
 type httpTransport struct {
-	apiURL    string
-	authHdr   string
-	client    *http.Client
-	queue     chan *Event
-	wg        sync.WaitGroup
-	ctx       context.Context
-	cancel    context.CancelFunc
+	apiURL  string
+	authHdr string
+	client  *http.Client
+	queue   chan *Event
+	wg      sync.WaitGroup
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 func newHTTPTransport(dsnStr string) (*httpTransport, error) {

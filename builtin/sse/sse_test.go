@@ -83,4 +83,3 @@ func TestSSE_Handle_WithDTO(t *testing.T) {
 		assert.Contains(t, rec.Body.String(), "data: channel=news\n\n")
 	})
 }
-

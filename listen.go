@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/timekit"
@@ -229,7 +230,15 @@ func (s *Server) ListenAndServeAutoTLS(addr string, domains ...string) error {
 
 	// Start background HTTP-01 challenge responder on port 80 if on standard 443
 	go func() {
-		_ = http.ListenAndServe(":80", m.HTTPHandler(nil))
+		srv := &http.Server{
+			Addr:              ":80",
+			Handler:           m.HTTPHandler(nil),
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		_ = srv.ListenAndServe()
 	}()
 
 	tcpTLS := &tls.Config{

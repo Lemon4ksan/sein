@@ -318,13 +318,13 @@ func New(opts ...Option) sein.Middleware {
 				Name:         req.Method() + " " + req.Path(),
 				StartTime:    time.Now(),
 				Attributes: map[string]any{
-					"service.name":             cfg.ServiceName,
-					"http.request.method":      req.Method(),
-					"http.route":               req.Path(),
-					"client.address":           req.ClientIP(),
-					"user_agent.original":      req.Header(header.UserAgent),
-					"url.scheme":               req.Scheme(),
-					"server.address":           req.Host(),
+					"service.name":        cfg.ServiceName,
+					"http.request.method": req.Method(),
+					"http.route":          req.Path(),
+					"client.address":      req.ClientIP(),
+					"user_agent.original": req.Header(header.UserAgent),
+					"url.scheme":          req.Scheme(),
+					"server.address":      req.Host(),
 				},
 			}
 

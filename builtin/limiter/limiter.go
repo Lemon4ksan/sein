@@ -122,7 +122,7 @@ func (rl *rateLimiter) allow(key string) (allowed bool, remaining, resetInSecs i
 
 	count := atomic.AddInt64(&b.count, 1)
 	remaining = rl.rate - count
-	resetInSecs = max(reset - now, 0)
+	resetInSecs = max(reset-now, 0)
 
 	if count > rl.rate {
 		return false, 0, resetInSecs

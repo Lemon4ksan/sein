@@ -74,8 +74,8 @@ func New(prefix ...string) sein.Middleware {
 	}
 
 	routes := map[string]http.HandlerFunc{
-		p:             pprof.Index,
-		p + "/":       pprof.Index,
+		p:              pprof.Index,
+		p + "/":        pprof.Index,
 		p + "/cmdline": pprof.Cmdline,
 		p + "/profile": pprof.Profile,
 		p + "/symbol":  pprof.Symbol,

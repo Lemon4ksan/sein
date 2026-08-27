@@ -150,4 +150,3 @@ func TestRequest_ArenaAllocation(t *testing.T) {
 		t.Fatalf("unexpected string: %s", str)
 	}
 }
-

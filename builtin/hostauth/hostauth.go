@@ -40,11 +40,11 @@ func WithErrorHandler(handler func(req *sein.Request) (any, error)) Option {
 }
 
 type hostMatcher struct {
-	exact       string
-	wildcard    string
-	port        string
-	anyPort     bool
-	isWildcard  bool
+	exact      string
+	wildcard   string
+	port       string
+	anyPort    bool
+	isWildcard bool
 }
 
 // New creates a new Host authorization middleware.

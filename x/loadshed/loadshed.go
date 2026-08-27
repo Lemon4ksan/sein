@@ -62,7 +62,7 @@ func New(opts ...Option) sein.Middleware {
 	}
 
 	var (
-		inFlight atomic.Int64
+		inFlight  atomic.Int64
 		avgMicros atomic.Uint64 // EWMA latency in microseconds
 	)
 

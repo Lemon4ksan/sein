@@ -400,7 +400,6 @@ func (c *Conn) WriteRawFrame(frame *PrecompiledFrame) error {
 	return c.bw.Flush()
 }
 
-
 // WritePing sends a Ping control frame to the client.
 func (c *Conn) WritePing(data []byte) error {
 	c.writeMu.Lock()
@@ -547,4 +546,3 @@ func ResolveCloseError(err error) (int, string) {
 
 	return StatusInternalError, "internal server error"
 }
-

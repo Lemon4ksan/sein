@@ -140,8 +140,8 @@ func New(opts ...Option) (sein.Middleware, Store) {
 	memStore := newMemoryStore()
 
 	cfg := Config{
-		Expiration: 1 * time.Minute,
-		Store:      memStore,
+		Expiration:  1 * time.Minute,
+		Store:       memStore,
 		CacheHeader: true,
 		KeyGenerator: func(req *sein.Request) string {
 			return req.Method() + ":" + req.Path()
