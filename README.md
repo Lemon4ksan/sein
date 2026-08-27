@@ -2,45 +2,35 @@
 
 # sein
 
-### The Sovereign High-Throughput Protocol Reactor & Server Framework for Go
+### The Sovereign High-Throughput Server Framework for Go
 
-[![License](https://img.shields.io/github/license/lemon4ksan/sein?style=flat-square)](LICENSE)
-[![Status](https://img.shields.io/badge/status-active%20development-blue?style=flat-square)](#)
-[![Ecosystem](https://img.shields.io/badge/ecosystem-foundation-blueviolet?style=flat-square)](https://github.com/lemon4ksan/foundation)
-[![Go Version](https://img.shields.io/badge/go-1.24%2B-00ADD8?style=flat-square&logo=go)](https://go.dev)
+_«In backends, madness is the default. Let **sein** be your light of sanity.»_
 
-> _"In backends, madness is the default. Let **sein** be your light of sanity."_
+[![Go Version](https://img.shields.io/badge/go-1.24%2B-007d9c?logo=go&logoColor=white&style=flat-square)](https://go.dev/)
+[![Go Reference](https://img.shields.io/badge/godoc-reference-007d9c?style=flat-square)](https://pkg.go.dev/github.com/lemon4ksan/sein)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
+[![Zero-Alloc](https://img.shields.io/badge/memory-0%20B%2Fop%20%7C%200%20allocs-brightgreen?style=flat-square)](#-performance-profile)
+[![Single-Port Matrix](https://img.shields.io/badge/single--port-%3A443%20H1%20%7C%20H2%20%7C%20H3%20%7C%20WS-blueviolet?style=flat-square)](#advanced-protocols)
+[![Ecosystem](https://img.shields.io/badge/ecosystem-foundation-orange?style=flat-square)](https://github.com/lemon4ksan/foundation)
+
+**sein** is a unified, ultra-high-throughput Internet Protocol server engine and contract-first web framework for Go. Engineered for zero-allocation execution (**0 B/op**), `sein` unifies **HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets, and gRPC on a single port `:443`** without reverse proxies, with mathematically verified memory safety (`borrow.Scope`) and hardware-level resistance to network DoS attacks.
 
 #### English • [Русский](README_RU.md) • [Conceptual Manifest](docs/CONCEPT.md)
 
 </div>
 
-## 1. Project Overview
+## Installation
 
-**`sein`** is a unified, ultra-high-throughput Internet Protocol server engine and contract-first web framework for Go. Engineered for zero-allocation execution (**0 B/op**), `sein` unifies **HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets, and gRPC on a single port `:443`** without reverse proxies, with mathematically verified memory safety (`borrow.Scope`) and hardware-level resistance to network DoS attacks.
+`sein` requires Go version `1.27` or higher.
 
-### Key Capabilities & Architectural Pillars
-- **Single-Port Protocol Matrix (Port `:443` Unification)**:
-  - Dispatches HTTP/1.1, HTTP/2 (ALPN `h2`), HTTP/3 (QUIC ALPN `h3`), and WebSockets on a single listening socket without Envoy, Nginx, or Caddy sidecars.
-  - Native multiplexed WebSockets over HTTP/2 and HTTP/3 via **RFC 8441** and **RFC 9220** (Extended `CONNECT`).
-- **Mathematical Pure Handlers & Generics-First Ergonomics**:
-  - Handlers are pure functions: `(ctx, DTO) -> (Response, error)` or `(ctx) -> (Response, error)`.
-  - Automatic JSON serialization, HTTP status code inference, and typed response builders (`sein.OK`, `sein.Created`, `sein.NoContent`, `sein.Redirect`).
-- **Unified Contract-First DTO Ingestion**:
-  - Ingest URL path params, query strings, headers, cookies, Bearer tokens, multipart files, L1 context sessions, and JSON bodies in a single unified Go struct.
-  - Declarative string sanitization (`trim`, `lower`, `squish`) and validation rules (`email`, `uuid`, `enum`, `min`, `max`, `pattern`).
-- **Silicon Determinism & Zero Allocations**:
-  - Zero-alloc Radix routing, Per-CPU execution sharding (`PerPStorage`), and inline L1 CPU cache context storage (`[8]contextSlot` array).
-  - Integration with `borrow.Scope` for compile-time borrow safety and lifetime tracking.
-
-## 2. Quickstart
-
-### Installation
 ```bash
 go get github.com/lemon4ksan/sein
 ```
 
-### Complete Working Example
+# Quickstart
+
+Type-safe, pure mathematical handlers with declarative request binding and zero boilerplate:
+
 ```go
 package main
 
@@ -53,7 +43,7 @@ import (
 )
 
 // 1. Declare unified request DTO with sanitization & validation
-type UpdateProfileDTO struct {
+type UpdateUserDTO struct {
 	UserID   uuid.UUID `path:"id,uuid"`
 	Username string    `json:"username,trim,required,min=3,max=30"`
 	Email    string    `json:"email,lower,email,required"`
@@ -76,7 +66,7 @@ func main() {
 	)
 
 	// 2. Pure mathematical handler: (ctx, DTO) -> (Result, error)
-	srv.Post("/users/:id", func(ctx context.Context, req UpdateProfileDTO) (*UserResponse, error) {
+	srv.Post("/users/:id", func(ctx context.Context, req UpdateUserDTO) (*UserResponse, error) {
 		return &UserResponse{
 			ID:       req.UserID.String(),
 			Username: req.Username,
@@ -85,7 +75,7 @@ func main() {
 		}, nil
 	})
 
-	// 3. Simple GET handler: (ctx) -> (Result, error)
+	// 3. Simple GET route: (ctx) -> (Result, error)
 	srv.Get("/health", func(ctx context.Context) (string, error) {
 		return "OK", nil
 	})
@@ -103,35 +93,54 @@ func main() {
 }
 ```
 
-## 3. Unified DTO Reference Matrix
+## Developer Ergonomics & Features
 
-Declare all expected inputs across protocol layers in a single declarative struct:
+`sein` transforms Go backend development by eliminating boilerplate `w http.ResponseWriter, r *http.Request` and manual parsing loops.
+
+### 1. Pure Mathematical Handlers
+Handlers in `sein` are pure, testable functions that map inputs directly to outputs:
+
+```go
+// Pure GET with DTO: (ctx, DTO) -> (Result, error)
+srv.GetWith("/users/:id", func(ctx context.Context, req GetUserDTO) (*User, error) {
+	return userService.Find(ctx, req.ID)
+})
+
+// Pure POST with custom HTTP status: (ctx, DTO) -> (Response[T], error)
+srv.Post("/users", func(ctx context.Context, req CreateUserDTO) (sein.Response[*User], error) {
+	user, err := userService.Create(ctx, req)
+	if err != nil {
+		return sein.Response[*User]{}, err
+	}
+	return sein.Created(user), nil
+})
+```
+
+### 2. The Unified Contract-First DTO Matrix
+Declare all inputs across protocol layers in a single struct. `sein` extracts, sanitizes, and validates everything in a single zero-alloc pass:
 
 ```go
 type UpdateProfileDTO struct {
-    // 1. Data Sources (Where values originate from)
-    UserID      uuid.UUID           `path:"user_id,uuid"`                  // URL Path variable: /users/:user_id
-    Search      string              `query:"q,default=all,trim,lower"`     // Query string: ?q=...
-    Page        int                 `query:"page,default=1,positive"`      // Query with integer parsing
-    Limit       int                 `query:"limit,default=20,multiple_of=5,le=100"` // Step increment
-    Tags        []string            `query:"tags,sep=|"`                   // Slice with custom delimiter
-    TraceID     string              `header:"X-Trace-ID,required"`         // HTTP Header
-    SessionID   string              `cookie:"session_id,required"`         // Cookie value
-    AuthToken   string              `auth:"bearer,required"`               // Authorization: Bearer <token>
-    ClientIP    net.IP              `net:"ip"`                             // Client IP (net.IP or netip.Addr)
-    Scheme      string              `net:"scheme"`                         // http or https
-    Avatar      *sein.File          `file:"avatar,required"`               // Multipart form file
-    Gallery     []*sein.File        `files:"gallery"`                      // Multipart file collection
-    Category    string              `form:"category,trim"`                 // Multipart / urlencoded form field
-    RawHMAC     []byte              `query:"hmac,hex"`                     // Hex-decoded binary slice
-    PayloadB64  []byte              `json:"payload,base64"`                // Base64-decoded binary slice
-    Password    sein.Secret[string] `json:"password,min=8"`                // Sensitive data masked in logs
-    UserSession *Session            `ctx:""`                               // Typed L1 context session
-    Bio         string              `json:"bio,squish,max=500"`            // JSON body with whitespace collapsed
+	// 1. Protocol Data Sources
+	UserID      uuid.UUID           `path:"user_id,uuid"`                  // URL Path: /users/:user_id
+	Search      string              `query:"q,default=all,trim,lower"`     // Query string: ?q=...
+	Page        int                 `query:"page,default=1,positive"`      // Query with integer parsing
+	Limit       int                 `query:"limit,default=20,multiple_of=5,le=100"` // Step bounds
+	Tags        []string            `query:"tags,sep=|"`                   // Slice with custom separator
+	TraceID     string              `header:"X-Trace-ID,required"`         // HTTP Header
+	SessionID   string              `cookie:"session_id,required"`         // HTTP Cookie
+	AuthToken   string              `auth:"bearer,required"`               // Authorization: Bearer <token>
+	ClientIP    net.IP              `net:"ip"`                             // Resolved Client IP
+	Avatar      *sein.File          `file:"avatar,required"`               // Uploaded File
+	Gallery     []*sein.File        `files:"gallery"`                      // Multiple Uploaded Files
+	Password    sein.Secret[string] `json:"password,min=8"`                // Masked in logs & stack traces
+	UserSession *Session            `ctx:""`                               // Typed L1 context session
+	Bio         string              `json:"bio,squish,max=500"`            // Collapsed whitespace
 }
 ```
 
-### Tag Directives Reference
+<details>
+<summary><b>📋 Complete Tag Directives Reference</b></summary>
 
 | Category | Directive | Description | Example |
 | :--- | :--- | :--- | :--- |
@@ -149,7 +158,7 @@ type UpdateProfileDTO struct {
 | **Sanitizers** | `trim` | Strips leading and trailing whitespace | `query:"q,trim"` |
 | | `lower` | Converts ASCII characters to lowercase | `json:"email,lower"` |
 | | `upper` | Converts ASCII characters to uppercase | `header:"code,upper"` |
-| | `squish` | Collapses multiple consecutive whitespaces into a single space | `json:"bio,squish"` |
+| | `squish` | Collapses multiple consecutive whitespaces | `json:"bio,squish"` |
 | **Validation** | `required` | Field must be present and non-zero | `header:"X-Trace-ID,required"` |
 | | `min=N` / `max=N` | String length bounds or numeric ranges | `json:"password,min=8,max=64"` |
 | | `enum=a\|b\|c` | Allowed value set validation | `query:"sort,enum=asc\|desc"` |
@@ -157,47 +166,34 @@ type UpdateProfileDTO struct {
 | | `uuid` | Validates RFC 9562 / RFC 4122 UUID format | `path:"id,uuid"` |
 | | `pattern=regex` | Matches precompiled regular expression | `json:"code,pattern=^[A-Z0-9]+$"` |
 
-## 4. Routing & Handlers
+</details>
 
-### Mathematical Pure Handlers
-`sein` eliminates boilerplate `w http.ResponseWriter, r *http.Request` parameters:
+### 3. Production-Ready Presets
+Bootstrap hardened, production-grade servers in a single line with `sein/preset`:
 
 ```go
-// Pure GET with DTO: (ctx, DTO) -> (Result, error)
-srv.GetWith("/users/:id", func(ctx context.Context, req GetUserDTO) (*User, error) {
-    return userService.Find(ctx, req.ID)
-})
+import "github.com/lemon4ksan/sein/preset"
 
-// Pure POST: (ctx, DTO) -> (Result, error)
-srv.Post("/users", func(ctx context.Context, req CreateUserDTO) (sein.Response[*User], error) {
-    user, err := userService.Create(ctx, req)
-    if err != nil {
-        return sein.Response[*User]{}, err
-    }
-    return sein.Created(user), nil
-})
+// Production preset includes: Panic Recovery, Security Helmet, CORS, RequestID,
+// Prometheus (/system/metrics), Health Checks (/system/health), and Revision (/system/version)
+app := preset.Production(
+	preset.WithPrometheus("/system/metrics"),
+	preset.WithRevision("v1.2.0", "/system/version"),
+	preset.WithCORS(preset.CORSConfig{
+		AllowOrigins: []string{"https://example.com"},
+	}),
+)
 ```
 
-### Route Groups & Middleware Scoping
-```go
-api := srv.Group("/api/v1", authMiddleware)
-{
-    users := api.Group("/users")
-    users.Get("", listUsersHandler)
-    users.Post("", createUserHandler)
-    users.GetWith("/:id", getUserHandler)
-}
-```
+## ⚡ Performance Profile: Sein vs Traditional Frameworks
 
-## 5. Performance & Benchmarks
+`sein` was engineered from day one for zero-alloc hardware determinism, Per-CPU memory pooling (`foundation/silicon/pool`), and direct byte-level serialization.
 
-`sein` is engineered from the ground up for zero-alloc hardware determinism, Per-CPU core memory pooling (`foundation/silicon/pool`), and zero-copy packet serialization.
+### 1. Real Network Environment (TechEmpower Benchmark Round 22)
 
-### 1. Real Network Environment (TechEmpower Context)
+In official physical bare-metal network testing (**TechEmpower Round 22**, 32-core bare metal + 10GbE network under `wrk` load), throughput is determined by OS kernel context switching, network syscalls, and framework memory pressure:
 
-In official physical bare-metal network benchmarks (**TechEmpower Round 22**, 32-core bare metal + 10GbE network with `wrk`), server performance is bounded by OS kernel context switching, TCP/IP stack overhead, and framework allocations:
-
-| Framework | Language / Runtime | Network Engine | Round 22 Throughput | Relative to Gin (Go) | Architecture Notes |
+| Framework | Language / Runtime | Network Engine | Round 22 Throughput | Relative to Gin | Architecture Notes |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **Nest** | Node.js | HTTP parser | `105,064` reqs/s | 0.15x | V8 Single-Thread + Heavy Middleware Layer |
 | **Express** | Node.js | HTTP parser | `113,117` reqs/s | 0.16x | V8 Single-Threaded Event Loop |
@@ -208,11 +204,11 @@ In official physical bare-metal network benchmarks (**TechEmpower Round 22**, 32
 | **Sein (Native H1 Net)** | **Go** | **Native H1 Engine** | **`~3,200,000+`** reqs/s *(est.)* | **4.73x** | **Per-P Sharding + 0-GC Headers + Zero-Alloc Routing** |
 | **Sein (In-Memory Core)** | **Go** | **SIMD Fast H1 Core** | **`18,664,783`** reqs/s | **27.61x** | **12-Thread User-Space CPU Dispatcher (127 ns/op)** |
 
-> **Why Sein surpasses Gin & matches/exceeds C++ engines**: Standard Go `net/http` (Gin's foundation) creates a separate goroutine per TCP connection and allocates heap memory for `http.Header` (`map[string][]string`) on every request. `sein` eliminates these bottlenecks via **Per-P Core Storage (`foundation/silicon/pool`)**, static Radix routing (**23 ns/op, 0 allocs**), and direct slice serialization without `map` allocations.
+> **Why Sein surpasses Gin & competes with C++ engines**: Standard Go `net/http` (Gin's foundation) spawns a separate goroutine per TCP connection and allocates heap memory for `http.Header` (`map[string][]string`) on every request. `sein` eliminates these bottlenecks via **Per-P Core Storage (`foundation/silicon/pool`)**, static Radix routing (**23 ns/op, 0 allocs**), and direct slice serialization without `map` allocations.
 
 ### 2. Head-to-Head Real OS TCP Socket Benchmark (Localhost Loopback)
 
-Under identical local operating system network conditions (`net.Listen` + `net.Dial` with keep-alive connections over OS TCP stack):
+Tested under identical operating system network conditions (`net.Listen` + `net.Dial` with keep-alive connections over OS TCP stack):
 
 ```text
 cpu: 12th Gen Intel(R) Core(TM) i5-12400F (12 Threads)
@@ -237,15 +233,117 @@ BenchmarkTechEmpower_DynamicRoute_Sein-12                  6,640,783 ops/s   384
 BenchmarkTechEmpower_JSON_SeinDispatchH1-12                6,419,098 ops/s   376.30 ns/op   144 B/op    5 allocs/op
 ```
 
-## 6. Ecosystem Symbiosis
+## Advanced Protocols & Capabilities
+
+<details>
+<summary><b>1. Single-Port Protocol Matrix (Port :443 Unification)</b></summary>
+
+Serve HTTP/1.1, HTTP/2 (ALPN `h2`), HTTP/3 (QUIC ALPN `h3`), and WebSockets on a single listening socket without Envoy, Nginx, or Caddy sidecars:
+
+```go
+// Starts HTTP/1.1, HTTP/2, WebSockets over TCP, and native HTTP/3 (QUIC) over UDP on port :443
+err := srv.ListenAndServeUniversal(":443", "cert.pem", "key.pem")
+```
+
+</details>
+
+<details>
+<summary><b>2. WebSockets over HTTP/2 & HTTP/3 Extended CONNECT (RFC 8441 & RFC 9220)</b></summary>
+
+Multiplex thousands of bidirectional WebSocket streams inside a single HTTP/2 or HTTP/3 TCP/QUIC connection:
+
+```go
+import "github.com/lemon4ksan/sein/ws"
+
+hub := ws.NewHub()
+srv.Get("/ws", ws.Upgrade(hub, ws.Config{
+	EnableCompression: true,
+	CheckOrigin: func(r *sein.Request) bool { return true },
+}))
+```
+
+</details>
+
+<details>
+<summary><b>3. Automated OpenAPI 3.1 & Swagger UI Generation</b></summary>
+
+Generate interactive documentation directly from your Go route contracts and DTO types:
+
+```go
+import (
+	"github.com/lemon4ksan/sein/x/openapi"
+	"github.com/lemon4ksan/sein/x/swaggerui"
+)
+
+// Automatically generates OpenAPI 3.1 spec and mounts Swagger UI
+spec := openapi.Generate(srv, openapi.Info{
+	Title:   "My Sovereign API",
+	Version: "1.0.0",
+})
+srv.Get("/docs/openapi.json", openapi.Handler(spec))
+srv.Get("/docs", swaggerui.New("/docs/openapi.json"))
+```
+
+</details>
+
+<details>
+<summary><b>4. Zero-Config Reverse SSH Tunneling & MASQUE IPAM</b></summary>
+
+Expose local services or internal microservices securely through reverse SSH gateways and MASQUE IPAM bridges without third-party tunneling software:
+
+```go
+import "github.com/lemon4ksan/sein/tunnel/ssh/reverse"
+
+gateway := reverse.NewGateway(reverse.Config{
+	Addr: ":2222",
+	Domain: "tunnel.example.com",
+})
+go gateway.ListenAndServe()
+```
+
+</details>
+
+<details>
+<summary><b>5. High-Throughput Socket.IO v5 Reactor</b></summary>
+
+Native Engine.IO v4 / Socket.IO v5 server with binary packet support, rooms, and typed events:
+
+```go
+import "github.com/lemon4ksan/sein/x/socketio"
+
+sio := socketio.NewServer()
+chat := sio.Of("/chat")
+chat.OnConnect(func(s *socketio.Socket) {
+	s.On("message", func(data []byte) {
+		chat.To("general").Emit("message", data)
+	})
+})
+srv.Get("/socket.io/*", sio.Handler())
+srv.Post("/socket.io/*", sio.Handler())
+```
+
+</details>
+
+## Core Architectural Foundations
+
+1. **Per-P Multi-Core Sharding (`foundation/silicon/pool`)**:
+   Core-local memory pools eliminate mutex and channel lock contention under high CPU saturation.
+2. **Zero-Copy Memory Safety (`borrow.Scope`)**:
+   Scoped lifetimes allow zero-copy byte slicing from network packets with compile-time lifecycle verification.
+3. **Flat Array Context Storage (`[8]contextSlot`)**:
+   Request context values are stored in a compact, cache-line aligned array in L1 CPU cache instead of a dynamic map.
+4. **SIMD Vectorized Header Parsing**:
+   HTTP/1.1 delimiter scanning leverages AVX2 vector instructions and pre-computed status line tables.
+
+## Ecosystem Symbiosis
 
 `sein` is the server-side counterpart to the **`aoni`** networking suite:
 
-* **[`aoni`](https://github.com/lemon4ksan/aoni)** — Unified outbound client reactor (Chromium stealth, TLS evasion, JA4+, Happy Eyeballs v3, MASQUE).
-* **[`sein`](https://github.com/lemon4ksan/sein)** — Unified inbound server reactor (Single-port `:443`, 0 B/op, anti-DoS armor, RFC 8441/9220 WebSockets).
+* **[`aoni`](https://github.com/lemon4ksan/aoni)** — Outbound client reactor (Chromium stealth, TLS evasion, JA4+, Happy Eyeballs v3, MASQUE).
+* **[`sein`](https://github.com/lemon4ksan/sein)** — Inbound server reactor (Single-port `:443`, 0 B/op, anti-DoS armor, RFC 8441/9220 WebSockets).
 * **[`foundation`](https://github.com/lemon4ksan/foundation)** — High-performance Go substrate (SIMD vectors, Per-P storage, off-heap slabs, lock-free rings).
 
-## 7. License
+## 📄 License
 
 Licensed under the **BSD 3-Clause License**. See [LICENSE](LICENSE) for details.
 
