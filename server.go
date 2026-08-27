@@ -89,6 +89,8 @@ type Server struct {
 	noMethodHandler        RawHandler
 	trustedProxies         []*net.IPNet
 	trustedPlatform        string
+	AutoTLSDomains         []string
+	AutoTLSCacheDir        string
 	mu                     sync.Mutex
 }
 
@@ -138,6 +140,20 @@ func WithTrustedProxies(proxies []string) Option {
 func WithTrustedPlatform(headerName string) Option {
 	return func(s *Server) {
 		s.SetTrustedPlatform(headerName)
+	}
+}
+
+// WithAutoTLS configures zero-config automatic TLS certificate provisioning via ACME (Let's Encrypt / ZeroSSL).
+func WithAutoTLS(domains ...string) Option {
+	return func(s *Server) {
+		s.AutoTLSDomains = append(s.AutoTLSDomains, domains...)
+	}
+}
+
+// WithAutoTLSCacheDir configures the directory used to persist ACME certificates on disk.
+func WithAutoTLSCacheDir(dir string) Option {
+	return func(s *Server) {
+		s.AutoTLSCacheDir = dir
 	}
 }
 

@@ -7,12 +7,14 @@ package sein
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/timekit"
+	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/lemon4ksan/sein/internal/fast/h1engine"
 	"github.com/lemon4ksan/sein/internal/fast/h2engine"
@@ -205,6 +207,77 @@ func (s *Server) ListenAndServeUniversal(addr, certFile, keyFile string) error {
 	}()
 
 	return <-errCh
+}
+
+// ListenAndServeAutoTLS starts the server with zero-config Let's Encrypt / ACME automatic TLS certificates (RFC 8555 & RFC 8737).
+func (s *Server) ListenAndServeAutoTLS(addr string, domains ...string) error {
+	allDomains := append(s.AutoTLSDomains, domains...)
+	if len(allDomains) == 0 {
+		return errors.New("sein: at least one domain must be provided for AutoTLS")
+	}
+
+	cacheDir := s.AutoTLSCacheDir
+	if cacheDir == "" {
+		cacheDir = ".certs"
+	}
+
+	m := &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(allDomains...),
+		Cache:      autocert.DirCache(cacheDir),
+	}
+
+	// Start background HTTP-01 challenge responder on port 80 if on standard 443
+	go func() {
+		_ = http.ListenAndServe(":80", m.HTTPHandler(nil))
+	}()
+
+	tcpTLS := &tls.Config{
+		GetCertificate: m.GetCertificate,
+		NextProtos:     []string{"h2", "http/1.1", "acme-tls/1"},
+	}
+
+	var lc net.ListenConfig
+	tcpLn, err := lc.Listen(context.Background(), "tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	s.tcpLn = tcpLn
+	s.mu.Unlock()
+
+	tlsListener := tls.NewListener(tcpLn, tcpTLS)
+	for {
+		conn, err := tlsListener.Accept()
+		if err != nil {
+			return err
+		}
+
+		go func(c net.Conn) {
+			tlsConn, ok := c.(*tls.Conn)
+			if !ok {
+				_ = c.Close()
+				return
+			}
+
+			if err := tlsConn.HandshakeContext(context.Background()); err != nil {
+				_ = tlsConn.Close()
+				return
+			}
+
+			proto := tlsConn.ConnectionState().NegotiatedProtocol
+			if proto == "h2" {
+				sc := h2engine.NewServerConn(tlsConn, s.DispatchH2)
+				_ = sc.Serve()
+			} else {
+				connHandler := &h1engine.ConnHandler{
+					Handler: s.dispatchH1,
+				}
+				_ = connHandler.ServeConn(tlsConn)
+			}
+		}(conn)
+	}
 }
 
 // Shutdown gracefully shuts down all server listeners (TCP H1/H2 and UDP QUIC H3).

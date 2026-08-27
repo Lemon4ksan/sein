@@ -6,8 +6,6 @@ package ws
 
 import (
 	"sync"
-
-	"github.com/lemon4ksan/foundation/codec/json"
 )
 
 // Hub is a thread-safe declarative WebSocket topic/room subscription manager with Pub/Sub support.
@@ -79,8 +77,14 @@ func (h *Hub) UnsubscribeAll(conn *Conn) {
 	}
 }
 
-// Publish broadcasts raw binary/text bytes to all connections subscribed to the topic.
+// Publish broadcasts raw binary/text bytes to all connections subscribed to the topic using zero-copy pre-framing.
 func (h *Hub) Publish(topic string, messageType int, payload []byte) error {
+	frame := PrecompileFrame(messageType, payload)
+	return h.PublishPrecompiled(topic, frame)
+}
+
+// PublishPrecompiled broadcasts a pre-assembled wire frame to all subscribers of topic with zero allocations.
+func (h *Hub) PublishPrecompiled(topic string, frame *PrecompiledFrame) error {
 	h.mu.RLock()
 	connsMap, ok := h.topics[topic]
 	if !ok || len(connsMap) == 0 {
@@ -96,7 +100,7 @@ func (h *Hub) Publish(topic string, messageType int, payload []byte) error {
 
 	var firstErr error
 	for _, c := range conns {
-		if err := c.WriteMessage(messageType, payload); err != nil {
+		if err := c.WriteRawFrame(frame); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -111,17 +115,23 @@ func (h *Hub) PublishText(topic string, message string) error {
 	return h.Publish(topic, OpText, []byte(message))
 }
 
-// PublishJSON serializes v to JSON and broadcasts to all subscribers of topic.
+// PublishJSON serializes v to JSON once and broadcasts to all subscribers of topic.
 func (h *Hub) PublishJSON(topic string, v any) error {
-	data, err := json.Marshal(v)
+	frame, err := PrecompileJSON(v)
 	if err != nil {
 		return err
 	}
-	return h.Publish(topic, OpText, data)
+	return h.PublishPrecompiled(topic, frame)
 }
 
-// Broadcast broadcasts a message to ALL connected clients across all topics in the hub.
+// Broadcast broadcasts a message to ALL connected clients across all topics in the hub using zero-copy pre-framing.
 func (h *Hub) Broadcast(messageType int, payload []byte) error {
+	frame := PrecompileFrame(messageType, payload)
+	return h.BroadcastPrecompiled(frame)
+}
+
+// BroadcastPrecompiled broadcasts a pre-assembled wire frame to ALL connected clients with zero allocations.
+func (h *Hub) BroadcastPrecompiled(frame *PrecompiledFrame) error {
 	h.mu.RLock()
 	conns := make([]*Conn, 0, len(h.conns))
 	for c := range h.conns {
@@ -131,7 +141,7 @@ func (h *Hub) Broadcast(messageType int, payload []byte) error {
 
 	var firstErr error
 	for _, c := range conns {
-		if err := c.WriteMessage(messageType, payload); err != nil {
+		if err := c.WriteRawFrame(frame); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -140,13 +150,13 @@ func (h *Hub) Broadcast(messageType int, payload []byte) error {
 	return firstErr
 }
 
-// BroadcastJSON serializes v to JSON and broadcasts to ALL connected clients in the hub.
+// BroadcastJSON serializes v to JSON once and broadcasts to ALL connected clients in the hub.
 func (h *Hub) BroadcastJSON(v any) error {
-	data, err := json.Marshal(v)
+	frame, err := PrecompileJSON(v)
 	if err != nil {
 		return err
 	}
-	return h.Broadcast(OpText, data)
+	return h.BroadcastPrecompiled(frame)
 }
 
 // SubscribersCount returns the number of active subscribers to a topic.

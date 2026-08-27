@@ -50,3 +50,37 @@ func TestSSE_StreamingEvents(t *testing.T) {
 	require.True(t, strings.Contains(body, "id: msg-42\ndata: done\n\n"))
 	require.True(t, strings.Contains(body, "retry: 5000\n\n"))
 }
+
+type StreamQuery struct {
+	Channel string `query:"channel,required"`
+}
+
+func TestSSE_Handle_WithDTO(t *testing.T) {
+	s := sein.New()
+
+	sse.Handle(s, "/events", func(ctx context.Context, w *sse.Writer, q StreamQuery) error {
+		_ = w.Send("channel=" + q.Channel)
+		return nil
+	})
+
+	t.Run("Missing required query param returns 400 Bad Request", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/events", nil)
+		rec := httptest.NewRecorder()
+
+		s.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
+	t.Run("Valid query param streams events", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/events?channel=news", nil)
+		rec := httptest.NewRecorder()
+
+		s.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
+		assert.Contains(t, rec.Body.String(), "data: channel=news\n\n")
+	})
+}
+

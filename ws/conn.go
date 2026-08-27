@@ -353,6 +353,54 @@ func (c *Conn) ReadJSON(dest any) error {
 	return json.Unmarshal(data, dest)
 }
 
+// PrecompiledFrame represents a pre-assembled RFC 6455 wire frame (header + payload)
+// ready for O(1) zero-copy broadcasting across arbitrary connections without per-client re-framing.
+type PrecompiledFrame struct {
+	wire []byte
+}
+
+// PrecompileFrame constructs a reusable WebSocket wire frame for zero-copy multi-cast.
+func PrecompileFrame(messageType int, payload []byte) *PrecompiledFrame {
+	var hdrBuf [10]byte
+	n := BuildFrameHeader(hdrBuf[:], byte(messageType), len(payload), false, false)
+
+	wire := make([]byte, n+len(payload))
+	copy(wire[:n], hdrBuf[:n])
+	copy(wire[n:], payload)
+
+	return &PrecompiledFrame{wire: wire}
+}
+
+// PrecompileJSON constructs a pre-assembled JSON text frame for zero-copy multi-cast.
+func PrecompileJSON(v any) (*PrecompiledFrame, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return PrecompileFrame(OpText, data), nil
+}
+
+// WriteRawFrame writes a precompiled frame directly to the connection socket.
+func (c *Conn) WriteRawFrame(frame *PrecompiledFrame) error {
+	if frame == nil {
+		return nil
+	}
+
+	if c.isClosed.Load() {
+		return ErrConnectionClosed
+	}
+
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	if _, err := c.bw.Write(frame.wire); err != nil {
+		return err
+	}
+
+	return c.bw.Flush()
+}
+
+
 // WritePing sends a Ping control frame to the client.
 func (c *Conn) WritePing(data []byte) error {
 	c.writeMu.Lock()
