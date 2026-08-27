@@ -100,16 +100,24 @@ func (fw *flushingWriter) Write(p []byte) (n int, err error) {
 }
 
 // SSESender sends Server-Sent Events (SSE) according to the W3C EventSource standard.
+//
+// # RFC Compliance
+//
+// Conforms to the W3C Server-Sent Events specification (`text/event-stream`).
 type SSESender struct {
 	w io.Writer
 }
 
-// NewSSESender creates an SSESender wrapping a writer.
+// NewSSESender creates an [SSESender] wrapping the destination network writer.
 func NewSSESender(w io.Writer) *SSESender {
 	return &SSESender{w: w}
 }
 
 // Send emits a simple data-only SSE message.
+//
+// # Example
+//
+//	_ = sse.Send("hello client")
 func (s *SSESender) Send(data string) error {
 	var sb strings.Builder
 	for line := range strings.SplitSeq(data, "\n") {
@@ -125,6 +133,10 @@ func (s *SSESender) Send(data string) error {
 }
 
 // SendEvent emits a named event with string payload.
+//
+// # Example
+//
+//	_ = sse.SendEvent("price_update", `{"symbol":"BTC","price":98000}`)
 func (s *SSESender) SendEvent(event, data string) error {
 	var sb strings.Builder
 	if event != "" {
@@ -145,7 +157,11 @@ func (s *SSESender) SendEvent(event, data string) error {
 	return err
 }
 
-// SendJSON emits a named event with JSON-encoded payload.
+// SendJSON emits a named event with an automatically serialized JSON payload.
+//
+// # Example
+//
+//	_ = sse.SendJSON("user_joined", User{ID: 42, Name: "Alice"})
 func (s *SSESender) SendJSON(event string, payload any) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -155,27 +171,39 @@ func (s *SSESender) SendJSON(event string, payload any) error {
 	return s.SendEvent(event, string(data))
 }
 
-// SendComment emits a heartbeat/ping comment.
+// SendComment emits a comment line (heartbeat/keepalive ping).
 func (s *SSESender) SendComment(comment string) error {
 	msg := fmt.Sprintf(": %s\n\n", comment)
 	_, err := io.WriteString(s.w, msg)
 	return err
 }
 
-// SendRetry advises the client reconnection delay in milliseconds.
+// SendRetry advises the client reconnection backoff delay in milliseconds.
 func (s *SSESender) SendRetry(ms int) error {
 	msg := "retry: " + strconv.Itoa(ms) + "\n\n"
 	_, err := io.WriteString(s.w, msg)
 	return err
 }
 
-// SSEResponse encapsulates a Server-Sent Events real-time stream.
+// SSEResponse encapsulates a Server-Sent Events real-time event stream.
 type SSEResponse struct {
 	StreamFunc func(sse *SSESender) error
 	Headers    http.Header
 }
 
 // SSE creates an SSE streaming response handler.
+//
+// # Example
+//
+//	srv.Get("/events", func(ctx context.Context) (sein.SSEResponse, error) {
+//	    return sein.SSE(func(sse *sein.SSESender) error {
+//	        for i := 0; i < 5; i++ {
+//	            _ = sse.SendJSON("tick", map[string]int{"count": i})
+//	            time.Sleep(1 * time.Second)
+//	        }
+//	        return nil
+//	    }), nil
+//	})
 func SSE(fn func(sse *SSESender) error) SSEResponse {
 	return SSEResponse{
 		StreamFunc: fn,

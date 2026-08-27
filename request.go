@@ -918,7 +918,16 @@ func (r *Request) BindJSON(dest any) error {
 	return nil
 }
 
-// Set stores a typed value in the flat inline context storage (0 B/op, L1 cache scan).
+// Set stores a typed value in the request's flat inline context storage with 0 heap allocations.
+//
+// # Architectural Invariants: L1 CPU Cache Locality
+//
+// Stores up to 8 typed values in a contiguous inline array on the [Request] struct itself,
+// allowing sub-nanosecond lookups directly in L1 CPU cache without map hashing overhead.
+//
+// # Example
+//
+//	sein.Set(req, &UserSession{UserID: 42, Role: "admin"})
 func Set[T any](r *Request, val T) {
 	typ := reflect.TypeFor[T]()
 
@@ -942,7 +951,13 @@ func Set[T any](r *Request, val T) {
 	r.overflow[typ] = val
 }
 
-// Get retrieves a typed value from the flat inline context storage in L1 CPU cache.
+// Get retrieves a typed value from the request's flat inline context storage (0 B/op).
+//
+// # Example
+//
+//	if session, ok := sein.Get[*UserSession](req); ok {
+//	    log.Printf("Current user: %d", session.UserID)
+//	}
 func Get[T any](r *Request) (T, bool) {
 	typ := reflect.TypeFor[T]()
 
@@ -963,7 +978,11 @@ func Get[T any](r *Request) (T, bool) {
 	return generic.Zero[T](), false
 }
 
-// MustGet retrieves a typed value or panics if not present.
+// MustGet retrieves a typed value from request storage, panicking if the value was not set.
+//
+// # Example
+//
+//	session := sein.MustGet[*UserSession](req)
 func MustGet[T any](r *Request) T {
 	val, ok := Get[T](r)
 	if !ok {

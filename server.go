@@ -45,7 +45,30 @@ type TraceInfo struct {
 type TraceHook func(t *TraceInfo)
 
 // Server represents a high-throughput, multi-protocol HTTP server engine supporting
-// HTTP/1.1, HTTP/2, HTTP/3 (QUIC), and WebSockets with zero net/http overhead.
+// HTTP/1.1, HTTP/2, HTTP/3 (QUIC), and WebSockets on a single port with zero net/http overhead.
+//
+// # Architectural Context: Zero-Allocation Protocol Matrix
+//
+// Sein unifies modern IETF protocols into a single event-driven reactor. Incoming requests are routed
+// via a zero-allocation Radix router directly to typed pure handlers without runtime reflection overhead.
+//
+// # Thread Safety
+//
+// 100% thread-safe for concurrent request execution. Configuration methods (e.g. [Server.Use], [Server.GET])
+// should be called during server setup prior to calling [Server.Listen].
+//
+// # Example
+//
+//	srv := sein.New(
+//	    sein.WithAddr(":8080"),
+//	    sein.WithTrailingSlashRedirect(true),
+//	)
+//
+//	srv.Get("/health", func(ctx context.Context) (string, error) {
+//	    return "OK", nil
+//	})
+//
+//	log.Fatal(srv.Listen(":8080"))
 type Server struct {
 	addr                   string
 	router                 *Router
@@ -69,56 +92,56 @@ type Server struct {
 	mu                     sync.Mutex
 }
 
-// WithAddr configures the listening network address (e.g. ":8080" or "127.0.0.1:443").
+// WithAddr configures the default listening network address (e.g. ":8080" or "0.0.0.0:443").
 func WithAddr(addr string) Option {
 	return func(s *Server) {
 		s.addr = addr
 	}
 }
 
-// WithTrailingSlashRedirect configures whether requests with mismatched trailing slashes are automatically redirected.
+// WithTrailingSlashRedirect configures whether requests with mismatched trailing slashes are automatically redirected (RFC 9110 §15.4.2).
 func WithTrailingSlashRedirect(enabled bool) Option {
 	return func(s *Server) {
 		s.RedirectTrailingSlash = enabled
 	}
 }
 
-// WithMethodNotAllowed configures whether 405 Method Not Allowed is returned when path exists on other verbs.
+// WithMethodNotAllowed configures whether 405 Method Not Allowed is automatically returned when a path exists for other HTTP verbs (RFC 9110 §15.5.6).
 func WithMethodNotAllowed(enabled bool) Option {
 	return func(s *Server) {
 		s.HandleMethodNotAllowed = enabled
 	}
 }
 
-// WithSkipUnmatchedRoutes configures whether global middlewares are bypassed for unmatched routes (404/405).
+// WithSkipUnmatchedRoutes configures whether global middlewares are bypassed for unmatched routes (404 / 405).
 func WithSkipUnmatchedRoutes(enabled bool) Option {
 	return func(s *Server) {
 		s.SkipUnmatchedRoutes = enabled
 	}
 }
 
-// WithPrefork enables highload multi-process preforking on UNIX systems.
+// WithPrefork enables high-load multi-process socket preforking on UNIX systems (`SO_REUSEPORT`).
 func WithPrefork(enabled bool) Option {
 	return func(s *Server) {
 		s.Prefork = enabled
 	}
 }
 
-// WithTrustedProxies configures trusted proxy CIDRs/IPs for secure ClientIP extraction.
+// WithTrustedProxies configures trusted reverse proxy CIDRs/IPs for anti-spoofing [Request.ClientIP] resolution.
 func WithTrustedProxies(proxies []string) Option {
 	return func(s *Server) {
 		_ = s.SetTrustedProxies(proxies)
 	}
 }
 
-// WithTrustedPlatform sets a trusted vendor header (e.g. "CF-Connecting-IP") for ClientIP extraction.
+// WithTrustedPlatform sets a trusted platform header (e.g. "CF-Connecting-IP") for ClientIP extraction.
 func WithTrustedPlatform(headerName string) Option {
 	return func(s *Server) {
 		s.SetTrustedPlatform(headerName)
 	}
 }
 
-// New creates a new, fully initialized Sein server instance.
+// New creates a new, fully initialized [Server] instance configured with options.
 func New(opts ...Option) *Server {
 	s := &Server{
 		router:                 NewRouter(),

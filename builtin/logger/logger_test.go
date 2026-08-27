@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/foundation/async/log"
+	"github.com/lemon4ksan/foundation/async/logkit"
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
 
@@ -22,10 +22,10 @@ import (
 
 func TestLogger_AccessLogEmission(t *testing.T) {
 	var buf bytes.Buffer
-	cfg := log.DefaultConfig(log.LevelInfo)
+	cfg := logkit.DefaultConfig(logkit.LevelInfo)
 	cfg.Output = &buf
 	cfg.Colors = false
-	customLogger := log.New(cfg)
+	customLogger := logkit.New(cfg)
 
 	app := sein.New()
 	app.Use(loggermw.New(

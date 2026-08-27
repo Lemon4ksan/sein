@@ -7,11 +7,11 @@ package requestid
 import (
 	"context"
 	"encoding/hex"
+	"math/rand/v2"
 	"net/http"
 	"sync/atomic"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
-	"github.com/lemon4ksan/foundation/silicon/rand"
 	"github.com/lemon4ksan/foundation/timekit"
 
 	"github.com/lemon4ksan/sein"
@@ -63,7 +63,7 @@ func generateID() string {
 	b[12] = byte(seq >> 24)
 	b[13] = byte(seq >> 16)
 	b[14] = byte(seq >> 8)
-	b[15] = byte(rand.Uint32())
+	b[15] = byte(rand.Uint32()) //nolint:gosec // Non-cryptographic random request ID
 
 	var dst [32]byte
 	hex.Encode(dst[:], b[:])

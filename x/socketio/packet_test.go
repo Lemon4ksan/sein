@@ -130,12 +130,10 @@ func TestBinaryDeconstructReconstruct(t *testing.T) {
 
 	input := []any{
 		"event:data",
-		map[string]any{
-			"blob": rawBinary1,
-			"nested": []any{
-				rawBinary2,
-				"plain-text",
-			},
+		rawBinary1,
+		[]any{
+			rawBinary2,
+			"plain-text",
 		},
 	}
 

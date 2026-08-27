@@ -2,11 +2,12 @@
 
 # sein
 
-### Единый серверный реактор сетевых протоколов для Go
+### Суверенный высокопроизводительный серверный реактор сетевых протоколов для Go
 
 [![License](https://img.shields.io/github/license/lemon4ksan/sein?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/статус-активная%20разработка-blue?style=flat-square)](#)
 [![Ecosystem](https://img.shields.io/badge/экосистема-foundation-blueviolet?style=flat-square)](https://github.com/lemon4ksan/foundation)
+[![Go Version](https://img.shields.io/badge/go-1.24%2B-00ADD8?style=flat-square&logo=go)](https://go.dev)
 
 > _«В бэкендах безумие — это состояние по умолчанию. Пусть **sein** станет вашим светом разума.»_
 
@@ -14,115 +15,70 @@
 
 </div>
 
-## 1. Видение проекта (The One-Sentence Pitch)
+---
 
-**`sein`** — это разрабатываемый суверенный серверный реактор на Go с нулевыми аллокациями памяти (**0 B/op**), объединяющий **HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets и gRPC на едином порту `:443`** без внешних прокси-серверов, с математически верифицированной безопасностью памяти (`borrow.Scope`) и аппаратным иммунитетом к сетевым DoS-атакам.
+## 1. Обзор проекта
 
-## 2. Проблема: Конец трилеммы серверов
+**`sein`** — это единый высокопроизводительный серверный IP-реактор и типобезопасный веб-фреймворк для Go с zero-alloc архитектурой (**0 B/op**), объединяющий **HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets и gRPC на едином порту `:443`** без внешних прокси-серверов, с математически верифицированной безопасностью памяти (`borrow.Scope`) и аппаратным иммунитетом к сетевым DoS-атакам.
 
-Современная серверная разработка на Go разорвана между тремя компромиссами:
+### Ключевые возможности и архитектурные столпы
+- **Single-Port Protocol Matrix (Единый порт `:443`)**:
+  - Диспетчеризация HTTP/1.1, HTTP/2 (ALPN `h2`), HTTP/3 (QUIC ALPN `h3`) и WebSockets на одном сокете без Nginx, Envoy или Caddy.
+  - Нативные мультиплексированные WebSockets через HTTP/2 и HTTP/3 (**RFC 8441** и **RFC 9220** Extended `CONNECT`).
+- **Чистые математические функции-обработчики**:
+  - Сигнатуры обработчиков: `(ctx, DTO) -> (Response, error)` или `(ctx) -> (Response, error)`.
+  - Автоматическая сериализация JSON, вывод HTTP статус-кодов и типизированные конструкторы ответов (`sein.OK`, `sein.Created`, `sein.NoContent`, `sein.Redirect`).
+- **Унифицированная DTO-ингестия на контрактах**:
+  - Извлечение параметров пути (Path), query-строки, заголовков (Headers), cookies, токенов авторизации (Bearer), multipart-файлов, L1 context сессий и JSON-тел в единую Go-структуру.
+  - Декларативная санитизация строк (`trim`, `lower`, `squish`) и правила валидации (`email`, `uuid`, `enum`, `min`, `max`, `pattern`).
+- **Кремниевый детерминизм и 0 аллокаций**:
+  - Zero-alloc Radix роутинг, шардирование памяти по логическим ядрам CPU (`PerPStorage`), плоский inline L1 кэш контекста (`[8]contextSlot` массив).
+  - Интеграция с `borrow.Scope` для статического контроля времени жизни буферов.
 
-1. **`net/http` / `Gin`:** Безопасно и стандартно, но требует множественных аллокаций памяти на запрос, нагружает GC и испытывает конкуренцию за блокировки на многоядерных CPU.
-2. **`fasthttp` / `Fiber`:** Высокая скорость на HTTP/1.1, но нет нативной поддержки HTTP/2 и HTTP/3, а ручной рециклинг буферов приводит к Use-After-Free при утечке памяти в горутины.
-3. **`grpc-go` / `Nginx`:** Требует поддержки отдельных портов под каждый протокол, выделения глубоких деревьев указателей Protobuf и настройки внешних реверс-прокси для объединения трафика.
+---
 
-**Цель `sein`:** объединить скорость zero-copy исполнения, безопасность типов и полный стек протоколов IETF на одном сокете.
+## 2. Быстрый старт
 
-## 3. Четыре фундаментальных инварианта
-
-### I. Single-Port Protocol Matrix (Единый порт `:443`)
-* **Единая точка входа:** Одновременное прослушивание TCP `:443` и UDP `:443`.
-* **Без внешнего прокси-слоя:** Прямая диспетчеризация входящих соединений без Nginx или Envoy сайдкаров.
-* **Быстрый ALPN & Connection ID демультиплексор:** Маршрутизация протоколов на уровне байтовых сигнатур TLS 1.3 ALPN (`h2`, `http/1.1`) и QUIC Connection ID (`h3`).
-* **Нативный WebSocket over H2/H3:** Подключение WebSockets через **RFC 8441** и **RFC 9220** (Extended `CONNECT`) внутри существующих мультиплексированных стримов без необходимости перехвата TCP-сокета (`Hijack()`).
-
-### II. Кремниевый детерминизм и безопасность памяти (Цель: 0 B/op)
-* **Кольцевые пулы с привязкой к ядрам:** Рециклинг буферов и контекстов через `foundation/silicon/pool` (`PerPStorage`) без межъядерных блокировок.
-* **Плоский Хаффман и SIMD:** Декодирование HTTP/2 HPACK через предвычисленные матрицы поиска и быстрое сканирование разделителей `\r\n` с помощью AVX2/BMI2.
-* **Compile-Time безопасность заимствований:** Интеграция с `borrow.Scope` и анализатором `vortex check` ($P * Q$ Separation Logic), гарантирующая, что zero-copy срезы памяти невозможно случайно передать в асинхронные горутины без явного копирования.
-
-### III. Аппаратный иммунитет к DoS-атакам
-* **Защита Anti-Rapid Reset (CVE-2023-44487):** Токен-бакеты на уровне каждого сокета для ограничения частоты кадров `RST_STREAM`.
-* **Anti-Slowloris по реальной скорости:** Контроль физической скорости передачи (`MinTransferRate`) вместо исключительно статических таймаутов.
-* **Fair Queuing шедулер стримов:** Динамическое чередование кадров `DATA` между параллельными стримами для предотвращения блокировок head-of-line.
-* **Защита от компрессионных бомб:** Ограничение максимального размера распаковки таблиц HPACK и QPACK на лету.
-
-### IV. Декларативный симбиоз с `vortex` (No-Glue Architecture)
-* **Единый контракт AST:** Описание схем и сервисов через стандартные интерфейсы Go, OpenAPI 3.1 или Protobuf.
-* **Генерация кода без рефлексии:** `vortex gen` компилирует интерфейсы напрямую в Radix Trie роутеры (`foundation/silicon/trie`) и типизированные DTO-биндеры.
-
-## 4. Модель безопасности памяти: Проверка на этапе компиляции
-
-Чтобы исключить ошибки Use-After-Free при сохранении 0 B/op производительности, `sein` опирается на статический анализ:
-
-```go
-// ❌ Ошибка статической проверки (B001 - Scoped Borrow Escape):
-srv.POST("/api/v1/events", func(c *sein.Context) error {
-    data := c.Body() // data — заимствованный срез с временем жизни запроса
-    go func() {
-        processEvent(data) // vortex check: заимствованная память утекает в несинхронизированную горутину
-    }()
-    return c.SendStatus(200)
-})
-
-// ✅ Безопасный паттерн (Явное копирование при асинхронной передаче):
-srv.POST("/api/v1/events", func(c *sein.Context) error {
-    data := c.BodyClone() // Выделение памяти только при необходимости передачи в фон
-    go func() {
-        processEvent(data)
-    }()
-    return c.SendStatus(200)
-})
+### Установка
+```bash
+go get github.com/lemon4ksan/sein
 ```
 
-* **Escape Prevention (`B001`):** Контроль того, что заимствованные буферы не покидают пределов контекста запроса.
-* **Disjoint Intervals (`B003`):** Доказательство непересекаемости мутаций срезов при zero-copy парсинге.
-* **Linear Lifecycle (`B011`):** Соблюдение линейного автомата состояний ($\text{Acquired} \to \text{Frozen} \to \text{Released}$).
-
-## 5. Архитектурные принципы высокой производительности
-
-`sein` разрабатывается с учетом физики современного кремния:
-
-* **Исключение GC Mark-Assist:** Рабочая память запроса не попадает в кучу сборщика мусора.
-* **Выравнивание кэш-линий:** Разделяемые структуры выравниваются по 64-байтовым границам кэша L1/L2 (`cpu.CacheLinePad`) для устранения False Sharing.
-* **Шардирование без блокировок:** Изолированные структуры очередей для каждого логического процессора (`PerPStorage`).
-* **Монотонные часы без системных вызовов:** Прямое атомарное чтение монотонного таймера (`silicon/clock`).
-
-## 6. Целевой API
-
+### Полный рабочий пример
 ```go
 package main
 
 import (
+	"context"
 	"log"
 
+	"github.com/google/uuid"
 	"github.com/lemon4ksan/sein"
-	"github.com/lemon4ksan/sein/option"
-	"github.com/lemon4ksan/sein/ws"
 )
 
-type CreateUserRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
+// 1. Описываем унифицированный DTO запроса с санитизацией и валидацией
+type UpdateProfileDTO struct {
+	UserID   uuid.UUID `path:"id,uuid"`
+	Username string    `json:"username,trim,required,min=3,max=30"`
+	Email    string    `json:"email,lower,email,required"`
+	Role     string    `query:"role,default=user,enum=user|admin|moderator"`
+	Auth     string    `auth:"bearer,required"`
 }
 
 type UserResponse struct {
-	ID       uint64 `json:"id"`
+	ID       string `json:"id"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
+	Role     string `json:"role"`
 }
 
 func main() {
-	srv := sein.NewServer(
-		option.WithAddr(":443"),
-		option.WithTLS("cert.pem", "key.pem"),
-		option.WithHTTP3(true),            // Нативный HTTP/3 QUIC на UDP :443
-		option.WithFairQueuing(true),      // Балансировка фреймов DATA между стримами
-		option.WithAntiRapidReset(1000),   // Лимит 1,000 RST_STREAM/сек на сокет
-		option.WithMinTransferRate(1024),  // Anti-Slowloris: минимум 1 КБ/с реальной скорости
+	srv := sein.New(
+		sein.WithAddr(":8080"),
+		sein.WithTrailingSlashRedirect(true),
+		sein.WithMethodNotAllowed(true),
 	)
 
-	// 1. REST API (Zero-Alloc распаковка JSON)
 	srv.POST("/api/v1/users", func(c *sein.Context) error {
 		var req CreateUserRequest
 		if err := c.BindJSON(&req); err != nil {
@@ -131,67 +87,139 @@ func main() {
 		return c.SendJSON(201, UserResponse{
 			ID:       c.NextID(),
 			Username: req.Username,
+	// 2. Чистый математический обработчик: (ctx, DTO) -> (Result, error)
+	srv.Post("/users/:id", func(ctx context.Context, req UpdateProfileDTO) (*UserResponse, error) {
+		return &UserResponse{
+			ID:       req.UserID.String(),
+			Username: req.Username,
 			Email:    req.Email,
-		})
+			Role:     req.Role,
+		}, nil
 	})
 
-	// 2. WebSockets (Мультиплексированный стрим RFC 8441 H2 / RFC 9220 H3)
-	srv.WS("/ws/feed", func(conn ws.Conn) {
-		defer conn.Close()
-		for {
-			msg, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-			_ = conn.WriteMessage(ws.OpText, msg)
-		}
+	// 3. Простой GET обработчик: (ctx) -> (Result, error)
+	srv.Get("/health", func(ctx context.Context) (string, error) {
+		return "OK", nil
 	})
 
-	// 3. gRPC (5-байтный фрейминг на том же сокете)
-	srv.GRPC("/UserService/GetUser", func(c *sein.GRPCContext) error {
-		return c.SendProto(200, &UserResponse{ID: 1, Username: "alice"})
+	// 4. Стриминг Server-Sent Events (SSE) в реальном времени
+	srv.Get("/events", func(ctx context.Context) (sein.SSEResponse, error) {
+		return sein.SSE(func(sse *sein.SSESender) error {
+			_ = sse.SendJSON("connected", map[string]string{"status": "online"})
+			return nil
+		}), nil
 	})
 
-	log.Println("Реактор sein запускается на порту :443 (TCP+UDP)")
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("Ошибка сервера: %v", err)
-	}
+	log.Println("sein сервер запущен на http://localhost:8080")
+	log.Fatal(srv.Listen(":8080"))
 }
 ```
 
-## 7. Место в экосистеме
+---
 
-`sein` является серверным компонентом связного сетевого стека:
+## 3. Матрица директив унифицированного DTO
 
-* **`foundation`** — Кремниевый субстрат (SIMD, Off-Heap, PerP, Radix Trie, Lock-Free кольца, stdlib v2).
-* **`aoni`** — Клиентский реактор (Chromium stealth, evasion, uTLS, Happy Eyeballs v3, MASQUE).
-* **`sein`** — Серверный реактор (Единый порт `:443`, 0 B/op, Anti-DoS, RFC 8441/9220 WebSockets).
-* **`vortex`** — Декларативный AST тулчейн ($P * Q$ Borrow Checker, компилятор контрактов, генерация моков).
-* **`porthack`** — Движок нагрузочного тестирования и валидации производительности.
-* **`decon`** — Защитник периметра и очиститель трафика.
-* **`niko`** — Легковесный суверенный рантайм-оркестратор.
+Опишите все ожидаемые входные параметры протоколов в единой декларативной структуре:
 
-## 8. Структура репозитория
-
+```go
+type UpdateProfileDTO struct {
+    // 1. Источники данных (Откуда извлекаются значения)
+    UserID      uuid.UUID           `path:"user_id,uuid"`                  // Параметр URL: /users/:user_id
+    Search      string              `query:"q,default=all,trim,lower"`     // Query-параметр: ?q=...
+    Page        int                 `query:"page,default=1,positive"`      // Числовой query-параметр
+    Limit       int                 `query:"limit,default=20,multiple_of=5,le=100"` // Шаг пагинации
+    Tags        []string            `query:"tags,sep=|"`                   // Срез со своим разделителем
+    TraceID     string              `header:"X-Trace-ID,required"`         // HTTP-заголовок
+    SessionID   string              `cookie:"session_id,required"`         // Значение Cookie
+    AuthToken   string              `auth:"bearer,required"`               // Authorization: Bearer <token>
+    ClientIP    net.IP              `net:"ip"`                             // IP клиента (net.IP или netip.Addr)
+    Scheme      string              `net:"scheme"`                         // http или https
+    Avatar      *sein.File          `file:"avatar,required"`               // Одиночный multipart-файл
+    Gallery     []*sein.File        `files:"gallery"`                      // Коллекция multipart-файлов
+    Category    string              `form:"category,trim"`                 // Поле формы (multipart / urlencoded)
+    RawHMAC     []byte              `query:"hmac,hex"`                     // Бинарный срез из hex
+    PayloadB64  []byte              `json:"payload,base64"`                // Бинарный срез из base64
+    Password    sein.Secret[string] `json:"password,min=8"`                // Скрывается в логах
+    UserSession *Session            `ctx:""`                               // Типизированная L1 сессия контекста
+    Bio         string              `json:"bio,squish,max=500"`            // JSON поле со сжатием пробелов
+}
 ```
-sein/
-├── option/       // Опции конфигурации сервера (WithAddr, WithTLS, WithHTTP3, WithAntiRapidReset)
-├── router/       // Zero-alloc Radix Trie роутер (foundation/silicon/trie)
-├── h1/           // Конвейер HTTP/1.1 с keep-alive
-├── h2/           // Нативный HTTP/2 фрейм-мультиплексор и HPACK flat LUT
-├── quic/         // Суверенный Pure-Go RFC 9000 QUIC транспортный движок
-├── h3/           // Нативный HTTP/3 RFC 9114 & QPACK RFC 9204 кодек
-├── ws/           // RFC 8441 & RFC 9220 WebSocket движок
-├── grpc/         // Zero-copy gRPC / gRPC-Web хэндлеры с 5-байтным фреймингом
-├── security/     // Токен-бакеты Anti-Rapid Reset, защита от Slowloris
-├── compress/     // Ускоренное сжатие flate, zstd, brotli и gzip
-├── context.go    // Zero-alloc контекст запроса с жизненным циклом borrow.Scope
-└── server.go     // Единый слушатель Single-Port и быстрый ALPN/CID демультиплексор
+
+### Таблица тегов DTO
+
+| Категория | Директива | Описание | Пример |
+| :--- | :--- | :--- | :--- |
+| **Источники** | `path:"key"` | Параметр URL-пути (`/users/:id`) | `path:"id,uuid"` |
+| | `query:"key"` | URL query-параметр (`?page=1`) | `query:"page,default=1"` |
+| | `header:"key"` | HTTP-заголовок запроса | `header:"X-API-Key,required"` |
+| | `cookie:"key"` | Значение HTTP-cookie | `cookie:"session_id,required"` |
+| | `auth:"bearer"` | Извлечение `Authorization: Bearer <token>` | `auth:"bearer,required"` |
+| | `form:"key"` | Поле формы (multipart или urlencoded) | `form:"title,trim"` |
+| | `file:"key"` | Одиночный загруженный файл (`*sein.File`) | `file:"avatar,required"` |
+| | `files:"key"` | Несколько загруженных файлов (`[]*sein.File`) | `files:"attachments"` |
+| | `json:"key"` | Поле тела запроса JSON | `json:"name,min=2"` |
+| | `net:"ip"` | Вычисленный IP-адрес клиента | `net:"ip"` |
+| | `ctx:""` | Внедрение типизированного значения из L1 кэша | `ctx:""` |
+| **Санитизация** | `trim` | Удаление начальных и конечных пробелов | `query:"q,trim"` |
+| | `lower` | Приведение ASCII символов к нижнему регистру | `json:"email,lower"` |
+| | `upper` | Приведение ASCII символов к верхнему регистру | `header:"code,upper"` |
+| | `squish` | Схлопывание повторяющихся пробелов в один | `json:"bio,squish"` |
+| **Валидация** | `required` | Поле обязательно и не должно быть пустым | `header:"X-Trace-ID,required"` |
+| | `min=N` / `max=N` | Ограничение длины строки или числового диапазона | `json:"password,min=8,max=64"` |
+| | `enum=a\|b\|c` | Проверка допустимых значений из списка | `query:"sort,enum=asc\|desc"` |
+| | `email` | Валидация стандартного формата Email | `json:"email,email"` |
+| | `uuid` | Валидация RFC 9562 / RFC 4122 UUID формата | `path:"id,uuid"` |
+| | `pattern=regex` | Проверка предкомпилированным регулярным выражением | `json:"code,pattern=^[A-Z0-9]+$"` |
+
+---
+
+## 4. Маршрутизация и обработчики
+
+### Чистые математические функции
+`sein` избавляет от громоздких параметров `w http.ResponseWriter, r *http.Request`:
+
+```go
+// Чистый GET с DTO: (ctx, DTO) -> (Result, error)
+srv.GetWith("/users/:id", func(ctx context.Context, req GetUserDTO) (*User, error) {
+    return userService.Find(ctx, req.ID)
+})
+
+// Чистый POST с DTO: (ctx, DTO) -> (Result, error)
+srv.Post("/users", func(ctx context.Context, req CreateUserDTO) (sein.Response[*User], error) {
+    user, err := userService.Create(ctx, req)
+    if err != nil {
+        return sein.Response[*User]{}, err
+    }
+    return sein.Created(user), nil
+})
 ```
 
-## 9. Лицензия
+### Группировка маршрутов и Middleware
+```go
+api := srv.Group("/api/v1", authMiddleware)
+{
+    users := api.Group("/users")
+    users.Get("", listUsersHandler)
+    users.Post("", createUserHandler)
+    users.GetWith("/:id", getUserHandler)
+}
+```
 
-Распространяется под лицензией **BSD 3-Clause License**. Подробности в файле [LICENSE](LICENSE).
+---
+
+## 5. Экосистема
+
+`sein` является серверным компонентом сетевого стека:
+
+* **[`aoni`](https://github.com/lemon4ksan/aoni)** — Исходящий клиентский реактор (Chromium стелс, uTLS эвазия, JA4+, Happy Eyeballs v3, MASQUE).
+* **[`sein`](https://github.com/lemon4ksan/sein)** — Входящий серверный реактор (Single-port `:443`, 0 B/op, anti-DoS, RFC 8441/9220 WebSockets).
+* **[`foundation`](https://github.com/lemon4ksan/foundation)** — Высокопроизводительный Go-субстрат (SIMD векторы, Per-P пулы, off-heap память, lock-free кольца).
+
+---
+
+## 6. Лицензия
+
+Распространяется под лицензией **BSD 3-Clause License**. См. [LICENSE](LICENSE) для подробностей.
 
 <div align="center">
   <sub>В бэкендах безумие — это состояние по умолчанию. Пусть <b>sein</b> станет вашим светом разума.</sub>

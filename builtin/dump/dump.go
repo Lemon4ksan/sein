@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/lemon4ksan/foundation/async/log"
+	"github.com/lemon4ksan/foundation/async/logkit"
 	"github.com/lemon4ksan/foundation/codec/json"
 
 	"github.com/lemon4ksan/sein"
@@ -27,7 +27,7 @@ type Config struct {
 	// CurlCommand generates a runnable curl CLI command in the log. Default is true.
 	CurlCommand bool
 	// Logger is the structured logger instance.
-	Logger log.Logger
+	Logger logkit.Logger
 	// Output is an optional custom dump callback.
 	Output func(dumpStr string)
 }
@@ -57,7 +57,7 @@ func WithCurlCommand(enabled bool) Option {
 }
 
 // WithLogger sets a structured logger.
-func WithLogger(l log.Logger) Option {
+func WithLogger(l logkit.Logger) Option {
 	return func(c *Config) {
 		c.Logger = l
 	}
@@ -102,7 +102,7 @@ func New(opts ...Option) sein.Middleware {
 		DumpRequest:  true,
 		DumpResponse: true,
 		CurlCommand:  true,
-		Logger:       log.New(log.DefaultConfig(log.LevelDebug)),
+		Logger:       logkit.New(logkit.DefaultConfig(logkit.LevelDebug)),
 	}
 	for _, opt := range opts {
 		opt(&cfg)

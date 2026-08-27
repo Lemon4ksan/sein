@@ -7,7 +7,6 @@ package socketio
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 )
 
 // BroadcastOperator provides a fluent builder interface for filtering targets and broadcasting events.

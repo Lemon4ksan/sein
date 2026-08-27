@@ -216,7 +216,11 @@ func (r Response[T]) WithLastModified(t time.Time) Response[T] {
 	return r.WithHeader(header.LastModified, t.UTC().Format(http.TimeFormat))
 }
 
-// OK creates a 200 OK response with the given body.
+// OK creates a type-safe 200 OK [Response] wrapping body.
+//
+// # Example
+//
+//	return sein.OK(User{ID: 1, Name: "Alice"}), nil
 func OK[T any](body T) Response[T] {
 	return Response[T]{
 		Status: http.StatusOK,
@@ -224,7 +228,11 @@ func OK[T any](body T) Response[T] {
 	}
 }
 
-// Created creates a 201 Created response with the given body.
+// Created creates a type-safe 201 Created [Response] wrapping body (RFC 9110 §15.3.2).
+//
+// # Example
+//
+//	return sein.Created(User{ID: 42, Name: "Bob"}), nil
 func Created[T any](body T) Response[T] {
 	return Response[T]{
 		Status: http.StatusCreated,
@@ -232,7 +240,7 @@ func Created[T any](body T) Response[T] {
 	}
 }
 
-// Accepted creates a 202 Accepted response with the given body.
+// Accepted creates a type-safe 202 Accepted [Response] for asynchronous background processing (RFC 9110 §15.3.3).
 func Accepted[T any](body T) Response[T] {
 	return Response[T]{
 		Status: http.StatusAccepted,
@@ -240,21 +248,25 @@ func Accepted[T any](body T) Response[T] {
 	}
 }
 
-// NoContent creates a 204 No Content response.
+// NoContent creates a type-safe 204 No Content [Response] with an empty wire payload (RFC 9110 §15.3.5).
 func NoContent() Response[any] {
 	return Response[any]{
 		Status: http.StatusNoContent,
 	}
 }
 
-// NotModified creates a 304 Not Modified conditional response.
+// NotModified creates a 304 Not Modified conditional cache [Response] (RFC 9110 §15.4.5).
 func NotModified() Response[any] {
 	return Response[any]{
 		Status: http.StatusNotModified,
 	}
 }
 
-// Redirect creates a 302/307 redirect response.
+// Redirect creates a 302 Found / 307 Temporary Redirect [Response] pointing to targetURL (RFC 9110 §15.4.3).
+//
+// # Example
+//
+//	return sein.Redirect("/login"), nil
 func Redirect(targetURL string, status ...int) Response[any] {
 	code := http.StatusFound
 	if len(status) > 0 {
@@ -266,7 +278,7 @@ func Redirect(targetURL string, status ...int) Response[any] {
 	return r.WithHeader(header.Location, targetURL)
 }
 
-// StatusWith creates a response with custom status, body, and headers.
+// StatusWith creates a response with custom HTTP status code, body, and headers.
 func StatusWith[T any](status int, body T, headers http.Header) Response[T] {
 	return Response[T]{
 		Status:  status,
@@ -275,7 +287,7 @@ func StatusWith[T any](status int, body T, headers http.Header) Response[T] {
 	}
 }
 
-// HTML creates an HTML response (text/html; charset=utf-8).
+// HTML creates an HTML response setting Content-Type to `text/html; charset=utf-8`.
 func HTML(content string) Response[string] {
 	r := Response[string]{
 		Status: http.StatusOK,

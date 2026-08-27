@@ -10,15 +10,15 @@ package recover
 import (
 	"runtime/debug"
 
-	"github.com/lemon4ksan/foundation/async/log"
+	"github.com/lemon4ksan/foundation/async/logkit"
 
 	"github.com/lemon4ksan/sein"
 )
 
 // Config configures the panic recovery middleware.
 type Config struct {
-	// Logger is the structured logger used to record panic events. Default is log.Default().
-	Logger log.Logger
+	// Logger is the structured logger used to record panic events. Default is logkit.Default().
+	Logger logkit.Logger
 	// EnableStackTrace controls whether full stack traces are logged on panic. Default is true.
 	EnableStackTrace bool
 	// ErrorHandler is the custom error handler invoked when a panic occurs. Default returns HTTP 500.
@@ -29,7 +29,7 @@ type Config struct {
 type Option func(*Config)
 
 // WithLogger sets the structured logger instance.
-func WithLogger(l log.Logger) Option {
+func WithLogger(l logkit.Logger) Option {
 	return func(c *Config) {
 		c.Logger = l
 	}
@@ -54,7 +54,7 @@ func WithErrorHandler(handler func(req *sein.Request, err any) (any, error)) Opt
 // safely converts them into structured domain errors, and prevents process crashes.
 func New(opts ...Option) sein.Middleware {
 	cfg := Config{
-		Logger:           log.New(log.DefaultConfig(log.LevelInfo)),
+		Logger:           logkit.New(logkit.DefaultConfig(logkit.LevelInfo)),
 		EnableStackTrace: true,
 		ErrorHandler: func(_ *sein.Request, _ any) (any, error) {
 			return nil, sein.ErrInternal("an unexpected panic occurred")
@@ -71,16 +71,16 @@ func New(opts ...Option) sein.Middleware {
 					if cfg.Logger != nil {
 						if cfg.EnableStackTrace {
 							cfg.Logger.Error("panic recovered in HTTP handler",
-								log.String("path", req.Path()),
-								log.String("method", req.Method()),
-								log.Any("error", r),
-								log.String("stack", string(debug.Stack())),
+								logkit.String("path", req.Path()),
+								logkit.String("method", req.Method()),
+								logkit.Any("error", r),
+								logkit.String("stack", string(debug.Stack())),
 							)
 						} else {
 							cfg.Logger.Error("panic recovered in HTTP handler",
-								log.String("path", req.Path()),
-								log.String("method", req.Method()),
-								log.Any("error", r),
+								logkit.String("path", req.Path()),
+								logkit.String("method", req.Method()),
+								logkit.Any("error", r),
 							)
 						}
 					}

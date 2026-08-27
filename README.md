@@ -2,11 +2,12 @@
 
 # sein
 
-### The Sane Single-Port Protocol Server Reactor for Go
+### The Sovereign High-Throughput Protocol Reactor & Server Framework for Go
 
 [![License](https://img.shields.io/github/license/lemon4ksan/sein?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active%20development-blue?style=flat-square)](#)
 [![Ecosystem](https://img.shields.io/badge/ecosystem-foundation-blueviolet?style=flat-square)](https://github.com/lemon4ksan/foundation)
+[![Go Version](https://img.shields.io/badge/go-1.24%2B-00ADD8?style=flat-square&logo=go)](https://go.dev)
 
 > _"In backends, madness is the default. Let **sein** be your light of sanity."_
 
@@ -14,182 +15,201 @@
 
 </div>
 
-## 1. Project Vision (The One-Sentence Pitch)
+---
 
-**`sein`** is an in-development sovereign Go server reactor engineered for zero-allocation execution (**0 B/op**), designed to unify **HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets, and gRPC on a single port `:443`** without reverse proxies, with mathematically verified memory safety (`borrow.Scope`) and hardware-level resistance to network DoS attacks.
+## 1. Project Overview
 
-## 2. The Problem: Ending the Server Trilemma
+**`sein`** is a unified, ultra-high-throughput Internet Protocol server engine and contract-first web framework for Go. Engineered for zero-allocation execution (**0 B/op**), `sein` unifies **HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets, and gRPC on a single port `:443`** without reverse proxies, with mathematically verified memory safety (`borrow.Scope`) and hardware-level resistance to network DoS attacks.
 
-Modern Go backend architectures are torn between three compromises:
+### Key Capabilities & Architectural Pillars
+- **Single-Port Protocol Matrix (Port `:443` Unification)**:
+  - Dispatches HTTP/1.1, HTTP/2 (ALPN `h2`), HTTP/3 (QUIC ALPN `h3`), and WebSockets on a single listening socket without Envoy, Nginx, or Caddy sidecars.
+  - Native multiplexed WebSockets over HTTP/2 and HTTP/3 via **RFC 8441** and **RFC 9220** (Extended `CONNECT`).
+- **Mathematical Pure Handlers & Generics-First Ergonomics**:
+  - Handlers are pure functions: `(ctx, DTO) -> (Response, error)` or `(ctx) -> (Response, error)`.
+  - Automatic JSON serialization, HTTP status code inference, and typed response builders (`sein.OK`, `sein.Created`, `sein.NoContent`, `sein.Redirect`).
+- **Unified Contract-First DTO Ingestion**:
+  - Ingest URL path params, query strings, headers, cookies, Bearer tokens, multipart files, L1 context sessions, and JSON bodies in a single unified Go struct.
+  - Declarative string sanitization (`trim`, `lower`, `squish`) and validation rules (`email`, `uuid`, `enum`, `min`, `max`, `pattern`).
+- **Silicon Determinism & Zero Allocations**:
+  - Zero-alloc Radix routing, Per-CPU execution sharding (`PerPStorage`), and inline L1 CPU cache context storage (`[8]contextSlot` array).
+  - Integration with `borrow.Scope` for compile-time borrow safety and lifetime tracking.
 
-1. **`net/http` / `Gin`:** Safe and standard, but incurs multiple allocations per request, GC overhead, and lock contention on multi-core hardware.
-2. **`fasthttp` / `Fiber`:** Fast on HTTP/1.1, but lacks native HTTP/2 and HTTP/3 support, while manual buffer pooling risks Use-After-Free corruption when references escape into goroutines.
-3. **`grpc-go` / `Nginx`:** Requires maintaining separate ports, allocating deep Protobuf pointer trees, and configuring external reverse proxies to tie protocols together.
+---
 
-**`sein` targets the synthesis:** high-throughput zero-copy execution, type safety, and full-stack IETF protocol unification on a single socket.
+## 2. Quickstart
 
-## 3. The Four Fundamental Invariants
-
-### I. Single-Port Protocol Matrix (Port `:443` Unification)
-* **Single Listening Endpoint:** Listen simultaneously on TCP `:443` and UDP `:443`.
-* **Zero Reverse Proxy Layer:** Dispatches incoming connections directly at wire level without Nginx or Envoy sidecars.
-* **Fast ALPN & Connection ID Demux:** Sub-microsecond protocol routing via TLS 1.3 ALPN (`h2`, `http/1.1`) and QUIC Connection IDs (`h3`).
-* **Native Multiplexed WebSockets:** WebSockets connect over existing HTTP/2 and HTTP/3 streams via **RFC 8441** and **RFC 9220** (Extended `CONNECT`), eliminating TCP socket hijacking (`Hijack()`).
-
-### II. Silicon Determinism & Memory Safety (Target 0 B/op)
-* **Core-Pinned Allocation Rings:** Buffer and context recycling via `foundation/silicon/pool` (`PerPStorage`), removing cross-core synchronization locks.
-* **Flat Huffman LUT & Vectorized SIMD:** Fast HPACK decoding using precomputed lookup matrices and AVX2/BMI2 delimiter scanning.
-* **Compile-Time Borrow Safety:** Integration with `borrow.Scope` and `vortex check` ($P * Q$ Separation Logic) to ensure zero-copy slices cannot escape into background goroutines without explicit cloning.
-
-### III. Adversarial Immunity by Design (Anti-DoS Defense)
-* **Anti-Rapid Reset Defense (CVE-2023-44487):** Per-socket token buckets to throttle `RST_STREAM` frame floods.
-* **Anti-Slowloris Dynamic Flow Control:** Tracking physical transfer speed (`MinTransferRate`) rather than relying solely on static wall-clock timeouts.
-* **Fair Queuing Stream Scheduler:** Dynamic interleaving of `DATA` frames across active multiplexed streams to prevent head-of-line blocking.
-* **Compression Bomb Armor:** Bounded decompression state limits for HPACK and QPACK to prevent memory exhaustion attacks.
-
-### IV. Declarative Symbiosis with `vortex` (No-Glue Architecture)
-* **Single AST Contract:** Services and schemas defined via Go interfaces, OpenAPI 3.1, or Protobuf.
-* **Reflection-Free Code Generation:** `vortex gen` compiles interfaces directly into Radix Trie routers (`foundation/silicon/trie`) and typed zero-copy DTO binders.
-
-## 4. Memory Safety Model: Compile-Time Verification
-
-To eliminate Use-After-Free bugs without sacrificing zero-allocation performance, `sein` relies on static verification:
-
-```go
-// ❌ Static check failure (B001 - Scoped Borrow Escape):
-srv.POST("/api/v1/events", func(c *sein.Context) error {
-    data := c.Body() // Borrowed slice tied to request lifetime
-    go func() {
-        processEvent(data) // vortex check: borrowed memory escapes to un-synchronized goroutine
-    }()
-    return c.SendStatus(200)
-})
-
-// ✅ Verified pattern (Explicit ownership clone for async handoff):
-srv.POST("/api/v1/events", func(c *sein.Context) error {
-    data := c.BodyClone() // Explicit allocation when asynchronous lifetime is needed
-    go func() {
-        processEvent(data)
-    }()
-    return c.SendStatus(200)
-})
+### Installation
+```bash
+go get github.com/lemon4ksan/sein
 ```
 
-* **Escape Prevention (`B001`):** Verifies that borrowed byte buffers never escape past request lifecycles.
-* **Disjoint Intervals (`B003`):** Proves non-overlapping slice mutations during zero-copy parsing.
-* **Linear Lifecycle (`B011`):** Enforces strict state progression ($\text{Acquired} \to \text{Frozen} \to \text{Released}$).
-
-## 5. Architectural Principles for High Throughput
-
-`sein` is designed around microarchitectural hardware sympathy:
-
-* **Eliminating GC Mark-Assist:** Keeping per-request working memory off the garbage-collected heap.
-* **Cache Line Alignment:** Structs with shared atomic fields aligned to 64-byte L1/L2 cache lines (`cpu.CacheLinePad`) to prevent false sharing.
-* **Lock-Free Core Sharding:** Per-CPU execution queues (`PerPStorage`) instead of centralized global mutexes.
-* **Zero-Syscall Timestamps:** Monotonic clock readings via direct atomic reads (`silicon/clock`).
-
-## 6. Target API Example
-
+### Complete Working Example
 ```go
 package main
 
 import (
+	"context"
 	"log"
 
+	"github.com/google/uuid"
 	"github.com/lemon4ksan/sein"
-	"github.com/lemon4ksan/sein/option"
-	"github.com/lemon4ksan/sein/ws"
 )
 
-type CreateUserRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
+// 1. Declare unified request DTO with sanitization & validation
+type UpdateProfileDTO struct {
+	UserID   uuid.UUID `path:"id,uuid"`
+	Username string    `json:"username,trim,required,min=3,max=30"`
+	Email    string    `json:"email,lower,email,required"`
+	Role     string    `query:"role,default=user,enum=user|admin|moderator"`
+	Auth     string    `auth:"bearer,required"`
 }
 
 type UserResponse struct {
-	ID       uint64 `json:"id"`
+	ID       string `json:"id"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
+	Role     string `json:"role"`
 }
 
 func main() {
-	srv := sein.NewServer(
-		option.WithAddr(":443"),
-		option.WithTLS("cert.pem", "key.pem"),
-		option.WithHTTP3(true),            // Native HTTP/3 QUIC on UDP :443
-		option.WithFairQueuing(true),      // Stream DATA frame balancing
-		option.WithAntiRapidReset(1000),   // Max 1,000 RST_STREAM/sec per connection
-		option.WithMinTransferRate(1024),  // Anti-Slowloris rate monitoring
+	srv := sein.New(
+		sein.WithAddr(":8080"),
+		sein.WithTrailingSlashRedirect(true),
+		sein.WithMethodNotAllowed(true),
 	)
 
-	// 1. REST API (Zero-Alloc JSON binding)
-	srv.POST("/api/v1/users", func(c *sein.Context) error {
-		var req CreateUserRequest
-		if err := c.BindJSON(&req); err != nil {
-			return c.SendStatus(400)
-		}
-		return c.SendJSON(201, UserResponse{
-			ID:       c.NextID(),
+	// 2. Pure mathematical handler: (ctx, DTO) -> (Result, error)
+	srv.Post("/users/:id", func(ctx context.Context, req UpdateProfileDTO) (*UserResponse, error) {
+		return &UserResponse{
+			ID:       req.UserID.String(),
 			Username: req.Username,
 			Email:    req.Email,
-		})
+			Role:     req.Role,
+		}, nil
 	})
 
-	// 2. WebSockets (Multiplexed stream over RFC 8441 H2 / RFC 9220 H3)
-	srv.WS("/ws/feed", func(conn ws.Conn) {
-		defer conn.Close()
-		for {
-			msg, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-			_ = conn.WriteMessage(ws.OpText, msg)
-		}
+	// 3. Simple GET handler: (ctx) -> (Result, error)
+	srv.Get("/health", func(ctx context.Context) (string, error) {
+		return "OK", nil
 	})
 
-	// 3. gRPC (Native 5-byte framing on the same port)
-	srv.GRPC("/UserService/GetUser", func(c *sein.GRPCContext) error {
-		return c.SendProto(200, &UserResponse{ID: 1, Username: "alice"})
+	// 4. Real-time Server-Sent Events (SSE)
+	srv.Get("/events", func(ctx context.Context) (sein.SSEResponse, error) {
+		return sein.SSE(func(sse *sein.SSESender) error {
+			_ = sse.SendJSON("connected", map[string]string{"status": "online"})
+			return nil
+		}), nil
 	})
 
-	log.Println("sein reactor starting on :443 (TCP+UDP)")
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("Server error: %v", err)
-	}
+	log.Println("sein reactor listening on http://localhost:8080")
+	log.Fatal(srv.Listen(":8080"))
 }
 ```
 
-## 7. Global Ecosystem
+---
 
-`sein` is part of a cohesive networking and runtime ecosystem:
+## 3. Unified DTO Reference Matrix
 
-* **`foundation`** — Hardware silicon substrate (SIMD vectors, off-heap slabs, lock-free rings, Per-P storage).
-* **`aoni`** — Outbound client reactor (Chromium stealth, evasion, uTLS, Happy Eyeballs v3, MASQUE).
-* **`sein`** — Inbound server reactor (Single-port `:443`, 0 B/op, anti-DoS armor, RFC 8441/9220 WebSockets).
-* **`vortex`** — Declarative AST toolchain ($P * Q$ borrow checker, contract compiler, mock generation).
-* **`porthack`** — High-concurrency load testing engine and benchmark validator.
-* **`decon`** — Perimeter edge proxy and traffic cleaner.
-* **`niko`** — Sovereign lightweight runtime orchestrator.
+Declare all expected inputs across protocol layers in a single declarative struct:
 
-## 8. Repository Layout
-
+```go
+type UpdateProfileDTO struct {
+    // 1. Data Sources (Where values originate from)
+    UserID      uuid.UUID           `path:"user_id,uuid"`                  // URL Path variable: /users/:user_id
+    Search      string              `query:"q,default=all,trim,lower"`     // Query string: ?q=...
+    Page        int                 `query:"page,default=1,positive"`      // Query with integer parsing
+    Limit       int                 `query:"limit,default=20,multiple_of=5,le=100"` // Step increment
+    Tags        []string            `query:"tags,sep=|"`                   // Slice with custom delimiter
+    TraceID     string              `header:"X-Trace-ID,required"`         // HTTP Header
+    SessionID   string              `cookie:"session_id,required"`         // Cookie value
+    AuthToken   string              `auth:"bearer,required"`               // Authorization: Bearer <token>
+    ClientIP    net.IP              `net:"ip"`                             // Client IP (net.IP or netip.Addr)
+    Scheme      string              `net:"scheme"`                         // http or https
+    Avatar      *sein.File          `file:"avatar,required"`               // Multipart form file
+    Gallery     []*sein.File        `files:"gallery"`                      // Multipart file collection
+    Category    string              `form:"category,trim"`                 // Multipart / urlencoded form field
+    RawHMAC     []byte              `query:"hmac,hex"`                     // Hex-decoded binary slice
+    PayloadB64  []byte              `json:"payload,base64"`                // Base64-decoded binary slice
+    Password    sein.Secret[string] `json:"password,min=8"`                // Sensitive data masked in logs
+    UserSession *Session            `ctx:""`                               // Typed L1 context session
+    Bio         string              `json:"bio,squish,max=500"`            // JSON body with whitespace collapsed
+}
 ```
-sein/
-├── option/       // Server configuration options (WithAddr, WithTLS, WithHTTP3, WithAntiRapidReset)
-├── router/       // Zero-alloc Radix Trie router (foundation/silicon/trie)
-├── h1/           // HTTP/1.1 pipelining and keep-alive reactor
-├── h2/           // Native HTTP/2 frame multiplexer and HPACK flat LUT
-├── quic/         // Sovereign Pure-Go RFC 9000 QUIC transport engine
-├── h3/           // Native HTTP/3 RFC 9114 & QPACK RFC 9204 codec
-├── ws/           // RFC 8441 & RFC 9220 WebSocket engine
-├── grpc/         // Zero-copy 5-byte framing gRPC / gRPC-Web handlers
-├── security/     // Anti-Rapid Reset token buckets, Anti-Slowloris rate guards
-├── compress/     // Silicon-accelerated compression engines (flate, zstd, brotli, gzip)
-├── context.go    // Zero-alloc request Context with borrow.Scope lifecycle
-└── server.go     // Single-port listener and ALPN/CID demultiplexer
+
+### Tag Directives Reference
+
+| Category | Directive | Description | Example |
+| :--- | :--- | :--- | :--- |
+| **Sources** | `path:"key"` | URL path parameter (`/users/:id`) | `path:"id,uuid"` |
+| | `query:"key"` | URL query parameter (`?page=1`) | `query:"page,default=1"` |
+| | `header:"key"` | HTTP request header | `header:"X-API-Key,required"` |
+| | `cookie:"key"` | HTTP cookie value | `cookie:"session_id,required"` |
+| | `auth:"bearer"` | Extracts `Authorization: Bearer <token>` | `auth:"bearer,required"` |
+| | `form:"key"` | Form field value (multipart or urlencoded) | `form:"title,trim"` |
+| | `file:"key"` | Single uploaded multipart file (`*sein.File`) | `file:"avatar,required"` |
+| | `files:"key"` | Multiple uploaded multipart files (`[]*sein.File`) | `files:"attachments"` |
+| | `json:"key"` | JSON request body payload field | `json:"name,min=2"` |
+| | `net:"ip"` | Resolved remote client IP address | `net:"ip"` |
+| | `ctx:""` | Typed L1 inline context injection | `ctx:""` |
+| **Sanitizers** | `trim` | Strips leading and trailing whitespace | `query:"q,trim"` |
+| | `lower` | Converts ASCII characters to lowercase | `json:"email,lower"` |
+| | `upper` | Converts ASCII characters to uppercase | `header:"code,upper"` |
+| | `squish` | Collapses multiple consecutive whitespaces into a single space | `json:"bio,squish"` |
+| **Validation** | `required` | Field must be present and non-zero | `header:"X-Trace-ID,required"` |
+| | `min=N` / `max=N` | String length bounds or numeric ranges | `json:"password,min=8,max=64"` |
+| | `enum=a\|b\|c` | Allowed value set validation | `query:"sort,enum=asc\|desc"` |
+| | `email` | Validates standard email address format | `json:"email,email"` |
+| | `uuid` | Validates RFC 9562 / RFC 4122 UUID format | `path:"id,uuid"` |
+| | `pattern=regex` | Matches precompiled regular expression | `json:"code,pattern=^[A-Z0-9]+$"` |
+
+---
+
+## 4. Routing & Handlers
+
+### Mathematical Pure Handlers
+`sein` eliminates boilerplate `w http.ResponseWriter, r *http.Request` parameters:
+
+```go
+// Pure GET with DTO: (ctx, DTO) -> (Result, error)
+srv.GetWith("/users/:id", func(ctx context.Context, req GetUserDTO) (*User, error) {
+    return userService.Find(ctx, req.ID)
+})
+
+// Pure POST: (ctx, DTO) -> (Result, error)
+srv.Post("/users", func(ctx context.Context, req CreateUserDTO) (sein.Response[*User], error) {
+    user, err := userService.Create(ctx, req)
+    if err != nil {
+        return sein.Response[*User]{}, err
+    }
+    return sein.Created(user), nil
+})
 ```
 
-## 9. License
+### Route Groups & Middleware Scoping
+```go
+api := srv.Group("/api/v1", authMiddleware)
+{
+    users := api.Group("/users")
+    users.Get("", listUsersHandler)
+    users.Post("", createUserHandler)
+    users.GetWith("/:id", getUserHandler)
+}
+```
+
+---
+
+## 5. Ecosystem Symbiosis
+
+`sein` is the server-side counterpart to the **`aoni`** networking suite:
+
+* **[`aoni`](https://github.com/lemon4ksan/aoni)** — Unified outbound client reactor (Chromium stealth, TLS evasion, JA4+, Happy Eyeballs v3, MASQUE).
+* **[`sein`](https://github.com/lemon4ksan/sein)** — Unified inbound server reactor (Single-port `:443`, 0 B/op, anti-DoS armor, RFC 8441/9220 WebSockets).
+* **[`foundation`](https://github.com/lemon4ksan/foundation)** — High-performance Go substrate (SIMD vectors, Per-P storage, off-heap slabs, lock-free rings).
+
+---
+
+## 6. License
 
 Licensed under the **BSD 3-Clause License**. See [LICENSE](LICENSE) for details.
 

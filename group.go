@@ -210,8 +210,12 @@ func joinPaths(base, path string) string {
 		return path
 	}
 
-	if path == "" || path == "/" {
+	if path == "" {
 		return base
+	}
+
+	if path == "/" {
+		return strings.TrimSuffix(base, "/") + "/"
 	}
 
 	if !strings.HasPrefix(path, "/") {

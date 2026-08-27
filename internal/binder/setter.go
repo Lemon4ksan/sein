@@ -7,6 +7,7 @@ package binder
 import (
 	"encoding"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -17,7 +18,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/lemon4ksan/foundation/silicon/hex"
 	"github.com/lemon4ksan/foundation/types/uuid"
 )
 

@@ -76,7 +76,7 @@ func (s *engineSession) writeEIOPacket(pType byte, payload []byte) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	if s.closed.Load() {
+	if s.closed.Load() || s.conn == nil {
 		return ErrSocketClosed
 	}
 
@@ -91,7 +91,7 @@ func (s *engineSession) writeBinaryAttachment(data []byte) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	if s.closed.Load() {
+	if s.closed.Load() || s.conn == nil {
 		return ErrSocketClosed
 	}
 
@@ -278,7 +278,9 @@ func (s *engineSession) Close(reason string) error {
 		})
 
 		_ = s.writeEIOPacket(eioClose, nil)
-		_ = s.conn.Close()
+		if s.conn != nil {
+			_ = s.conn.Close()
+		}
 	}
 	return nil
 }

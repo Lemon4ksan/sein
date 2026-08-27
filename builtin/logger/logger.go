@@ -12,7 +12,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/lemon4ksan/foundation/async/log"
+	"github.com/lemon4ksan/foundation/async/logkit"
 	"github.com/lemon4ksan/foundation/net/http/header"
 
 	"github.com/lemon4ksan/sein"
@@ -20,8 +20,8 @@ import (
 
 // Config configures the HTTP access logger middleware.
 type Config struct {
-	// Logger is the structured logger backend. Default is log.New(log.DefaultConfig(log.LevelInfo)).
-	Logger log.Logger
+	// Logger is the structured logger backend. Default is logkit.New(logkit.DefaultConfig(logkit.LevelInfo)).
+	Logger logkit.Logger
 	// IgnorePaths defines request paths to exclude from logging (e.g. "/health", "/favicon.ico").
 	IgnorePaths []string
 	// Filter is an optional custom predicate to selectively skip logging for specific requests.
@@ -32,7 +32,7 @@ type Config struct {
 type Option func(*Config)
 
 // WithLogger sets the structured logger instance.
-func WithLogger(l log.Logger) Option {
+func WithLogger(l logkit.Logger) Option {
 	return func(c *Config) {
 		c.Logger = l
 	}
@@ -56,7 +56,7 @@ func WithFilter(fn func(req *sein.Request) bool) Option {
 // It records request latency, HTTP method, path, status code, client IP, request ID, and errors.
 func New(opts ...Option) sein.Middleware {
 	cfg := Config{
-		Logger:      log.New(log.DefaultConfig(log.LevelInfo)),
+		Logger:      logkit.New(logkit.DefaultConfig(logkit.LevelInfo)),
 		IgnorePaths: []string{"/favicon.ico"},
 	}
 	for _, opt := range opts {
@@ -102,23 +102,23 @@ func New(opts ...Option) sein.Middleware {
 
 			if cfg.Logger != nil {
 				fields := []any{
-					log.String("method", req.Method()),
-					log.String("path", path),
-					log.Int("status", status),
-					log.Duration("latency", latency),
-					log.String("ip", req.ClientIP()),
+					logkit.String("method", req.Method()),
+					logkit.String("path", path),
+					logkit.Int("status", status),
+					logkit.Duration("latency", latency),
+					logkit.String("ip", req.ClientIP()),
 				}
 
 				if reqID := req.Header(header.XRequestID); reqID != "" {
-					fields = append(fields, log.String("req_id", reqID))
+					fields = append(fields, logkit.String("req_id", reqID))
 				}
 
 				if ua := req.Header(header.UserAgent); ua != "" {
-					fields = append(fields, log.String("ua", ua))
+					fields = append(fields, logkit.String("ua", ua))
 				}
 
 				if err != nil {
-					fields = append(fields, log.Any("error", err))
+					fields = append(fields, logkit.Any("error", err))
 				}
 
 				if status >= 500 || err != nil {

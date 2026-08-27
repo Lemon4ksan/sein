@@ -5,11 +5,11 @@
 package reverse
 
 import (
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/lemon4ksan/foundation/silicon/rand"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -158,7 +158,7 @@ func generateRandomSubdomain(length int) string {
 	n := min(length, len(buf))
 
 	for i := 0; i < n; i++ {
-		buf[i] = alphaNums[rand.Uint32n(uint32(len(alphaNums)))]
+		buf[i] = alphaNums[rand.Uint32N(uint32(len(alphaNums)))] //nolint:gosec // Non-cryptographic random subdomain token
 	}
 
 	return string(buf[:n])

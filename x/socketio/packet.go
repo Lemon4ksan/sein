@@ -217,9 +217,10 @@ func (br *binaryReconstructor) reconstruct() (*Packet, error) {
 	}
 
 	pkt.Data, _ = json.Marshal(data)
-	if pkt.Type == sioBinaryEvent {
+	switch pkt.Type {
+	case sioBinaryEvent:
 		pkt.Type = sioEvent
-	} else if pkt.Type == sioBinaryAck {
+	case sioBinaryAck:
 		pkt.Type = sioAck
 	}
 

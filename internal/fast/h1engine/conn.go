@@ -54,17 +54,17 @@ type ConnHandler struct {
 func (ch *ConnHandler) ServeConn(conn net.Conn) error {
 	br := readerStorage.Get()
 	br.Reset(conn)
-	defer readerStorage.Put(br)
 
 	bw := writerStorage.Get()
 	bw.Reset(conn)
-	defer writerStorage.Put(bw)
 
 	var isHijacked bool
 	defer func() {
-		_ = bw.Flush()
 		if !isHijacked {
+			_ = bw.Flush()
 			_ = conn.Close()
+			readerStorage.Put(br)
+			writerStorage.Put(bw)
 		}
 	}()
 

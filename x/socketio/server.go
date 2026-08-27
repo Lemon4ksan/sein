@@ -7,7 +7,6 @@ package socketio
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -140,22 +139,20 @@ func (s *Server) Sockets() []*Socket {
 
 // Mount satisfies sein.Module, mounting Socket.IO HTTP & WebSocket endpoints onto the given Group.
 func (s *Server) Mount(g *sein.Group) {
-	handler := func(req *sein.Request) error {
-		return s.ServeHTTP(req)
-	}
+	handler := s.Handler()
 
-	g.MountRaw("GET", "", handler)
-	g.MountRaw("GET", "/", handler)
-	g.MountRaw("GET", "/*path", handler)
-	g.MountRaw("POST", "", handler)
-	g.MountRaw("POST", "/", handler)
-	g.MountRaw("POST", "/*path", handler)
+	sein.Handle(g, "GET", "", handler)
+	sein.Handle(g, "GET", "/", handler)
+	sein.Handle(g, "GET", "/*path", handler)
+	sein.Handle(g, "POST", "", handler)
+	sein.Handle(g, "POST", "/", handler)
+	sein.Handle(g, "POST", "/*path", handler)
 }
 
 // Handler returns a raw sein.RawHandler that can be registered on any route.
 func (s *Server) Handler() sein.RawHandler {
-	return func(req *sein.Request) error {
-		return s.ServeHTTP(req)
+	return func(req *sein.Request) (any, error) {
+		return nil, s.ServeHTTP(req)
 	}
 }
 
@@ -196,7 +193,7 @@ func (s *Server) extractHandshake(req *sein.Request) HandshakeData {
 		Query:      make(map[string]string),
 		RemoteAddr: req.RemoteAddr(),
 		IssuedAt:   time.Now(),
-		Secure:     req.IsTLS(),
+		Secure:     req.Scheme() == "https",
 	}
 
 	if raw := req.Raw(); raw != nil {

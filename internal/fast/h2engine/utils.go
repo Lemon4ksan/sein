@@ -9,11 +9,10 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/lemon4ksan/foundation/silicon/rand"
 )
 
 var (
@@ -132,7 +131,7 @@ func cutPadding(payload []byte, length int) ([]byte, error) {
 }
 
 func addPadding(b []byte) []byte {
-	n := int(rand.Uint32n(247)) + 9
+	n := int(rand.Uint32N(247)) + 9 //nolint:gosec // Non-cryptographic HTTP/2 padding length
 	nn := len(b)
 
 	b = resizeSlice(b, nn+n)
