@@ -23,7 +23,7 @@ import (
 func TestServer_MethodNotAllowed_And_AllowHeader(t *testing.T) {
 	s := sein.New()
 
-	s.PostAction("/api/v1/users", func(ctx context.Context) (string, error) {
+	s.Post("/api/v1/users", func(ctx context.Context) (string, error) {
 		return "user created", nil
 	})
 	s.Put("/api/v1/users", func(ctx context.Context, _ struct{}) (string, error) {
@@ -82,7 +82,7 @@ func TestServer_NoRoute_And_NoMethod_Handlers(t *testing.T) {
 		}, nil), nil
 	})
 
-	s.PostAction("/submit", func(ctx context.Context) (string, error) {
+	s.Post("/submit", func(ctx context.Context) (string, error) {
 		return "submitted", nil
 	})
 
@@ -129,7 +129,7 @@ func TestServer_SaveUploadedFile(t *testing.T) {
 	tempDir := t.TempDir()
 	targetPath := filepath.Join(tempDir, "nested", "folder", "uploaded.txt")
 
-	s.PostReq("/upload", func(req *sein.Request, _ struct{}) (any, error) {
+	s.Post("/upload", func(req *sein.Request, _ struct{}) (any, error) {
 		file, err := req.FormFile("document")
 		if err != nil {
 			return nil, err

@@ -115,11 +115,11 @@ func Register(app *sein.Server, opts ...Option) {
 		opt(&cfg)
 	}
 
-	app.GetReq(cfg.LivenessPath, func(req *sein.Request) (any, error) {
+	app.Get(cfg.LivenessPath, func(req *sein.Request) (any, error) {
 		return executeChecks(req.Context(), cfg.LiveCheckers)
 	})
 
-	app.GetReq(cfg.ReadinessPath, func(req *sein.Request) (any, error) {
+	app.Get(cfg.ReadinessPath, func(req *sein.Request) (any, error) {
 		return executeChecks(req.Context(), cfg.ReadyCheckers)
 	})
 }

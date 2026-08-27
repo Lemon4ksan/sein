@@ -91,5 +91,5 @@ func Register(app *sein.Server, path ...string) {
 		p = path[0]
 	}
 
-	app.GetReq(p, Handler())
+	app.Get(p, Handler())
 }

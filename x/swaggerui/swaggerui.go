@@ -110,18 +110,18 @@ func Register(app *sein.Server, opts ...Option) {
 	uiPath := strings.TrimSuffix(cfg.Path, "/")
 	htmlContent := renderHTML(cfg.Title, cfg.SpecURL)
 
-	app.GetReq(uiPath, func(_ *sein.Request) (any, error) {
+	app.Get(uiPath, func(_ *sein.Request) (any, error) {
 		return sein.OK[any](htmlContent).
 			WithHeader(header.ContentType, header.MIMETextHTMLCharsetUTF8), nil
 	})
 
-	app.GetReq(uiPath+"/", func(_ *sein.Request) (any, error) {
+	app.Get(uiPath+"/", func(_ *sein.Request) (any, error) {
 		return sein.OK[any](htmlContent).
 			WithHeader(header.ContentType, header.MIMETextHTMLCharsetUTF8), nil
 	})
 
 	if len(cfg.SpecData) > 0 {
-		app.GetReq(cfg.SpecURL, func(_ *sein.Request) (any, error) {
+		app.Get(cfg.SpecURL, func(_ *sein.Request) (any, error) {
 			return sein.OK[any](cfg.SpecData).
 				WithHeader(header.ContentType, header.MIMEApplicationJSONCharsetUTF8), nil
 		})

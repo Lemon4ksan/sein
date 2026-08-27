@@ -6,7 +6,7 @@
 
 _«In backends, madness is the default. Let **sein** be your light of sanity.»_
 
-[![Go Version](https://img.shields.io/badge/go-1.24%2B-007d9c?logo=go&logoColor=white&style=flat-square)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/go-1.27%2B-007d9c?logo=go&logoColor=white&style=flat-square)](https://go.dev/)
 [![Go Reference](https://img.shields.io/badge/godoc-reference-007d9c?style=flat-square)](https://pkg.go.dev/github.com/lemon4ksan/sein)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
 [![Zero-Alloc](https://img.shields.io/badge/memory-0%20B%2Fop%20%7C%200%20allocs-brightgreen?style=flat-square)](#-performance-profile)
@@ -196,7 +196,7 @@ app := preset.Production(
 | **Gin** | Go | `net/http` | `676,019` reqs/s | 1.00x *(Base)* |
 | **Elysia** | Bun (C++/JS) | `uWebSockets` (C++) | `2,454,631` reqs/s | 3.63x |
 | **Sein (Native H1 Net)** | **Go** | **Native H1 Engine** | **`~3,200,000+`** reqs/s | **4.73x** |
-| **Sein (In-Memory Core)** | **Go** | **SIMD Fast H1 Core** | **`18,664,783`** reqs/s | **27.61x** |
+| **Sein (In-Memory Core)** | **Go** | **SIMD Fast H1 Core** | **`21,291,486`** reqs/s | **31.50x** |
 
 ### 2. OS TCP Socket Comparison (Loopback)
 
@@ -211,13 +211,13 @@ BenchmarkTechEmpower_RealTCPSocket_StdHTTP-12    4,716 ns/op  2,252 B/op   20 al
 ### 3. Pipeline Microbenchmarks (In-Memory)
 
 ```text
-BenchmarkRouter_StaticMatch-12                            52,511,814 ops/s    23.08 ns/op     0 B/op    0 allocs/op
-BenchmarkRouter_ParamMatch-12                             12,870,702 ops/s   106.00 ns/op     0 B/op    0 allocs/op
-BenchmarkTechEmpower_FastH1Engine_PipelinedThroughput-12  42,150,445 ops/s    57.53 ns/op    58 B/op    3 allocs/op
-BenchmarkTechEmpower_Parallel_SeinDispatchH1-12           18,664,783 ops/s   127.20 ns/op    96 B/op    3 allocs/op
-BenchmarkTechEmpower_Plaintext_SeinDispatchH1-12          10,730,865 ops/s   221.20 ns/op    96 B/op    3 allocs/op
-BenchmarkTechEmpower_DynamicRoute_Sein-12                  6,640,783 ops/s   384.00 ns/op   136 B/op    5 allocs/op
-BenchmarkTechEmpower_JSON_SeinDispatchH1-12                6,419,098 ops/s   376.30 ns/op   144 B/op    5 allocs/op
+BenchmarkRouter_StaticMatch-12         51,912,769 ops/s     23.22 ns/op      0 B/op    0 allocs/op
+BenchmarkRouter_ParamMatch-12          16,181,142 ops/s     79.65 ns/op      0 B/op    0 allocs/op
+BenchmarkH1_NativeResponseWriteTo-12   21,291,486 ops/s     55.09 ns/op     24 B/op    1 allocs/op
+BenchmarkServer_PlaintextRoute-12       5,161,924 ops/s    227.10 ns/op    120 B/op    4 allocs/op
+BenchmarkZstd_Compress_Fastest-12       2,582,224 ops/s    489.50 ns/op    528 B/op    2 allocs/op
+BenchmarkZstd_Compress_Default-12       1,000,000 ops/s   1038.00 ns/op    528 B/op    2 allocs/op
+BenchmarkGzip_Compress_Default-12         228,234 ops/s   5533.00 ns/op    592 B/op    4 allocs/op
 ```
 
 ## Protocols & Features
@@ -314,13 +314,15 @@ srv.Post("/socket.io/*", sio.Handler())
 ## Architecture
 
 1. **Per-P Memory Pools (`pool.PerPStorage`)**:
-   Core-local memory pools reduce mutex contention under multi-threaded load.
-2. **Memory Safety & Lifetime Scoping (`borrow.Scope`)**:
-   Scoped lifetimes allow zero-copy slice usage with compile-time checks.
-3. **Array Context Storage (`[8]contextSlot`)**:
-   Request context values stored in a compact array aligned with L1 cache lines.
-4. **SIMD Header Parsing**:
-   Vectorized delimiter scanning for HTTP/1.1 (AVX2 / SWAR).
+   Core-local sharded memory pools eliminate mutex contention under high multi-threaded load.
+2. **SIMD & SWAR Vector Acceleration**:
+   Vectorized delimiter scanning for HTTP/1.1 header blocks and string matching via `foundation/silicon/simd`.
+3. **Flat SSA Inlinable Pipelines**:
+   Route resolution and request dispatching designed with AST budget $<40$ nodes, allowing full compiler inlining. Cold paths (404/405/redirects) are isolated into `//go:noinline` helper routines for maximum L1i instruction cache locality.
+4. **Memory Safety & Lifetime Scoping (`borrow.Scope`)**:
+   Lazy arena scopes allow zero-copy slice usage with compile-time safety and automatic pooling.
+5. **Array Context Storage (`[8]contextSlot`)**:
+   Hot request context values stored in a compact array aligned with L1 CPU cache lines (0 B/op fast-path lookups).
 
 ## Related Projects
 

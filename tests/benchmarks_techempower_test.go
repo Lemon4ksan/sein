@@ -153,7 +153,7 @@ func BenchmarkTechEmpower_JSON_StdHTTP(b *testing.B) {
 // BenchmarkTechEmpower_DynamicRoute_Sein measures dynamic parameterized route throughput (/user/:id).
 func BenchmarkTechEmpower_DynamicRoute_Sein(b *testing.B) {
 	app := sein.New()
-	app.GetReq("/user/:id", func(req *sein.Request) (string, error) {
+	app.Get("/user/:id", func(req *sein.Request) (string, error) {
 		return "User: " + req.Param("id").String(), nil
 	})
 

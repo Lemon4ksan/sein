@@ -35,7 +35,7 @@ func TestDump_RequestAndResponse(t *testing.T) {
 		}),
 	))
 
-	app.PostAction("/users", func(ctx context.Context) (string, error) {
+	app.Post("/users", func(ctx context.Context) (string, error) {
 		return "user created", nil
 	})
 

@@ -846,7 +846,7 @@ func (r *Request) FormFiles(key string) ([]*File, error) {
 //
 // Usage:
 //
-//	s.PostReq("/upload", func(req *sein.Request, _ struct{}) (any, error) {
+//	s.Post("/upload", func(req *sein.Request, _ struct{}) (any, error) {
 //		file, err := req.FormFile("document")
 //		if err != nil {
 //			return nil, err

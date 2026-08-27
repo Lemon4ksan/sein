@@ -30,6 +30,12 @@ func ValidateRouteBinding[T any](routePath string) {
 	binder.ValidateRouteBinding(reflect.TypeFor[T](), routePath)
 }
 
+// ValidateRouteBindingType checks at server startup that all URL path parameters declared in path
+// have corresponding bindings in typ.
+func ValidateRouteBindingType(typ reflect.Type, routePath string) {
+	binder.ValidateRouteBinding(typ, routePath)
+}
+
 type requestAdapter struct {
 	req *Request
 }

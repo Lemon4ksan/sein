@@ -27,7 +27,7 @@ func TestPagination_ExtractionAndMetadata(t *testing.T) {
 		pagination.WithMaxLimit(50),
 	))
 
-	app.GetReq("/products", func(req *sein.Request) (any, error) {
+	app.Get("/products", func(req *sein.Request) (any, error) {
 		p := pagination.From(req)
 		items := []string{"item1", "item2"}
 		return pagination.NewPaginated(items, 45, p), nil

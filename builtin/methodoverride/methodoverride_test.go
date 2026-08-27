@@ -28,7 +28,7 @@ func TestMethodOverride_HeaderAndQuery(t *testing.T) {
 		return "deleted successfully", nil
 	})
 
-	app.PutAction("/resource/:id", func(ctx context.Context) (string, error) {
+	app.Put("/resource/:id", func(ctx context.Context) (string, error) {
 		return "updated successfully", nil
 	})
 

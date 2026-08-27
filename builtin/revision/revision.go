@@ -123,7 +123,7 @@ func Register(app *sein.Server, opts ...Option) {
 
 	app.Use(New(opts...))
 
-	app.GetReq(cfg.Path, func(_ *sein.Request) (any, error) {
+	app.Get(cfg.Path, func(_ *sein.Request) (any, error) {
 		data, err := json.Marshal(cfg.Info)
 		if err != nil {
 			return nil, err

@@ -128,18 +128,18 @@ func Register(app *sein.Server, opts ...Option) {
 	html := renderDashboardHTML(cfg.Title, dataURL)
 
 	// HTML Dashboard page
-	app.GetReq(basePath, func(_ *sein.Request) (any, error) {
+	app.Get(basePath, func(_ *sein.Request) (any, error) {
 		return sein.OK[any](html).
 			WithHeader(header.ContentType, header.MIMETextHTMLCharsetUTF8), nil
 	})
 
-	app.GetReq(basePath+"/", func(_ *sein.Request) (any, error) {
+	app.Get(basePath+"/", func(_ *sein.Request) (any, error) {
 		return sein.OK[any](html).
 			WithHeader(header.ContentType, header.MIMETextHTMLCharsetUTF8), nil
 	})
 
 	// JSON Metrics endpoint
-	app.GetReq(dataURL, func(_ *sein.Request) (any, error) {
+	app.Get(dataURL, func(_ *sein.Request) (any, error) {
 		var mem runtime.MemStats
 		runtime.ReadMemStats(&mem)
 

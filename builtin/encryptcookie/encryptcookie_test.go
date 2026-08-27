@@ -47,7 +47,7 @@ func TestEncryptCookie_MiddlewareEndToEnd(t *testing.T) {
 	))
 
 	// Endpoint 1: Sets encrypted cookie
-	app.GetReq("/set-session", func(req *sein.Request) (sein.Response[string], error) {
+	app.Get("/set-session", func(req *sein.Request) (sein.Response[string], error) {
 		return sein.OK("Cookie set").WithCookie(&http.Cookie{
 			Name:  "session_id",
 			Value: "user-uuid-999-authenticated",
@@ -56,7 +56,7 @@ func TestEncryptCookie_MiddlewareEndToEnd(t *testing.T) {
 	})
 
 	// Endpoint 2: Reads transparently decrypted cookie
-	app.GetReq("/read-session", func(req *sein.Request) (string, error) {
+	app.Get("/read-session", func(req *sein.Request) (string, error) {
 		val, err := req.Cookie("session_id")
 		if err != nil {
 			return "", err

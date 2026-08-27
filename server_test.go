@@ -107,7 +107,7 @@ func TestRequestParamsAndTypedContext(t *testing.T) {
 		ID uint64 `path:"id"`
 	}
 
-	app.GetWith("/users/:id", func(ctx context.Context, req GetUserDTO) (UserResponse, error) {
+	app.Get("/users/:id", func(ctx context.Context, req GetUserDTO) (UserResponse, error) {
 		return UserResponse{
 			ID:    req.ID,
 			Name:  "Admin User",
@@ -155,7 +155,7 @@ type mockUserController struct {
 }
 
 func (c *mockUserController) Mount(g *sein.Group) {
-	g.GetWith("/:id", c.getByID)
+	g.Get("/:id", c.getByID)
 	g.Post("", c.create)
 }
 
@@ -281,7 +281,7 @@ func TestGroupMapError(t *testing.T) {
 		return UserResponse{ID: 1, Name: req.Name}, nil
 	})
 
-	users.GetWith("/:id", func(ctx context.Context, id uint64) (UserResponse, error) {
+	users.Get("/:id", func(ctx context.Context, id uint64) (UserResponse, error) {
 		if id == 999 {
 			return UserResponse{}, errUserNotFound
 		}
@@ -448,7 +448,7 @@ func TestUnifiedDTO_StartupValidationPanic(t *testing.T) {
 	app := sein.New()
 
 	assert.Panics(t, func() {
-		app.GetWith("/users/:user_id", func(ctx context.Context, req MismatchedDTO) (string, error) {
+		app.Get("/users/:user_id", func(ctx context.Context, req MismatchedDTO) (string, error) {
 			return "ok", nil
 		})
 	})
@@ -471,7 +471,7 @@ type AdvancedTransformDTO struct {
 func TestUnifiedDTO_AdvancedTransformsAndAdapters(t *testing.T) {
 	app := sein.New()
 
-	app.GetWith("/analytics", func(ctx context.Context, req AdvancedTransformDTO) (map[string]any, error) {
+	app.Get("/analytics", func(ctx context.Context, req AdvancedTransformDTO) (map[string]any, error) {
 		return map[string]any{
 			"email":      req.CleanEmail,
 			"country":    req.CountryCode,
@@ -666,7 +666,7 @@ func TestNativeH1Server_SocketAndKeepAlive(t *testing.T) {
 		ID int `path:"id"`
 	}
 
-	app.GetWith("/users/:id", func(ctx context.Context, req GetUserDTO) (UserResp, error) {
+	app.Get("/users/:id", func(ctx context.Context, req GetUserDTO) (UserResp, error) {
 		if req.ID == 42 {
 			return UserResp{ID: 42, Name: "Bob", Email: "bob@example.com"}, nil
 		}
@@ -790,7 +790,7 @@ func TestNativeH1Server_MultipartFileUpload(t *testing.T) {
 		Doc   *sein.File `form:"doc"`
 	}
 
-	app.PostWith("/upload", func(ctx context.Context, req UploadDTO) (map[string]any, error) {
+	app.Post("/upload", func(ctx context.Context, req UploadDTO) (map[string]any, error) {
 		docBytes, err := req.Doc.Bytes()
 		if err != nil {
 			return nil, err
@@ -847,7 +847,7 @@ func TestNativeH1Server_ConditionalETagAnd304(t *testing.T) {
 
 	const currentETag = "\"v1.0.0-hash\""
 
-	app.GetReq("/config", func(req *sein.Request) (sein.Response[any], error) {
+	app.Get("/config", func(req *sein.Request) (sein.Response[any], error) {
 		if req.IfNoneMatch(currentETag) {
 			return sein.NotModified().WithETag(currentETag), nil
 		}

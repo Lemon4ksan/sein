@@ -246,7 +246,7 @@ func Register(app *sein.Server, opts ...Option) *Registry {
 	mw, reg := New(opts...)
 	app.Use(mw)
 
-	app.GetReq(reg.metricsPath, func(_ *sein.Request) (any, error) {
+	app.Get(reg.metricsPath, func(_ *sein.Request) (any, error) {
 		return sein.OK[any](reg.Gather()).
 			WithHeader(header.ContentType, "text/plain; version=0.0.4; charset=utf-8"), nil
 	})

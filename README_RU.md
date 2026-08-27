@@ -6,7 +6,7 @@
 
 _«В бэкендах безумие — это состояние по умолчанию. Пусть **sein** станет вашим светом разума.»_
 
-[![Go Version](https://img.shields.io/badge/go-1.24%2B-007d9c?logo=go&logoColor=white&style=flat-square)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/go-1.27%2B-007d9c?logo=go&logoColor=white&style=flat-square)](https://go.dev/)
 [![Go Reference](https://img.shields.io/badge/godoc-reference-007d9c?style=flat-square)](https://pkg.go.dev/github.com/lemon4ksan/sein)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
 [![Zero-Alloc](https://img.shields.io/badge/memory-0%20B%2Fop%20%7C%200%20allocs-brightgreen?style=flat-square)](#-профиль-производительности)
@@ -196,7 +196,7 @@ app := preset.Production(
 | **Gin** | Go | `net/http` | `676,019` reqs/s | 1.00x *(База)* |
 | **Elysia** | Bun (C++/JS) | `uWebSockets` (C++) | `2,454,631` reqs/s | 3.63x |
 | **Sein (Native H1 Net)** | **Go** | **Native H1 Engine** | **`~3,200,000+`** reqs/s | **4.73x** |
-| **Sein (In-Memory Core)** | **Go** | **SIMD Fast H1 Core** | **`18,664,783`** reqs/s | **27.61x** |
+| **Sein (In-Memory Core)** | **Go** | **SIMD Fast H1 Core** | **`21,291,486`** reqs/s | **31.50x** |
 
 ### 2. Сравнение через системные TCP-сокеты (Loopback)
 
@@ -211,13 +211,13 @@ BenchmarkTechEmpower_RealTCPSocket_StdHTTP-12    4,716 ns/op  2,252 B/op   20 al
 ### 3. Микробенчмарки компонентов (In-Memory)
 
 ```text
-BenchmarkRouter_StaticMatch-12                            52,511,814 ops/s    23.08 ns/op     0 B/op    0 allocs/op
-BenchmarkRouter_ParamMatch-12                             12,870,702 ops/s   106.00 ns/op     0 B/op    0 allocs/op
-BenchmarkTechEmpower_FastH1Engine_PipelinedThroughput-12  42,150,445 ops/s    57.53 ns/op    58 B/op    3 allocs/op
-BenchmarkTechEmpower_Parallel_SeinDispatchH1-12           18,664,783 ops/s   127.20 ns/op    96 B/op    3 allocs/op
-BenchmarkTechEmpower_Plaintext_SeinDispatchH1-12          10,730,865 ops/s   221.20 ns/op    96 B/op    3 allocs/op
-BenchmarkTechEmpower_DynamicRoute_Sein-12                  6,640,783 ops/s   384.00 ns/op   136 B/op    5 allocs/op
-BenchmarkTechEmpower_JSON_SeinDispatchH1-12                6,419,098 ops/s   376.30 ns/op   144 B/op    5 allocs/op
+BenchmarkRouter_StaticMatch-12         51,912,769 ops/s     23.22 ns/op      0 B/op    0 allocs/op
+BenchmarkRouter_ParamMatch-12          16,181,142 ops/s     79.65 ns/op      0 B/op    0 allocs/op
+BenchmarkH1_NativeResponseWriteTo-12   21,291,486 ops/s     55.09 ns/op     24 B/op    1 allocs/op
+BenchmarkServer_PlaintextRoute-12       5,161,924 ops/s    227.10 ns/op    120 B/op    4 allocs/op
+BenchmarkZstd_Compress_Fastest-12       2,582,224 ops/s    489.50 ns/op    528 B/op    2 allocs/op
+BenchmarkZstd_Compress_Default-12       1,000,000 ops/s   1038.00 ns/op    528 B/op    2 allocs/op
+BenchmarkGzip_Compress_Default-12         228,234 ops/s   5533.00 ns/op    592 B/op    4 allocs/op
 ```
 
 ## Протоколы и возможности
@@ -314,13 +314,15 @@ srv.Post("/socket.io/*", sio.Handler())
 ## Архитектура
 
 1. **Per-P пулы памяти (`pool.PerPStorage`)**:
-   Локальные для ядер процессора пулы снижают конкуренцию за блокировки.
-2. **Безопасность работы с памятью (`borrow.Scope`)**:
-   Контроль времени жизни срезов для безопасного переиспользования буферов.
-3. **Хранение контекста в массиве L1-кэша (`[8]contextSlot`)**:
-   Компактное хранение значений контекста запроса без выделения динамических map.
-4. **SIMD-поиск разделителей**:
-   Векторизованное сканирование заголовков HTTP/1.1 (AVX2 / SWAR).
+   Локальные для ядер процессора шардированные пулы полностью исключают блокировки мьютексов при высокой многопоточной нагрузке.
+2. **SIMD и SWAR векторное ускорение**:
+   Векторизованное сканирование разделителей заголовков HTTP/1.1 (`\r\n\r\n`) и байтовых последовательностей через `foundation/silicon/simd`.
+3. **Плоские SSA-инлайнящиеся пайплайны**:
+   Разрешение маршрутов и диспетчеризация запросов спроектированы с бюджетом AST $<40$ узлов, позволяя компилятору Go полностью инлайнить горячий путь. Холодные ветки (404/405/редиректы) изолированы в `//go:noinline` функции для сохранения чистоты L1i кэша инструкций процессора.
+4. **Безопасность работы с памятью (`borrow.Scope`)**:
+   Ленивые арены времени жизни для безопасного переиспользования буферов без аллокаций.
+5. **Хранение контекста в массиве L1-кэша (`[8]contextSlot`)**:
+   Компактное хранение значений контекста запроса в плоском массиве (0 B/op быстрый поиск).
 
 ## Связанные проекты
 

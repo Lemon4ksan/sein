@@ -46,7 +46,7 @@ func TestCORS_Preflight_WithOptions(t *testing.T) {
 		MaxAge:           3600,
 	}))
 
-	s.PostAction("/api/v1/resource", func(ctx context.Context) (string, error) {
+	s.Post("/api/v1/resource", func(ctx context.Context) (string, error) {
 		return "created", nil
 	})
 

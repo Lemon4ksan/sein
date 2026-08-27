@@ -5,8 +5,8 @@
 package sein
 
 import (
-	"context"
 	"errors"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -20,122 +20,77 @@ type Module interface {
 // ModuleFunc is a functional adapter that satisfies the Module interface.
 type ModuleFunc func(g *Group)
 
-// Mount satisfies the Module interface for ModuleFunc.
+// Mount implements Module for ModuleFunc.
 func (f ModuleFunc) Mount(g *Group) {
 	f(g)
 }
 
-// RouteBuilder is the route-registration interface implemented by both *Server and *Group.
+// RouteBuilder is the common abstraction shared between Server and Group.
 type RouteBuilder interface {
 	registerRoute(method, path string, handler RawHandler, mw ...Middleware)
 }
 
-// Group is a scoped sub-router with a common URL prefix and middleware chain.
+// ErrorMapperFunc translates internal sentinel errors into typed DomainErrors.
+type ErrorMapperFunc func(error) (DomainError, bool)
+
+// Group represents a scoped router group with a path prefix, scoped middlewares, and domain error mappers.
 type Group struct {
 	parent       RouteBuilder
 	prefix       string
 	middlewares  []Middleware
-	errorMappers []ErrorMapper
+	errorMappers []ErrorMapperFunc
 	resolvers    sync.Map
+	mu           sync.RWMutex
 }
 
-// NewGroup creates a new Group anchored to a parent RouteBuilder.
+// NewGroup creates a new route Group attached to a parent RouteBuilder.
 func NewGroup(parent RouteBuilder, prefix string, mw ...Middleware) *Group {
 	return &Group{
 		parent:      parent,
 		prefix:      cleanPrefix(prefix),
-		middlewares: mw,
+		middlewares: slices.Clone(mw),
 	}
 }
 
-// Mount attaches a nested domain Module under the specified prefix with optional group middlewares.
+// Group creates a nested sub-group under this group's prefix.
+func (g *Group) Group(prefix string, mw ...Middleware) *Group {
+	fullPrefix := joinPaths(g.prefix, prefix)
+	sub := &Group{
+		parent:       g.parent,
+		prefix:       cleanPrefix(fullPrefix),
+		middlewares:  append(slices.Clone(g.middlewares), mw...),
+		errorMappers: slices.Clone(g.errorMappers),
+	}
+
+	return sub
+}
+
+// Mount attaches a domain Module under this group with optional additional middlewares.
 func (g *Group) Mount(prefix string, m Module, mw ...Middleware) *Group {
 	sub := g.Group(prefix, mw...)
 	m.Mount(sub)
 	return g
 }
 
-// Group creates a nested subgroup inheriting the current prefix, middlewares, and error mappers.
-func (g *Group) Group(prefix string, mw ...Middleware) *Group {
-	combinedPrefix := joinPaths(g.prefix, prefix)
-	combinedMW := append(slices.Clone(g.middlewares), mw...)
-	combinedMappers := slices.Clone(g.errorMappers)
-
-	sub := &Group{
-		parent:       g.parent,
-		prefix:       combinedPrefix,
-		middlewares:  combinedMW,
-		errorMappers: combinedMappers,
-	}
-
-	g.resolvers.Range(func(key, value any) bool {
-		sub.resolvers.Store(key, value)
-		return true
-	})
-
-	return sub
-}
-
-// MapError registers a scoped mapping from a sentinel error target to a DomainError for all routes in this group.
-func (g *Group) MapError(target error, domainErr DomainError) *Group {
-	g.errorMappers = append(g.errorMappers, func(err error) (DomainError, bool) {
-		if errors.Is(err, target) {
-			return domainErr, true
-		}
-
-		return nil, false
-	})
-
-	return g
-}
-
-// MapErrors registers multiple scoped domain error mappings from a dictionary table at once.
-func (g *Group) MapErrors(errorsMap Errors) *Group {
-	for target, domainErr := range errorsMap {
-		g.MapError(target, domainErr)
-	}
-
-	return g
-}
-
-// MapErrorFunc registers a custom scoped error mapping predicate for all routes in this group.
-func (g *Group) MapErrorFunc(fn ErrorMapper) *Group {
-	g.errorMappers = append(g.errorMappers, fn)
-	return g
-}
-
-// Guard creates a protected GuardScope inheriting the group's prefix with the specified middlewares applied.
+// Guard creates a protected GuardScope within this group with the given middlewares applied.
 func (g *Group) Guard(mw ...Middleware) *GuardScope {
 	return &GuardScope{
 		Group: g.Group("", mw...),
 	}
 }
 
-// GuardScope encapsulates a scoped collection of routes and modules protected by a shared middleware guard.
-// It embeds *Group, allowing all standard HTTP routing and module mounting methods to be called directly.
+// GuardScope represents a protected route scope that can conditionally mount routes via Do().
 type GuardScope struct {
 	*Group
 }
 
-// Do executes a configuration callback function receiving the protected *Group.
+// Do executes the callback within the protected GuardScope.
 func (gs *GuardScope) Do(fn func(g *Group)) *GuardScope {
 	fn(gs.Group)
 	return gs
 }
 
-// Mount mounts a domain Module under prefix with the guard's middlewares applied.
-func (gs *GuardScope) Mount(prefix string, m Module, extraMW ...Middleware) *GuardScope {
-	gs.Group.Mount(prefix, m, extraMW...)
-	return gs
-}
-
-// MountModule mounts a domain Module directly at the current level with the guard's middlewares applied.
-func (gs *GuardScope) MountModule(m Module) *GuardScope {
-	m.Mount(gs.Group)
-	return gs
-}
-
-// MapError registers a scoped error mapping on the guard scope.
+// MapError registers a domain error mapping rule on the guard scope.
 func (gs *GuardScope) MapError(target error, domainErr DomainError) *GuardScope {
 	gs.Group.MapError(target, domainErr)
 	return gs
@@ -156,105 +111,94 @@ func (g *Group) registerRoute(method, path string, handler RawHandler, mw ...Mid
 	fullPath := joinPaths(g.prefix, path)
 	combinedMW := append(slices.Clone(g.middlewares), mw...)
 
-	if len(g.errorMappers) > 0 {
-		mappers := slices.Clone(g.errorMappers)
-		wrappedHandler := func(req *Request) (any, error) {
-			res, err := handler(req)
-			if err != nil {
-				for _, mapper := range mappers {
-					if mapped, ok := mapper(err); ok {
-						return nil, mapped
-					}
-				}
-				return nil, err
-			}
-			return res, nil
-		}
-		g.parent.registerRoute(method, fullPath, wrappedHandler, combinedMW...)
+	if len(g.errorMappers) == 0 {
+		g.parent.registerRoute(method, fullPath, handler, combinedMW...)
 		return
 	}
 
-	g.parent.registerRoute(method, fullPath, handler, combinedMW...)
+	mappers := slices.Clone(g.errorMappers)
+	wrappedHandler := func(req *Request) (any, error) {
+		res, err := handler(req)
+		if err != nil {
+			for _, mapper := range mappers {
+				if mapped, ok := mapper(err); ok {
+					return nil, mapped
+				}
+			}
+			return nil, err
+		}
+		return res, nil
+	}
+	g.parent.registerRoute(method, fullPath, wrappedHandler, combinedMW...)
 }
 
-// Post registers a pure POST handler on this group: (ctx, Req) -> (Res, error)
-func (g *Group) Post[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	routePost(g, path, fn, mw...)
+// MapError registers a mapping from an internal sentinel error to a Sein domain error.
+func (g *Group) MapError(target error, domainErr DomainError) *Group {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.errorMappers = append(g.errorMappers, func(err error) (DomainError, bool) {
+		if errors.Is(err, target) {
+			return domainErr, true
+		}
+		return nil, false
+	})
+
+	return g
 }
 
-// PostAction registers a pure parameterless POST handler on this group: (ctx) -> (Res, error)
-func (g *Group) PostAction[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
-	routePostAction(g, path, fn, mw...)
+// MapErrors registers multiple error mappings on the group using an Errors table.
+func (g *Group) MapErrors(errorsMap Errors) *Group {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for target, domainErr := range errorsMap {
+		t := target
+		d := domainErr
+		g.errorMappers = append(g.errorMappers, func(err error) (DomainError, bool) {
+			if errors.Is(err, t) {
+				return d, true
+			}
+			return nil, false
+		})
+	}
+
+	return g
 }
 
-// PostWith is an alias for Post on this group: (ctx, Req) -> (Res, error)
-func (g *Group) PostWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	routePost(g, path, fn, mw...)
+// Post registers a route handler on POST on this group: accepts any valid handler signature.
+func (g *Group) Post(path string, handler any, mw ...Middleware) {
+	routeUniversal(g, http.MethodPost, path, handler, mw...)
 }
 
-// PostReq registers a POST handler with Request metadata on this group: (req, Req) -> (Res, error)
-func (g *Group) PostReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
-	routePostReq(g, path, fn, mw...)
+// Get registers a route handler on GET on this group: accepts any valid handler signature.
+func (g *Group) Get(path string, handler any, mw ...Middleware) {
+	routeUniversal(g, http.MethodGet, path, handler, mw...)
 }
 
-// Get registers a pure GET handler on this group: (ctx) -> (Res, error)
-func (g *Group) Get[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
-	routeGet(g, path, fn, mw...)
+// Put registers a route handler on PUT on this group: accepts any valid handler signature.
+func (g *Group) Put(path string, handler any, mw ...Middleware) {
+	routeUniversal(g, http.MethodPut, path, handler, mw...)
 }
 
-// GetWith registers a pure GET handler with Path/Query/Header DTO on this group: (ctx, Req) -> (Res, error)
-func (g *Group) GetWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	routeGetWith(g, path, fn, mw...)
+// Patch registers a route handler on PATCH on this group: accepts any valid handler signature.
+func (g *Group) Patch(path string, handler any, mw ...Middleware) {
+	routeUniversal(g, http.MethodPatch, path, handler, mw...)
 }
 
-// GetReq registers a GET handler with Request metadata on this group: (req) -> (Res, error)
-func (g *Group) GetReq[Res any](path string, fn func(*Request) (Res, error), mw ...Middleware) {
-	routeGetReq(g, path, fn, mw...)
+// Delete registers a route handler on DELETE on this group: accepts any valid handler signature.
+func (g *Group) Delete(path string, handler any, mw ...Middleware) {
+	routeUniversal(g, http.MethodDelete, path, handler, mw...)
 }
 
-// Put registers a pure PUT handler on this group: (ctx, Req) -> (Res, error)
-func (g *Group) Put[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	routePut(g, path, fn, mw...)
+// Options registers a route handler on OPTIONS on this group.
+func (g *Group) Options(path string, handler any, mw ...Middleware) {
+	routeUniversal(g, http.MethodOptions, path, handler, mw...)
 }
 
-// PutWith is an alias for Put on this group: (ctx, Req) -> (Res, error)
-func (g *Group) PutWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	routePut(g, path, fn, mw...)
-}
-
-// PutReq registers a PUT handler with Request metadata on this group: (req, Req) -> (Res, error)
-func (g *Group) PutReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
-	routePutReq(g, path, fn, mw...)
-}
-
-// Patch registers a pure PATCH handler on this group: (ctx, Req) -> (Res, error)
-func (g *Group) Patch[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	routePatch(g, path, fn, mw...)
-}
-
-// PatchWith is an alias for Patch on this group: (ctx, Req) -> (Res, error)
-func (g *Group) PatchWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	routePatch(g, path, fn, mw...)
-}
-
-// PatchReq registers a PATCH handler with Request metadata on this group: (req, Req) -> (Res, error)
-func (g *Group) PatchReq[Req, Res any](path string, fn func(*Request, Req) (Res, error), mw ...Middleware) {
-	routePatchReq(g, path, fn, mw...)
-}
-
-// Delete registers a pure DELETE handler on this group: (ctx) -> (Res, error)
-func (g *Group) Delete[Res any](path string, fn func(context.Context) (Res, error), mw ...Middleware) {
-	routeDelete(g, path, fn, mw...)
-}
-
-// DeleteWith registers a pure DELETE handler with Path/Query DTO on this group: (ctx, Req) -> (Res, error)
-func (g *Group) DeleteWith[Req, Res any](path string, fn func(context.Context, Req) (Res, error), mw ...Middleware) {
-	routeDeleteWith(g, path, fn, mw...)
-}
-
-// DeleteReq registers a DELETE handler with Request metadata on this group: (req) -> (Res, error)
-func (g *Group) DeleteReq[Res any](path string, fn func(*Request) (Res, error), mw ...Middleware) {
-	routeDeleteReq(g, path, fn, mw...)
+// Head registers a route handler on HEAD on this group.
+func (g *Group) Head(path string, handler any, mw ...Middleware) {
+	routeUniversal(g, http.MethodHead, path, handler, mw...)
 }
 
 func cleanPrefix(prefix string) string {

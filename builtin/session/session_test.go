@@ -25,7 +25,7 @@ func TestSession_LifecycleAndFlash(t *testing.T) {
 	app.Use(session.New())
 
 	// Route 1: Login (set session & flash)
-	app.GetReq("/login", func(req *sein.Request) (string, error) {
+	app.Get("/login", func(req *sein.Request) (string, error) {
 		sess := session.From(req)
 		require.NotNil(t, sess)
 		sess.Set("user_id", 1001)
@@ -36,7 +36,7 @@ func TestSession_LifecycleAndFlash(t *testing.T) {
 	})
 
 	// Route 2: Dashboard (reads session & flash)
-	app.GetReq("/dashboard", func(req *sein.Request) (string, error) {
+	app.Get("/dashboard", func(req *sein.Request) (string, error) {
 		sess := session.From(req)
 		require.NotNil(t, sess)
 
@@ -53,7 +53,7 @@ func TestSession_LifecycleAndFlash(t *testing.T) {
 	})
 
 	// Route 3: Logout (destroy session)
-	app.GetReq("/logout", func(req *sein.Request) (string, error) {
+	app.Get("/logout", func(req *sein.Request) (string, error) {
 		sess := session.From(req)
 		require.NotNil(t, sess)
 		_ = sess.Destroy()

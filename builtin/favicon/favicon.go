@@ -121,7 +121,7 @@ func Register(app *sein.Server, opts ...Option) {
 		}
 	}
 
-	app.GetReq(cfg.URL, func(req *sein.Request) (any, error) {
+	app.Get(cfg.URL, func(req *sein.Request) (any, error) {
 		if len(iconData) > 0 {
 			return sein.OK[any](iconData).
 				WithHeader(header.ContentType, "image/x-icon").

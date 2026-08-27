@@ -46,7 +46,7 @@ func TestJWT_LifecycleAndMiddleware(t *testing.T) {
 		jwt.WithIssuer("sein-auth"),
 	))
 
-	app.GetReq("/profile", func(req *sein.Request) (string, error) {
+	app.Get("/profile", func(req *sein.Request) (string, error) {
 		claims, ok := jwt.Claims(req)
 		if !ok {
 			return "", sein.ErrUnauthorized("claims not found in context")

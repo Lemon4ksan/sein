@@ -62,7 +62,7 @@ func TestPASETO_PublicAndLocal(t *testing.T) {
 		paseto.WithSymmetricKey(symKey),
 	))
 
-	app.GetReq("/me", func(req *sein.Request) (string, error) {
+	app.Get("/me", func(req *sein.Request) (string, error) {
 		claims, ok := paseto.Claims(req)
 		if !ok {
 			return "", sein.ErrUnauthorized("claims not found")
