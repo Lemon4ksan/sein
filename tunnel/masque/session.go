@@ -57,17 +57,17 @@ func (s *Session) SendIPPacket(packet []byte) error {
 		buf      []byte
 	)
 
-	varIdLen := EncodeVarintSlice(s.contextID, stackBuf[:8])
-	totalLen := varIdLen + len(packet)
+	varIDLen := EncodeVarintSlice(s.contextID, stackBuf[:8])
+	totalLen := varIDLen + len(packet)
 
 	if totalLen <= len(stackBuf) {
 		buf = stackBuf[:totalLen]
 	} else {
 		buf = make([]byte, totalLen)
-		_ = EncodeVarintSlice(s.contextID, buf[:varIdLen])
+		_ = EncodeVarintSlice(s.contextID, buf[:varIDLen])
 	}
 
-	copy(buf[varIdLen:], packet)
+	copy(buf[varIDLen:], packet)
 
 	return s.datagrams.SendDatagram(buf)
 }

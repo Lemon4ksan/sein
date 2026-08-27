@@ -22,20 +22,20 @@ import (
 )
 
 type mockRequestView struct {
-	params     map[string]string
-	queries    map[string]string
-	rawQueries map[string][]string
-	headers    map[string]string
-	cookies    map[string]string
-	bearer     string
-	hasBearer  bool
-	clientIP   string
-	proto      string
-	scheme     string
-	host       string
-	method     string
-	path       string
-	formVals   map[string]string
+	params       map[string]string
+	queries      map[string]string
+	rawQueries   map[string][]string
+	headers      map[string]string
+	cookies      map[string]string
+	bearer       string
+	hasBearer    bool
+	clientIP     string
+	proto        string
+	scheme       string
+	host         string
+	method       string
+	path         string
+	formVals     map[string]string
 	bodyBytes    []byte
 	contexts     map[reflect.Type]any
 	cookieSecret string
@@ -86,7 +86,7 @@ type ComprehensiveTestDTO struct {
 	IP        net.IP        `net:"ip"`
 	IPAddr    netip.Addr    `net:"ip"`
 	AuthToken string        `auth:"bearer,required"`
-	ApiKey    string        `header:"X-Api-Key,required"`
+	APIKey    string        `header:"X-Api-Key,required"`
 	SessionID string        `cookie:"sid,required"`
 	RawBody   []byte        `body:"raw"`
 }
@@ -126,7 +126,7 @@ func TestBinderIngest(t *testing.T) {
 	assert.Equal(t, "192.0.2.1", dto.IP.String())
 	assert.Equal(t, "192.0.2.1", dto.IPAddr.String())
 	assert.Equal(t, "bearer-jwt-token", dto.AuthToken)
-	assert.Equal(t, "secret-api-key", dto.ApiKey)
+	assert.Equal(t, "secret-api-key", dto.APIKey)
 	assert.Equal(t, "session-12345", dto.SessionID)
 	assert.Equal(t, []byte("raw binary payload"), dto.RawBody)
 }

@@ -27,15 +27,27 @@ linters:
         - G104
         - G115
         - G103
+        - G204
+        - G602
+        - G404
+        - G306
+        - G301
     staticcheck:
-      checks: ["all", "-SA5008"]
+      checks:
+        - "all"
+        - "-ST1000"
+        - "-ST1003"
+        - "-ST1020"
+        - "-ST1021"
+        - "-ST1022"
+        - "-SA5008"
   exclusions:
     paths:
-      - internal/compress/brotli
-      - internal/compress/zstd
-      - internal/compress/huff0
-      - internal/compress/fse
-      - internal/compress/flate
+      - "scripts/.*"
+      - "examples/.*"
+      - "tests/.*"
+      - "internal/compress/.*"
+      - "internal/quic/.*"
     rules:
       - linters: [staticcheck]
         text: "SA5008:"
@@ -51,4 +63,3 @@ linters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-

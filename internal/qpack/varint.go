@@ -58,11 +58,7 @@ func readInt(prefixLen uint8, data []byte) (uint64, int, error) {
 	shift := 0
 	idx := 1
 
-	for {
-		if idx >= len(data) {
-			return 0, 0, io.ErrUnexpectedEOF
-		}
-
+	for idx < len(data) {
 		b := data[idx]
 		idx++
 
@@ -74,11 +70,11 @@ func readInt(prefixLen uint8, data []byte) (uint64, int, error) {
 		shift += 7
 
 		if b&0x80 == 0 {
-			break
+			return val, idx, nil
 		}
 	}
 
-	return val, idx, nil
+	return 0, 0, io.ErrUnexpectedEOF
 }
 
 func appendString(dst []byte, s string) []byte {

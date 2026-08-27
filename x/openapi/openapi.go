@@ -157,15 +157,15 @@ func Generate(s *sein.Server, title, version string) *Document {
 
 	routes := s.Routes()
 	for _, r := range routes {
-		openApiPath, pathParams := convertRouteToOpenAPI(r.Path)
+		openAPIPath, pathParams := convertRouteToOpenAPI(r.Path)
 
-		if doc.Paths[openApiPath] == nil {
-			doc.Paths[openApiPath] = make(map[string]Operation)
+		if doc.Paths[openAPIPath] == nil {
+			doc.Paths[openAPIPath] = make(map[string]Operation)
 		}
 
 		op := buildOperation(r, pathParams)
 		methodKey := strings.ToLower(r.Method)
-		doc.Paths[openApiPath][methodKey] = op
+		doc.Paths[openAPIPath][methodKey] = op
 	}
 
 	return doc

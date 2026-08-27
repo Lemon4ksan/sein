@@ -15,14 +15,14 @@ import (
 
 // Common error sentinels returned by binder engine.
 var (
-	ErrMissingPathParam   = errors.New("required path parameter is missing")
-	ErrMissingQueryParam  = errors.New("required query parameter is missing")
-	ErrMissingHeader      = errors.New("required header is missing")
+	ErrMissingPathParam       = errors.New("required path parameter is missing")
+	ErrMissingQueryParam      = errors.New("required query parameter is missing")
+	ErrMissingHeader          = errors.New("required header is missing")
 	ErrMissingCookie          = errors.New("required cookie is missing")
 	ErrInvalidCookieSignature = errors.New("invalid or tampered cookie signature")
 	ErrMissingBearerToken     = errors.New("authorization bearer token is required")
-	ErrMissingContext     = errors.New("required context value is missing")
-	ErrEmptyRequestBody   = errors.New("request body cannot be empty")
+	ErrMissingContext         = errors.New("required context value is missing")
+	ErrEmptyRequestBody       = errors.New("request body cannot be empty")
 )
 
 // Ingest executes the precompiled field steps across dest with zero runtime switch or allocations.
