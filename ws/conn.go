@@ -8,6 +8,8 @@ import (
 	"bufio"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -440,3 +442,61 @@ func (c *Conn) CloseWithStatus(code int, reason string) error {
 
 	return c.conn.Close()
 }
+
+// CloseError represents a structured WebSocket closure reason with a code and message.
+type CloseError struct {
+	Code   int
+	Reason string
+}
+
+func (e *CloseError) Error() string {
+	if e.Reason != "" {
+		return fmt.Sprintf("ws: close %d (%s)", e.Code, e.Reason)
+	}
+	return fmt.Sprintf("ws: close %d", e.Code)
+}
+
+// NewCloseError creates a structured CloseError.
+func NewCloseError(code int, reason string) *CloseError {
+	return &CloseError{Code: code, Reason: reason}
+}
+
+var (
+	closeErrorMu  sync.RWMutex
+	closeErrorMap = make(map[error]CloseError)
+)
+
+// MapCloseError registers a global mapping from a sentinel error target to a WebSocket close status code and reason.
+func MapCloseError(target error, code int, reason string) {
+	closeErrorMu.Lock()
+	defer closeErrorMu.Unlock()
+	closeErrorMap[target] = CloseError{Code: code, Reason: reason}
+}
+
+// ResolveCloseError resolves any Go error to an RFC 6455 close status code and reason string.
+func ResolveCloseError(err error) (int, string) {
+	if err == nil {
+		return StatusNormalClosure, "normal closure"
+	}
+
+	var ce *CloseError
+	if errors.As(err, &ce) {
+		return ce.Code, ce.Reason
+	}
+
+	closeErrorMu.RLock()
+	defer closeErrorMu.RUnlock()
+
+	for target, mapped := range closeErrorMap {
+		if errors.Is(err, target) {
+			reason := mapped.Reason
+			if reason == "" {
+				reason = err.Error()
+			}
+			return mapped.Code, reason
+		}
+	}
+
+	return StatusInternalError, "internal server error"
+}
+
