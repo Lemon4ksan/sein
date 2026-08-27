@@ -279,3 +279,128 @@ func TestBinder_SignedCookie(t *testing.T) {
 		assert.True(t, errors.Is(err, binder.ErrInvalidCookieSignature))
 	})
 }
+
+type ValidationAndTransformDTO struct {
+	CleanedText  string `query:"text,trim,lower,single_space"`
+	PhoneDigits  string `query:"phone,digits_only"`
+	Code         string `query:"code,len=6"`
+	Role         string `query:"role,enum=admin|user|guest"`
+	AccountID    string `query:"account_id,uuid"`
+	Website      string `query:"website,url"`
+	EmailAddr    string `query:"email,email"`
+	UserIP       string `query:"ip"`
+	CustomRegex  string `query:"sku,pattern=^[A-Z]{3}-[0-9]{4}$"`
+	RequiredName string `query:"name,required"`
+}
+
+func TestBinder_ValidationAndTransforms(t *testing.T) {
+	t.Run("Valid Input with Transforms", func(t *testing.T) {
+		req := &mockRequestView{
+			queries: map[string]string{
+				"text":       "  HELLO    WORLD   SPACES  ",
+				"phone":      "+1 (555) 123-4567",
+				"code":       "123456",
+				"role":       "admin",
+				"account_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+				"website":    "https://example.com",
+				"email":      "admin@example.com",
+				"ip":         "192.0.2.1",
+				"sku":        "ABC-1234",
+				"name":       "Alice",
+			},
+		}
+
+		var dto ValidationAndTransformDTO
+		err := binder.Ingest(req, &dto)
+		require.NoError(t, err)
+
+		assert.Equal(t, "hello world spaces", dto.CleanedText)
+		assert.Equal(t, "15551234567", dto.PhoneDigits)
+		assert.Equal(t, "123456", dto.Code)
+		assert.Equal(t, "admin", dto.Role)
+		assert.Equal(t, "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", dto.AccountID)
+		assert.Equal(t, "https://example.com", dto.Website)
+		assert.Equal(t, "admin@example.com", dto.EmailAddr)
+		assert.Equal(t, "192.0.2.1", dto.UserIP)
+		assert.Equal(t, "ABC-1234", dto.CustomRegex)
+		assert.Equal(t, "Alice", dto.RequiredName)
+	})
+
+	t.Run("Validation Failure OneOf", func(t *testing.T) {
+		req := &mockRequestView{
+			queries: map[string]string{
+				"role": "hacker",
+				"name": "Bob",
+			},
+		}
+
+		var dto ValidationAndTransformDTO
+		err := binder.Ingest(req, &dto)
+		require.Error(t, err)
+	})
+
+	t.Run("Validation Failure Regex Pattern", func(t *testing.T) {
+		req := &mockRequestView{
+			queries: map[string]string{
+				"sku":  "invalid-sku-format",
+				"name": "Bob",
+			},
+		}
+
+		var dto ValidationAndTransformDTO
+		err := binder.Ingest(req, &dto)
+		require.Error(t, err)
+	})
+
+	t.Run("Validation Failure Missing Required", func(t *testing.T) {
+		req := &mockRequestView{
+			queries: map[string]string{},
+		}
+
+		var dto ValidationAndTransformDTO
+		err := binder.Ingest(req, &dto)
+		require.Error(t, err)
+	})
+}
+
+type NumericAndSourcesDTO struct {
+	Quantity int    `query:"qty,gt=0,le=100,multiple_of=5"`
+	ClientIP string `net:"ip"`
+	Token    string `auth:"bearer"`
+	FormUser string `form:"username"`
+	RawBody  []byte `body:"raw"`
+}
+
+func TestBinder_NumericAndSources(t *testing.T) {
+	req := &mockRequestView{
+		queries: map[string]string{
+			"qty": "25",
+		},
+		clientIP:  "203.0.113.195",
+		bearer:    "jwt-access-token",
+		hasBearer: true,
+		formVals: map[string]string{
+			"username": "superadmin",
+		},
+		bodyBytes: []byte("raw-payload-bytes"),
+	}
+
+	var dto NumericAndSourcesDTO
+	err := binder.Ingest(req, &dto)
+	require.NoError(t, err)
+
+	assert.Equal(t, 25, dto.Quantity)
+	assert.Equal(t, "203.0.113.195", dto.ClientIP)
+	assert.Equal(t, "jwt-access-token", dto.Token)
+	assert.Equal(t, "superadmin", dto.FormUser)
+	assert.Equal(t, []byte("raw-payload-bytes"), dto.RawBody)
+
+	// ValidateRouteBinding checks
+	type RouteTestDTO struct {
+		UserID uint64 `path:"user_id"`
+		PostID string `path:"post_id"`
+	}
+
+	// Should not panic on valid route
+	binder.ValidateRouteBinding(reflect.TypeFor[RouteTestDTO](), "/users/:user_id/posts/:post_id")
+}

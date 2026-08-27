@@ -276,6 +276,46 @@ func TestWebSocket_InvalidHandshake_Rejection(t *testing.T) {
 	require.NoError(t, app.Shutdown(ctx))
 }
 
+func TestWS_Framing_Masking_And_AcceptKey(t *testing.T) {
+	// 1. RFC 6455 §4.2.2 Sec-WebSocket-Accept test vector
+	acceptKey := ws.ComputeAcceptKey("dGhlIHNhbXBsZSBub25jZQ==")
+	assert.Equal(t, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=", acceptKey)
+
+	// 2. BuildFrameHeader lengths: <126, <=65535, >65535
+	var hdr [14]byte
+
+	// Short frame (length 50)
+	n1 := ws.BuildFrameHeader(hdr[:], 0x1, 50, false, false)
+	assert.Equal(t, 2, n1)
+	assert.Equal(t, byte(0x81), hdr[0])
+	assert.Equal(t, byte(50), hdr[1])
+
+	// Medium frame (length 1000)
+	n2 := ws.BuildFrameHeader(hdr[:], 0x2, 1000, true, true)
+	assert.Equal(t, 4, n2)
+	assert.Equal(t, byte(0xC2), hdr[0]) // 0x80 | 0x40 | 0x02
+	assert.Equal(t, byte(0x80|126), hdr[1])
+
+	// Large frame (length 70000)
+	n3 := ws.BuildFrameHeader(hdr[:], 0x1, 70000, false, false)
+	assert.Equal(t, 10, n3)
+	assert.Equal(t, byte(127), hdr[1])
+
+	// 3. Masking roundtrip
+	mask := [4]byte{0x12, 0x34, 0x56, 0x78}
+	original := []byte("WebSocket zero-alloc framing and masking test!")
+	payload := append([]byte(nil), original...)
+
+	ws.ApplyMask(payload, mask)
+	assert.False(t, string(payload) == string(original))
+
+	ws.VectorApplyFastMask(payload, mask)
+	assert.Equal(t, string(original), string(payload))
+
+	// Empty mask
+	ws.ApplyMask(nil, mask)
+}
+
 func BenchmarkWS_SIMDDemasking_64KB(b *testing.B) {
 	payload := make([]byte, 64*1024)
 	maskKey := [4]byte{0xDE, 0xAD, 0xBE, 0xEF}

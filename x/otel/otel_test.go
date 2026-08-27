@@ -8,6 +8,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -87,4 +88,58 @@ func TestOTel_TracingLifecycle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
+}
+
+func TestOTel_OTLPExporter_Filter_And_Errors(t *testing.T) {
+	var (
+		receivedMu sync.Mutex
+		received   bool
+	)
+
+	mockOTLP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/traces", r.URL.Path)
+		receivedMu.Lock()
+		received = true
+		receivedMu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer mockOTLP.Close()
+
+	app := sein.New()
+	app.Use(otel.New(
+		otel.WithOTLPExporter(mockOTLP.URL),
+		otel.WithFilter(func(req *sein.Request) bool {
+			return req.Path() == "/health"
+		}),
+	))
+
+	app.Get("/health", func(ctx context.Context) (string, error) {
+		return "ok", nil
+	})
+
+	app.Get("/error-span", func(ctx context.Context) (string, error) {
+		traceID := otel.TraceIDFromContext(ctx)
+		assert.NotEmpty(t, traceID)
+		return "", sein.ErrUnauthorized("missing-credentials")
+	})
+
+	// 1. Filtered route
+	recHealth := httptest.NewRecorder()
+	reqHealth := httptest.NewRequest(http.MethodGet, "/health", nil)
+	app.ServeHTTP(recHealth, reqHealth)
+	assert.Equal(t, http.StatusOK, recHealth.Code)
+	assert.Empty(t, recHealth.Header().Get("traceparent"))
+
+	// 2. Error route with trace context
+	recErr := httptest.NewRecorder()
+	reqErr := httptest.NewRequest(http.MethodGet, "/error-span", nil)
+	app.ServeHTTP(recErr, reqErr)
+	assert.Equal(t, http.StatusUnauthorized, recErr.Code)
+
+	// Wait briefly for OTLP worker flush
+	time.Sleep(600 * time.Millisecond)
+
+	receivedMu.Lock()
+	defer receivedMu.Unlock()
+	assert.True(t, received)
 }

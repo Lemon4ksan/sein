@@ -139,3 +139,68 @@ func TestAutoDecompress(t *testing.T) {
 		t.Fatalf("auto decompress 'identity' failed: %v", err)
 	}
 }
+
+func TestCompressDeflate_And_DecompressLimit(t *testing.T) {
+	data := []byte(strings.Repeat("Deflate and streaming limit test data! ", 50))
+
+	// 1. Deflate roundtrip
+	defCompressed, err := compress.CompressDeflate(data)
+	if err != nil {
+		t.Fatalf("CompressDeflate failed: %v", err)
+	}
+
+	defDec, err := compress.Decompress("deflate", defCompressed)
+	if err != nil || !bytes.Equal(defDec, data) {
+		t.Fatalf("Decompress deflate failed: %v", err)
+	}
+
+	// 2. DecompressLimit bomb protection
+	_, err = compress.DecompressLimit("deflate", defCompressed, 10)
+	if err != compress.ErrDecompressionLimit {
+		t.Fatalf("expected ErrDecompressionLimit, got %v", err)
+	}
+
+	// 3. Empty inputs
+	emptyBrotli, err := compress.CompressBrotli(nil, compress.BrotliDefaultCompression)
+	if err != nil || len(emptyBrotli) != 0 {
+		t.Fatalf("expected nil for empty brotli input")
+	}
+
+	emptyGzip, err := compress.CompressGzip(nil, 6)
+	if err != nil || len(emptyGzip) != 0 {
+		t.Fatalf("expected nil for empty gzip input")
+	}
+
+	emptyZstd, err := compress.CompressZstd(nil, compress.ZstdSpeedDefault)
+	if err != nil || len(emptyZstd) != 0 {
+		t.Fatalf("expected nil for empty zstd input")
+	}
+
+	emptyDeflate, err := compress.CompressDeflate(nil)
+	if err != nil || len(emptyDeflate) != 0 {
+		t.Fatalf("expected nil for empty deflate input")
+	}
+
+	// 4. Unsupported encoding
+	_, err = compress.Decompress("unsupported-codec-xyz", data)
+	if err != compress.ErrUnsupportedEncoding {
+		t.Fatalf("expected ErrUnsupportedEncoding, got %v", err)
+	}
+
+	// 5. Pooled Brotli and Zstd Writers
+	var bufB bytes.Buffer
+	bw := compress.NewBrotliWriter(&bufB, compress.BrotliDefaultCompression)
+	_, _ = bw.Write(data)
+	compress.ReleaseBrotliWriter(bw, compress.BrotliDefaultCompression)
+	if bufB.Len() == 0 {
+		t.Fatal("expected brotli writer output")
+	}
+
+	var bufZ bytes.Buffer
+	zw := compress.NewZstdWriter(&bufZ, compress.ZstdSpeedFastest)
+	_, _ = zw.Write(data)
+	compress.ReleaseZstdWriter(zw, compress.ZstdSpeedFastest)
+	if bufZ.Len() == 0 {
+		t.Fatal("expected zstd writer output")
+	}
+}

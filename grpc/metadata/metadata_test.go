@@ -6,6 +6,7 @@ package metadata_test
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/lemon4ksan/foundation/testkit/assert"
@@ -50,4 +51,25 @@ func TestMetadata_Context(t *testing.T) {
 	gotOutMD, ok := metadata.FromOutgoingContext(ctx)
 	assert.True(t, ok)
 	assert.Equal(t, []string{"s1"}, gotOutMD.Get("server-id"))
+}
+
+func TestMetadata_ServerMetadataContext_And_HTTP(t *testing.T) {
+	// 1. CopyToHTTP
+	md := metadata.Pairs("content-type", "application/grpc", "custom-hdr", "val1", "custom-hdr", "val2")
+	hdr := make(http.Header)
+	md.CopyToHTTP(hdr)
+	assert.Equal(t, "application/grpc", hdr.Get("content-type"))
+	assert.Equal(t, []string{"val1", "val2"}, hdr.Values("custom-hdr"))
+
+	// 2. NewServerMetadataContext, SetHeader, SetTrailer
+	ctx, sm := metadata.NewServerMetadataContext(context.Background())
+	_ = metadata.SetHeader(ctx, metadata.Pairs("x-resp-header", "foo"))
+	_ = metadata.SetTrailer(ctx, metadata.Pairs("grpc-status", "0"))
+
+	assert.Equal(t, []string{"foo"}, sm.Header.Get("x-resp-header"))
+	assert.Equal(t, []string{"0"}, sm.Trailer.Get("grpc-status"))
+
+	// Non-configured context calls succeed safely
+	_ = metadata.SetHeader(context.Background(), md)
+	_ = metadata.SetTrailer(context.Background(), md)
 }

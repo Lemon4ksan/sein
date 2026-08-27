@@ -210,6 +210,19 @@ func EncodeCapsuleHeader(capsuleType, payloadLen uint64, b []byte) int {
 	return n1 + n2
 }
 
+// DecodeCapsuleHeader reads the capsule type and payload length from b per RFC 9297 Section 3.2.
+func DecodeCapsuleHeader(b []byte) (capsuleType, payloadLen uint64, hdrLen int, err error) {
+	cType, n1, err := DecodeVarint(b)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	pLen, n2, err := DecodeVarint(b[n1:])
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return cType, pLen, n1 + n2, nil
+}
+
 // EncodeCapsule writes complete capsule frame (type, length, payload) into dst per RFC 9297 Section 3.2.
 func EncodeCapsule(capsuleType uint64, payload, dst []byte) int {
 	hdrLen := EncodeCapsuleHeader(capsuleType, uint64(len(payload)), dst)

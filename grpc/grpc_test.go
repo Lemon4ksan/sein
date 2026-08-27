@@ -291,3 +291,48 @@ func TestGRPC_MountOnSein(t *testing.T) {
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
 }
+
+func TestGRPC_Chains_And_Options(t *testing.T) {
+	var unaryCalls []string
+	interceptor1 := func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		unaryCalls = append(unaryCalls, "int1")
+		return handler(ctx, req)
+	}
+	interceptor2 := func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		unaryCalls = append(unaryCalls, "int2")
+		return handler(ctx, req)
+	}
+
+	srv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(interceptor1, interceptor2),
+		grpc.MaxRecvMsgSize(1024*1024),
+		grpc.MaxSendMsgSize(1024*1024),
+		grpc.CustomCodec(grpc.ProtoCodec{}),
+	)
+	srv.RegisterService(&greeterServiceDesc, &greeterImpl{})
+
+	// 1. Valid request through chained interceptor
+	body := encodeGRPCFrame(t, &HelloRequest{Name: "Chain"})
+	req := httptest.NewRequest(http.MethodPost, "/helloworld.Greeter/SayHello", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/grpc")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+	assert.Equal(t, http.StatusOK, res.StatusCode)
+	assert.Equal(t, []string{"int1", "int2"}, unaryCalls)
+
+	// 2. Unknown RPC Method -> Status Code 12 (UNIMPLEMENTED)
+	reqUnk := httptest.NewRequest(http.MethodPost, "/helloworld.Greeter/NonExistent", bytes.NewReader(body))
+	reqUnk.Header.Set("Content-Type", "application/grpc")
+	recUnk := httptest.NewRecorder()
+	srv.ServeHTTP(recUnk, reqUnk)
+	assert.Equal(t, strconv.Itoa(int(codes.Unimplemented)), recUnk.Header().Get("Grpc-Status"))
+
+	// 3. Non-POST / non-gRPC Content-Type -> 415 Status
+	reqBad := httptest.NewRequest(http.MethodGet, "/helloworld.Greeter/SayHello", nil)
+	recBad := httptest.NewRecorder()
+	srv.ServeHTTP(recBad, reqBad)
+	assert.Equal(t, http.StatusUnsupportedMediaType, recBad.Code)
+}
