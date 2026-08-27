@@ -288,7 +288,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Wrap in global middlewares unless SkipUnmatchedRoutes is enabled on 404/405
 	finalHandler := handler
-	if !s.SkipUnmatchedRoutes || (status != http.StatusNotFound && status != http.StatusMethodNotAllowed) {
+	if len(s.middlewares) > 0 && (!s.SkipUnmatchedRoutes || (status != http.StatusNotFound && status != http.StatusMethodNotAllowed)) {
 		for _, v := range slices.Backward(s.middlewares) {
 			finalHandler = v(finalHandler)
 		}

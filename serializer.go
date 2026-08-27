@@ -83,17 +83,58 @@ func serializePayload(result any) (statusCode int, headers http.Header, body []b
 }
 
 func (s *Server) serializeH1Result(res *h1engine.Response, result any) error {
-	status, headers, body, cookies, err := serializePayload(result)
-	if err != nil {
-		return err
+	res.StatusCode = http.StatusOK
+
+	if holder, ok := result.(ResponseHolder); ok {
+		res.StatusCode = generic.Coalesce(holder.StatusCode(), http.StatusOK)
+		if hdrs := holder.ResponseHeaders(); hdrs != nil {
+			res.Headers.AddFromHTTP(hdrs)
+		}
+		res.Cookies = append(res.Cookies, holder.ResponseCookies()...)
+
+		rawBody := holder.ResponseBody()
+		switch b := rawBody.(type) {
+		case nil:
+			return nil
+		case []byte:
+			res.Body = b
+			return nil
+		case string:
+			res.Body = bytesconv.S2B(b)
+			return nil
+		default:
+			data, err := json.Marshal(b)
+			if err != nil {
+				return err
+			}
+			if res.Headers.Get(header.ContentType) == "" {
+				res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+			}
+			res.Body = data
+			return nil
+		}
 	}
 
-	res.StatusCode = status
-	res.Headers.AddFromHTTP(headers)
-	res.Cookies = append(res.Cookies, cookies...)
-	res.Body = body
-
-	return nil
+	switch v := result.(type) {
+	case nil:
+		return nil
+	case []byte:
+		res.Headers.Set(header.ContentType, header.MIMEApplicationOctetStream)
+		res.Body = v
+		return nil
+	case string:
+		res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
+		res.Body = bytesconv.S2B(v)
+		return nil
+	default:
+		res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
+		data, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		res.Body = data
+		return nil
+	}
 }
 
 func (s *Server) serializeH2Result(res *h2engine.ServerResponse, result any) error {

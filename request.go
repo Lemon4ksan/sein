@@ -27,6 +27,7 @@ import (
 	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
+	"github.com/lemon4ksan/foundation/silicon/pool"
 
 	"github.com/lemon4ksan/sein/internal/compress"
 	"github.com/lemon4ksan/sein/internal/fast/h1engine"
@@ -64,17 +65,63 @@ type Request struct {
 	bodyMu        sync.Mutex
 }
 
+var requestStorage = pool.NewPerPStorage(func() *Request {
+	return &Request{}
+})
+
+func acquireRequest() *Request {
+	req := requestStorage.Get()
+	req.reset()
+	req.scope = borrow.NewScope()
+	return req
+}
+
+func (r *Request) reset() {
+	r.ctx = context.Background()
+	r.method = ""
+	r.path = ""
+	r.query = ""
+	r.proto = ""
+	r.host = ""
+	r.remoteAddr = ""
+	r.bodyBuf = nil
+	r.h1Headers = nil
+	r.h1Req = nil
+	r.raw = nil
+	r.multipartForm = nil
+	r.params.Reset()
+	r.slotCount = 0
+	if r.overflow != nil {
+		clear(r.overflow)
+	}
+}
+
+// Release returns the Request and its internal borrow arena to the sharded per-P memory pool.
+func (r *Request) Release() {
+	if r == nil {
+		return
+	}
+	if r.scope != nil {
+		r.scope.Release()
+		r.scope = nil
+	}
+	if r.multipartForm != nil {
+		_ = r.multipartForm.RemoveAll()
+		r.multipartForm = nil
+	}
+	r.reset()
+	requestStorage.Put(r)
+}
+
 // NewRequest creates a Request wrapping a standard http.Request.
 func NewRequest(r *http.Request, params ...*Params) *Request {
-	req := &Request{
-		ctx:        r.Context(),
-		raw:        r,
-		method:     r.Method,
-		scope:      borrow.NewScope(),
-		remoteAddr: r.RemoteAddr,
-		proto:      r.Proto,
-		host:       r.Host,
-	}
+	req := acquireRequest()
+	req.ctx = r.Context()
+	req.raw = r
+	req.method = r.Method
+	req.remoteAddr = r.RemoteAddr
+	req.proto = r.Proto
+	req.host = r.Host
 	if len(params) > 0 && params[0] != nil {
 		req.params = *params[0]
 	}
@@ -88,19 +135,16 @@ func NewRequest(r *http.Request, params ...*Params) *Request {
 
 // NewH1Request creates a Request wrapping a native zero-net/http h1.Request.
 func NewH1Request(h1Req *h1engine.Request, params ...*Params) *Request {
-	req := &Request{
-		ctx:        context.Background(),
-		method:     h1Req.Method,
-		path:       h1Req.Path,
-		query:      h1Req.Query,
-		proto:      h1Req.Proto,
-		host:       h1Req.Host,
-		remoteAddr: h1Req.RemoteAddr,
-		bodyBuf:    h1Req.Body,
-		h1Headers:  &h1Req.Headers,
-		h1Req:      h1Req,
-		scope:      borrow.NewScope(),
-	}
+	req := acquireRequest()
+	req.method = h1Req.Method
+	req.path = h1Req.Path
+	req.query = h1Req.Query
+	req.proto = h1Req.Proto
+	req.host = h1Req.Host
+	req.remoteAddr = h1Req.RemoteAddr
+	req.bodyBuf = h1Req.Body
+	req.h1Headers = &h1Req.Headers
+	req.h1Req = h1Req
 	if len(params) > 0 && params[0] != nil {
 		req.params = *params[0]
 	}
@@ -115,16 +159,13 @@ func NewH2Request(
 	body []byte,
 	params ...*Params,
 ) *Request {
-	req := &Request{
-		ctx:        context.Background(),
-		method:     method,
-		path:       path,
-		proto:      "HTTP/2.0",
-		host:       authority,
-		remoteAddr: remoteAddr,
-		bodyBuf:    body,
-		scope:      borrow.NewScope(),
-	}
+	req := acquireRequest()
+	req.method = method
+	req.path = path
+	req.proto = "HTTP/2.0"
+	req.host = authority
+	req.remoteAddr = remoteAddr
+	req.bodyBuf = body
 	if len(params) > 0 && params[0] != nil {
 		req.params = *params[0]
 	}
@@ -149,16 +190,13 @@ func NewH3Request(
 	body []byte,
 	params ...*Params,
 ) *Request {
-	req := &Request{
-		ctx:        context.Background(),
-		method:     method,
-		path:       path,
-		proto:      "HTTP/3.0",
-		host:       authority,
-		remoteAddr: remoteAddr,
-		bodyBuf:    body,
-		scope:      borrow.NewScope(),
-	}
+	req := acquireRequest()
+	req.method = method
+	req.path = path
+	req.proto = "HTTP/3.0"
+	req.host = authority
+	req.remoteAddr = remoteAddr
+	req.bodyBuf = body
 	if len(params) > 0 && params[0] != nil {
 		req.params = *params[0]
 	}
@@ -199,19 +237,6 @@ func (r *Request) Scope() *borrow.Scope {
 	}
 
 	return r.scope
-}
-
-// Release recycles the request's internal memory scope and cleans up multipart files.
-func (r *Request) Release() {
-	if r.scope != nil {
-		r.scope.Release()
-		r.scope = nil
-	}
-
-	if r.multipartForm != nil {
-		_ = r.multipartForm.RemoveAll()
-		r.multipartForm = nil
-	}
 }
 
 // Context returns the request-scoped context.
