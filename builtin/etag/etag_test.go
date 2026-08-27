@@ -9,6 +9,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,4 +64,39 @@ func TestETag_Lifecycle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
+}
+
+func TestETag_Weak_And_EdgeCases(t *testing.T) {
+	app := sein.New()
+	app.Use(etag.New(etag.WithWeak(true)))
+
+	app.Get("/weak", func(ctx context.Context) (sein.Response[[]byte], error) {
+		return sein.OK([]byte("weak-payload-bytes")), nil
+	})
+
+	app.Get("/empty", func(ctx context.Context) (string, error) {
+		return "", nil
+	})
+
+	// 1. Weak ETag generation
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/weak", nil)
+	app.ServeHTTP(rec1, req1)
+	assert.Equal(t, http.StatusOK, rec1.Code)
+	weakTag := rec1.Header().Get(header.ETag)
+	assert.True(t, strings.HasPrefix(weakTag, "W/\""))
+
+	// 2. Wildcard If-None-Match: * -> 304 Not Modified
+	recWild := httptest.NewRecorder()
+	reqWild := httptest.NewRequest(http.MethodGet, "/weak", nil)
+	reqWild.Header.Set(header.IfNoneMatch, "*")
+	app.ServeHTTP(recWild, reqWild)
+	assert.Equal(t, http.StatusNotModified, recWild.Code)
+
+	// 3. Empty string -> no ETag computed
+	recEmpty := httptest.NewRecorder()
+	reqEmpty := httptest.NewRequest(http.MethodGet, "/empty", nil)
+	app.ServeHTTP(recEmpty, reqEmpty)
+	assert.Equal(t, http.StatusOK, recEmpty.Code)
+	assert.Empty(t, recEmpty.Header().Get(header.ETag))
 }

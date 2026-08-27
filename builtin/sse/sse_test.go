@@ -83,3 +83,55 @@ func TestSSE_Handle_WithDTO(t *testing.T) {
 		assert.Contains(t, rec.Body.String(), "data: channel=news\n\n")
 	})
 }
+
+func TestSSE_AllHandlerSignatures_And_Multiline(t *testing.T) {
+	app := sein.New()
+
+	// 1. func(w *sse.Writer) error
+	sse.Handle(app, "/sse1", func(w *sse.Writer) error {
+		_ = w.Send("line1\nline2")
+		_ = w.Send([]byte("byte1\nbyte2"))
+		return nil
+	})
+
+	// 2. func(ctx context.Context, w *sse.Writer) error
+	sse.Handle(app, "/sse2", func(ctx context.Context, w *sse.Writer) error {
+		_ = w.Send("from-ctx")
+		return nil
+	})
+
+	// 3. func(w *sse.Writer, opt DTO) error
+	sse.Handle(app, "/sse3", func(w *sse.Writer, q StreamQuery) error {
+		_ = w.Send("stream3=" + q.Channel)
+		return nil
+	})
+
+	// 1. Test /sse1 multiline
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/sse1", nil)
+	app.ServeHTTP(rec1, req1)
+	assert.Equal(t, http.StatusOK, rec1.Code)
+	assert.Contains(t, rec1.Body.String(), "data: line1\ndata: line2\n\n")
+	assert.Contains(t, rec1.Body.String(), "data: byte1\ndata: byte2\n\n")
+
+	// 2. Test /sse2
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/sse2", nil)
+	app.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusOK, rec2.Code)
+	assert.Contains(t, rec2.Body.String(), "data: from-ctx\n\n")
+
+	// 3. Test /sse3
+	rec3 := httptest.NewRecorder()
+	req3 := httptest.NewRequest(http.MethodGet, "/sse3?channel=sports", nil)
+	app.ServeHTTP(rec3, req3)
+	assert.Equal(t, http.StatusOK, rec3.Code)
+	assert.Contains(t, rec3.Body.String(), "data: stream3=sports\n\n")
+
+	// Test Response methods
+	resp := sse.Stream(func(w *sse.Writer) error { return nil })
+	assert.Equal(t, http.StatusOK, resp.StatusCode())
+	assert.Nil(t, resp.ResponseBody())
+	assert.Nil(t, resp.ResponseCookies())
+	assert.NotEmpty(t, resp.ResponseHeaders().Get("Content-Type"))
+}

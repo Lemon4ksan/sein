@@ -84,3 +84,50 @@ func TestHealthcheck_LivezAndReadyz(t *testing.T) {
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
 }
+
+func TestHealthcheck_Middleware_CustomPaths(t *testing.T) {
+	app := sein.New()
+	app.Use(healthcheck.New(
+		healthcheck.WithLivenessPath("/health/live"),
+		healthcheck.WithReadinessPath("/health/ready"),
+		healthcheck.WithLiveChecker("cpu", func(ctx context.Context) error {
+			return nil
+		}),
+	))
+
+	app.Get("/data", func(ctx context.Context) (string, error) {
+		return "data", nil
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	addr := ln.Addr().String()
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 1. Custom liveness path
+	respLive, err := client.Get("http://" + addr + "/health/live")
+	require.NoError(t, err)
+	defer func() { _ = respLive.Body.Close() }()
+	assert.Equal(t, http.StatusOK, respLive.StatusCode)
+
+	// 2. Custom readiness path
+	respReady, err := client.Get("http://" + addr + "/health/ready")
+	require.NoError(t, err)
+	defer func() { _ = respReady.Body.Close() }()
+	assert.Equal(t, http.StatusOK, respReady.StatusCode)
+
+	// 3. Normal route passthrough
+	respData, err := client.Get("http://" + addr + "/data")
+	require.NoError(t, err)
+	defer func() { _ = respData.Body.Close() }()
+	assert.Equal(t, http.StatusOK, respData.StatusCode)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, app.Shutdown(ctx))
+}

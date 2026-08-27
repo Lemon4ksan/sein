@@ -67,3 +67,51 @@ func TestMethodOverride_HeaderAndQuery(t *testing.T) {
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
 }
+
+func TestMethodOverride_CustomOptions(t *testing.T) {
+	app := sein.New()
+	app.Use(methodoverride.New(
+		methodoverride.WithHeader("X-Method"),
+		methodoverride.WithQueryParam("method_override"),
+		methodoverride.WithMethods(http.MethodPut),
+	))
+
+	app.Patch("/item", func(ctx context.Context) (string, error) {
+		return "patched", nil
+	})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	addr := ln.Addr().String()
+	go func() {
+		_ = app.Serve(ln)
+	}()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 1. PUT overridden to PATCH via custom header
+	req1, _ := http.NewRequest(http.MethodPut, "http://"+addr+"/item", nil)
+	req1.Header.Set("X-Method", "PATCH")
+	resp1, err := client.Do(req1)
+	require.NoError(t, err)
+	defer func() { _ = resp1.Body.Close() }()
+
+	assert.Equal(t, http.StatusOK, resp1.StatusCode)
+	body1, _ := io.ReadAll(resp1.Body)
+	assert.Equal(t, "patched", string(body1))
+
+	// 2. PUT overridden to PATCH via custom query param
+	req2, _ := http.NewRequest(http.MethodPut, "http://"+addr+"/item?method_override=PATCH", nil)
+	resp2, err := client.Do(req2)
+	require.NoError(t, err)
+	defer func() { _ = resp2.Body.Close() }()
+
+	assert.Equal(t, http.StatusOK, resp2.StatusCode)
+	body2, _ := io.ReadAll(resp2.Body)
+	assert.Equal(t, "patched", string(body2))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, app.Shutdown(ctx))
+}

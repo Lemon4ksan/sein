@@ -8,6 +8,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -88,4 +89,34 @@ func TestHelmet_CustomCSPAndHSTS(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
+}
+
+func TestHelmet_AllAdvancedHeaders(t *testing.T) {
+	app := sein.New()
+	app.Use(helmet.New(
+		helmet.WithXSSProtection("1; mode=block"),
+		helmet.WithContentTypeNosniff(false),
+		helmet.WithReferrerPolicy("strict-origin-when-cross-origin"),
+		helmet.WithCOOP("unsafe-none"),
+		helmet.WithCORP("cross-origin"),
+		helmet.WithCOEP("require-corp"),
+		helmet.WithPermissionsPolicy("geolocation=(self), camera=()"),
+	))
+
+	app.Get("/custom", func(ctx context.Context) (string, error) {
+		return "Custom", nil
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/custom", nil)
+	app.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "1; mode=block", rec.Header().Get(header.XXSSProtection))
+	assert.Empty(t, rec.Header().Get(header.XContentTypeOptions))
+	assert.Equal(t, "strict-origin-when-cross-origin", rec.Header().Get(header.ReferrerPolicy))
+	assert.Equal(t, "unsafe-none", rec.Header().Get(header.CrossOriginOpenerPolicy))
+	assert.Equal(t, "cross-origin", rec.Header().Get(header.CrossOriginResourcePolicy))
+	assert.Equal(t, "require-corp", rec.Header().Get(header.CrossOriginEmbedderPolicy))
+	assert.Equal(t, "geolocation=(self), camera=()", rec.Header().Get(header.PermissionsPolicy))
 }
