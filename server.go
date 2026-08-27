@@ -91,6 +91,7 @@ type Server struct {
 	trustedPlatform        string
 	AutoTLSDomains         []string
 	AutoTLSCacheDir        string
+	cookieSecret           string
 	mu                     sync.Mutex
 }
 
@@ -154,6 +155,13 @@ func WithAutoTLS(domains ...string) Option {
 func WithAutoTLSCacheDir(dir string) Option {
 	return func(s *Server) {
 		s.AutoTLSCacheDir = dir
+	}
+}
+
+// WithCookieSecret configures a default secret key for HMAC signed cookie verification.
+func WithCookieSecret(secret string) Option {
+	return func(s *Server) {
+		s.cookieSecret = secret
 	}
 }
 
@@ -425,6 +433,7 @@ func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 
 	req := NewH1Request(h1Req, &params)
 	req.routePattern = pattern
+	req.cookieSecret = s.cookieSecret
 	defer req.Release()
 
 	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {
@@ -465,6 +474,7 @@ func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.Serve
 
 	req := NewH2Request(h2Req.Method, h2Req.Path, h2Req.Authority, h2Req.RemoteAddr, h2Req.Headers, h2Req.Body, &params)
 	req.routePattern = pattern
+	req.cookieSecret = s.cookieSecret
 	defer req.Release()
 
 	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {
@@ -497,6 +507,7 @@ func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.Serve
 
 	req := NewH3Request(h3Req.Method, h3Req.Path, h3Req.Authority, h3Req.RemoteAddr, h3Req.Headers, h3Req.Body, &params)
 	req.routePattern = pattern
+	req.cookieSecret = s.cookieSecret
 	defer req.Release()
 
 	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {

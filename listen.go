@@ -346,6 +346,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	swWriter := &statusWriter{ResponseWriter: w, statusCode: http.StatusOK}
 	req := NewRequest(r, &params)
 	req.routePattern = pattern
+	req.cookieSecret = s.cookieSecret
 	defer req.Release()
 
 	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {

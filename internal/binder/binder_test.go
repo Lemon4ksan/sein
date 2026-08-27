@@ -5,6 +5,9 @@
 package binder_test
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net"
 	"net/netip"
@@ -33,8 +36,9 @@ type mockRequestView struct {
 	method     string
 	path       string
 	formVals   map[string]string
-	bodyBytes  []byte
-	contexts   map[reflect.Type]any
+	bodyBytes    []byte
+	contexts     map[reflect.Type]any
+	cookieSecret string
 }
 
 func (m *mockRequestView) Param(name string) string { return m.params[name] }
@@ -47,6 +51,7 @@ func (m *mockRequestView) Cookie(name string) (string, error) {
 
 	return "", errors.New("no cookie")
 }
+func (m *mockRequestView) CookieSecret() string             { return m.cookieSecret }
 func (m *mockRequestView) BearerToken() (string, bool)      { return m.bearer, m.hasBearer }
 func (m *mockRequestView) ClientIP() string                 { return m.clientIP }
 func (m *mockRequestView) Protocol() string                 { return m.proto }
@@ -211,4 +216,66 @@ func TestBinderScalarIngestion(t *testing.T) {
 	err = binder.IngestScalarType(req, reflect.TypeOf(str), &str)
 	require.NoError(t, err)
 	assert.Equal(t, "777666", str)
+}
+
+type SignedCookieDTO struct {
+	SessionID string `cookie:"session,sign,required"`
+	Device    string `cookie:"device"`
+}
+
+func signCookieForTest(val, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(val))
+	sig := hex.EncodeToString(mac.Sum(nil))
+	return val + "." + sig
+}
+
+func TestBinder_SignedCookie(t *testing.T) {
+	secret := "test-secret-key-32-bytes-long!!"
+	validSession := "session-uuid-12345"
+	signedCookie := signCookieForTest(validSession, secret)
+
+	t.Run("Valid Signature", func(t *testing.T) {
+		req := &mockRequestView{
+			cookies: map[string]string{
+				"session": signedCookie,
+				"device":  "mobile",
+			},
+			cookieSecret: secret,
+		}
+
+		var dto SignedCookieDTO
+		err := binder.Ingest(req, &dto)
+		require.NoError(t, err)
+		assert.Equal(t, validSession, dto.SessionID)
+		assert.Equal(t, "mobile", dto.Device)
+	})
+
+	t.Run("Tampered Signature", func(t *testing.T) {
+		req := &mockRequestView{
+			cookies: map[string]string{
+				"session": validSession + ".tampered-signature-123456",
+			},
+			cookieSecret: secret,
+		}
+
+		var dto SignedCookieDTO
+		err := binder.Ingest(req, &dto)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, binder.ErrInvalidCookieSignature))
+	})
+
+	t.Run("Missing Signature On Signed Cookie", func(t *testing.T) {
+		req := &mockRequestView{
+			cookies: map[string]string{
+				"session": "raw-unsigned-session-token",
+			},
+			cookieSecret: secret,
+		}
+
+		var dto SignedCookieDTO
+		err := binder.Ingest(req, &dto)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, binder.ErrInvalidCookieSignature))
+	})
 }

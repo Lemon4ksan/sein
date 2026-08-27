@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net"
@@ -1140,4 +1141,91 @@ func TestMicroTrace(t *testing.T) {
 	assert.Equal(t, "/hello", traceRecorded.Path)
 	assert.Equal(t, http.StatusOK, traceRecorded.StatusCode)
 	assert.True(t, traceRecorded.TotalDuration >= 0)
+}
+
+type StreamItem struct {
+	ID    int    `json:"id"`
+	Event string `json:"event"`
+}
+
+func TestUniversalHandler_IteratorStreaming(t *testing.T) {
+	app := sein.New()
+
+	app.Get("/stream/iter", func(ctx context.Context) (sein.StreamResponse[StreamItem], error) {
+		return sein.EventStream(func(yield func(StreamItem) bool) {
+			for i := 1; i <= 3; i++ {
+				if !yield(StreamItem{ID: i, Event: fmt.Sprintf("tick-%d", i)}) {
+					return
+				}
+			}
+		}, "ticker"), nil
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/stream/iter", nil)
+	app.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
+	body := rec.Body.String()
+	assert.Contains(t, body, "event: ticker\n")
+	assert.Contains(t, body, "data: {\"id\":1,\"event\":\"tick-1\"}\n\n")
+	assert.Contains(t, body, "data: {\"id\":2,\"event\":\"tick-2\"}\n\n")
+	assert.Contains(t, body, "data: {\"id\":3,\"event\":\"tick-3\"}\n\n")
+}
+
+func TestUniversalHandler_ChannelStreaming(t *testing.T) {
+	app := sein.New()
+
+	app.Get("/stream/chan", func(ctx context.Context) (<-chan StreamItem, error) {
+		ch := make(chan StreamItem, 3)
+		ch <- StreamItem{ID: 10, Event: "alpha"}
+		ch <- StreamItem{ID: 20, Event: "beta"}
+		close(ch)
+		return ch, nil
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/stream/chan", nil)
+	app.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "application/x-ndjson", rec.Header().Get("Content-Type"))
+	body := rec.Body.String()
+	assert.Contains(t, body, "{\"id\":10,\"event\":\"alpha\"}\n")
+	assert.Contains(t, body, "{\"id\":20,\"event\":\"beta\"}\n")
+}
+
+type SignedAuthCookieDTO struct {
+	Token string `cookie:"token,sign,required"`
+}
+
+func TestServer_SignedCookieDTO(t *testing.T) {
+	secret := "secret-auth-key-32-chars-length!"
+	app := sein.New(sein.WithCookieSecret(secret))
+
+	app.Get("/auth/profile", func(ctx context.Context, auth SignedAuthCookieDTO) (string, error) {
+		return "Authenticated user with token: " + auth.Token, nil
+	})
+
+	t.Run("Valid Signed Cookie", func(t *testing.T) {
+		signedToken := sein.SignCookieValue("user-token-xyz", secret)
+
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/auth/profile", nil)
+		req.AddCookie(&http.Cookie{Name: "token", Value: signedToken})
+		app.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "Authenticated user with token: user-token-xyz", rec.Body.String())
+	})
+
+	t.Run("Tampered Cookie Signature", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/auth/profile", nil)
+		req.AddCookie(&http.Cookie{Name: "token", Value: "user-token-xyz.bad-signature"})
+		app.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
 }

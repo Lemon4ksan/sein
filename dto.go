@@ -67,6 +67,10 @@ func (a *requestAdapter) Cookie(name string) (string, error) {
 	return a.req.Cookie(name)
 }
 
+func (a *requestAdapter) CookieSecret() string {
+	return a.req.CookieSecret()
+}
+
 func (a *requestAdapter) BearerToken() (string, bool) {
 	return a.req.BearerToken()
 }
@@ -185,6 +189,8 @@ func mapBinderError(err error) error {
 		return ErrMissingHeader
 	case errors.Is(err, binder.ErrMissingCookie):
 		return ErrMissingCookie
+	case errors.Is(err, binder.ErrInvalidCookieSignature):
+		return ErrInvalidCookie.WithMessage("invalid or tampered cookie signature")
 	case errors.Is(err, binder.ErrMissingBearerToken):
 		return ErrMissingBearerToken
 	case errors.Is(err, binder.ErrMissingContext):

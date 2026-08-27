@@ -7,6 +7,7 @@ package sein
 import (
 	"context"
 	"fmt"
+	"iter"
 	"reflect"
 	"slices"
 
@@ -283,6 +284,61 @@ func toResponder[T any](val T) any {
 	if responder, ok := any(val).(Responder); ok {
 		return responder
 	}
+	if direct, ok := any(val).(DirectH1Responder); ok {
+		return direct
+	}
+	if rVal := reflect.ValueOf(val); rVal.IsValid() {
+		rTyp := rVal.Type()
+		if isIterSeq(rTyp) {
+			return Stream(makeIterSeq(rVal))
+		}
+		if isChannel(rTyp) {
+			return Stream(makeChanSeq(rVal))
+		}
+	}
 
 	return OK(val)
+}
+
+func isIterSeq(t reflect.Type) bool {
+	if t == nil || t.Kind() != reflect.Func || t.NumIn() != 1 || t.NumOut() != 0 {
+		return false
+	}
+	yieldType := t.In(0)
+	if yieldType.Kind() != reflect.Func || yieldType.NumIn() != 1 || yieldType.NumOut() != 1 {
+		return false
+	}
+	return yieldType.Out(0).Kind() == reflect.Bool
+}
+
+func makeIterSeq(val reflect.Value) iter.Seq[any] {
+	return func(yield func(any) bool) {
+		yieldVal := reflect.MakeFunc(val.Type().In(0), func(args []reflect.Value) []reflect.Value {
+			item := args[0].Interface()
+			cont := yield(item)
+			return []reflect.Value{reflect.ValueOf(cont)}
+		})
+		val.Call([]reflect.Value{yieldVal})
+	}
+}
+
+func isChannel(t reflect.Type) bool {
+	return t != nil && t.Kind() == reflect.Chan
+}
+
+func makeChanSeq(val reflect.Value) iter.Seq[any] {
+	return func(yield func(any) bool) {
+		for {
+			chosen, recv, ok := reflect.Select([]reflect.SelectCase{
+				{Dir: reflect.SelectRecv, Chan: val},
+			})
+			_ = chosen
+			if !ok {
+				return
+			}
+			if !yield(recv.Interface()) {
+				return
+			}
+		}
+	}
 }

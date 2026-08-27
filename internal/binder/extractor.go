@@ -5,6 +5,9 @@
 package binder
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 	"strings"
@@ -165,6 +168,7 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 		}
 
 	case SourceCookie:
+		signed := b.Signed
 		return func(req RequestView) (generic.Optional[string], error) {
 			c, err := req.Cookie(key)
 
@@ -183,6 +187,14 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 				}
 
 				return generic.None[string](), nil
+			}
+
+			if signed {
+				verified, ok := verifySignedCookie(raw, req.CookieSecret())
+				if !ok {
+					return generic.None[string](), ErrInvalidCookieSignature
+				}
+				raw = verified
 			}
 
 			return generic.Some(raw), nil
@@ -249,4 +261,31 @@ func compileStringExtractor(b *FieldBinding) StringExtractorFunc {
 	return func(req RequestView) (generic.Optional[string], error) {
 		return generic.None[string](), nil
 	}
+}
+
+func verifySignedCookie(signedValue, secret string) (string, bool) {
+	if secret == "" {
+		return signedValue, true
+	}
+	idx := strings.LastIndexByte(signedValue, '.')
+	if idx < 0 {
+		return "", false
+	}
+	value := signedValue[:idx]
+	sigHex := signedValue[idx+1:]
+
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil {
+		return "", false
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(value))
+	expectedSig := mac.Sum(nil)
+
+	if !hmac.Equal(sig, expectedSig) {
+		return "", false
+	}
+
+	return value, true
 }

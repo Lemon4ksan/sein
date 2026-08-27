@@ -5,6 +5,9 @@
 package sein
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"strings"
 	"time"
@@ -295,4 +298,40 @@ func HTML(content string) Response[string] {
 	}
 
 	return r.WithHeader(header.ContentType, "text/html; charset=utf-8")
+}
+
+// SignCookieValue generates a signed cookie value in "value.signature" format using HMAC-SHA256.
+func SignCookieValue(value string, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(value))
+	sig := hex.EncodeToString(mac.Sum(nil))
+	return value + "." + sig
+}
+
+// VerifyCookieValue verifies a "value.signature" string against secret using HMAC-SHA256 with constant-time equality.
+func VerifyCookieValue(signedValue string, secret string) (string, bool) {
+	if secret == "" {
+		return signedValue, true
+	}
+	idx := strings.LastIndexByte(signedValue, '.')
+	if idx < 0 {
+		return "", false
+	}
+	value := signedValue[:idx]
+	sigHex := signedValue[idx+1:]
+
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil {
+		return "", false
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(value))
+	expectedSig := mac.Sum(nil)
+
+	if !hmac.Equal(sig, expectedSig) {
+		return "", false
+	}
+
+	return value, true
 }

@@ -35,6 +35,7 @@ type RequestView interface {
 	Query(key string) string
 	Header(key string) string
 	Cookie(name string) (string, error)
+	CookieSecret() string
 	BearerToken() (string, bool)
 	ClientIP() string
 	Protocol() string

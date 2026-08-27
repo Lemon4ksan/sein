@@ -65,6 +65,8 @@ type Request struct {
 	overflow      map[reflect.Type]any
 	bodyMu        sync.Mutex
 	orphaned      bool
+	defers        []func()
+	cookieSecret  string
 }
 
 var requestStorage = pool.NewPerPStorage(func() *Request {
@@ -94,8 +96,32 @@ func (r *Request) reset() {
 	r.params.Reset()
 	r.slotCount = 0
 	r.orphaned = false
+	r.cookieSecret = ""
+	if len(r.defers) > 0 {
+		r.defers = r.defers[:0]
+	}
 	if r.overflow != nil {
 		clear(r.overflow)
+	}
+}
+
+// CookieSecret returns the secret key used for signed cookie verification on this request.
+func (r *Request) CookieSecret() string {
+	return r.cookieSecret
+}
+
+// SetCookieSecret sets the secret key used for signed cookie verification on this request.
+func (r *Request) SetCookieSecret(secret string) {
+	r.cookieSecret = secret
+}
+
+// Defer registers a function to execute after the HTTP response has been completely written and flushed to the client.
+//
+// Deferred callbacks execute in LIFO (last-in, first-out) order during request completion with panic recovery,
+// allowing audit logs, telemetry metrics, and background jobs to run without delaying response time (TTFB).
+func (r *Request) Defer(fn func()) {
+	if fn != nil {
+		r.defers = append(r.defers, fn)
 	}
 }
 
@@ -136,6 +162,18 @@ func (r *Request) AllocString(s string) string {
 func (r *Request) Release() {
 	if r == nil || r.orphaned {
 		return
+	}
+	if len(r.defers) > 0 {
+		for i := len(r.defers) - 1; i >= 0; i-- {
+			fn := r.defers[i]
+			if fn != nil {
+				func() {
+					defer func() { _ = recover() }()
+					fn()
+				}()
+			}
+		}
+		r.defers = r.defers[:0]
 	}
 	if r.scope != nil {
 		r.scope.Release()

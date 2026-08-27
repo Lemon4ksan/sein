@@ -50,6 +50,7 @@ type FieldBinding struct {
 	SliceElemKind reflect.Kind
 
 	// String Sanitizers
+	Signed      bool
 	Trim        bool
 	Lower       bool
 	Upper       bool
@@ -123,6 +124,7 @@ func populateFieldBinding(tag refkit.Tag, b *FieldBinding) {
 	b.Format = tag.Get("format")
 	b.Separator = generic.Coalesce(tag.Get("sep"), ",")
 	b.Pattern = tag.Get("pattern")
+	b.Signed = tag.Has("sign") || tag.Has("signed")
 	b.Trim = tag.Has("trim")
 	b.Lower = tag.Has("lower")
 	b.Upper = tag.Has("upper")

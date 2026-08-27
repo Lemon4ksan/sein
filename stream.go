@@ -7,6 +7,7 @@ package sein
 import (
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
 	"strconv"
 	"strings"
@@ -258,5 +259,143 @@ func (r SSEResponse) WriteResponse(w http.ResponseWriter) error {
 		return r.StreamFunc(sse)
 	}
 
+	return nil
+}
+
+// StreamResponse encapsulates an iterator stream (iter.Seq[T] or channel).
+type StreamResponse[T any] struct {
+	Seq     iter.Seq[T]
+	SSE     bool
+	Event   string
+	Headers http.Header
+}
+
+// Stream creates a line-delimited NDJSON streaming response from an iterator (Go 1.23+ iter.Seq[T]).
+func Stream[T any](seq iter.Seq[T]) StreamResponse[T] {
+	return StreamResponse[T]{
+		Seq: seq,
+		SSE: false,
+	}
+}
+
+// EventStream creates a Server-Sent Events (SSE) streaming response from an iterator (Go 1.23+ iter.Seq[T]).
+func EventStream[T any](seq iter.Seq[T], eventName ...string) StreamResponse[T] {
+	var ev string
+	if len(eventName) > 0 {
+		ev = eventName[0]
+	}
+	return StreamResponse[T]{
+		Seq:   seq,
+		SSE:   true,
+		Event: ev,
+	}
+}
+
+// WithHeader attaches custom headers to the stream response.
+func (r StreamResponse[T]) WithHeader(key, val string) StreamResponse[T] {
+	if r.Headers == nil {
+		r.Headers = make(http.Header)
+	}
+	r.Headers.Set(key, val)
+	return r
+}
+
+// WriteToH1 satisfies DirectH1Responder for direct H1 delivery.
+func (r StreamResponse[T]) WriteToH1(res *h1engine.Response) error {
+	res.StatusCode = http.StatusOK
+	if r.SSE {
+		res.Headers.Set(header.ContentType, "text/event-stream")
+		res.Headers.Set(header.CacheControl, "no-cache")
+		res.Headers.Set(header.Connection, "keep-alive")
+	} else {
+		res.Headers.Set(header.ContentType, "application/x-ndjson")
+	}
+	res.Headers.AddFromHTTP(r.Headers)
+
+	res.StreamWriter = func(w io.Writer) error {
+		if r.Seq == nil {
+			return nil
+		}
+		if r.SSE {
+			sse := NewSSESender(w)
+			for item := range r.Seq {
+				if r.Event != "" {
+					if err := sse.SendJSON(r.Event, item); err != nil {
+						return err
+					}
+				} else {
+					data, err := json.Marshal(item)
+					if err != nil {
+						return err
+					}
+					if err := sse.Send(string(data)); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		}
+		for item := range r.Seq {
+			data, err := json.Marshal(item)
+			if err != nil {
+				return err
+			}
+			data = append(data, '\n')
+			if _, err := w.Write(data); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return nil
+}
+
+// WriteResponse satisfies net/http Responder.
+func (r StreamResponse[T]) WriteResponse(w http.ResponseWriter) error {
+	if r.SSE {
+		w.Header().Set(header.ContentType, "text/event-stream")
+		w.Header().Set(header.CacheControl, "no-cache")
+		w.Header().Set(header.Connection, "keep-alive")
+	} else {
+		w.Header().Set(header.ContentType, "application/x-ndjson")
+	}
+	copyHTTPHeaders(w.Header(), r.Headers)
+	w.WriteHeader(http.StatusOK)
+
+	flusher, _ := w.(http.Flusher)
+	fw := &flushingWriter{w: w, flusher: flusher}
+
+	if r.Seq == nil {
+		return nil
+	}
+	if r.SSE {
+		sse := NewSSESender(fw)
+		for item := range r.Seq {
+			if r.Event != "" {
+				if err := sse.SendJSON(r.Event, item); err != nil {
+					return err
+				}
+			} else {
+				data, err := json.Marshal(item)
+				if err != nil {
+					return err
+				}
+				if err := sse.Send(string(data)); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	for item := range r.Seq {
+		data, err := json.Marshal(item)
+		if err != nil {
+			return err
+		}
+		data = append(data, '\n')
+		if _, err := fw.Write(data); err != nil {
+			return err
+		}
+	}
 	return nil
 }

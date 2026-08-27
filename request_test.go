@@ -150,3 +150,31 @@ func TestRequest_ArenaAllocation(t *testing.T) {
 		t.Fatalf("unexpected string: %s", str)
 	}
 }
+
+func TestRequest_Defer(t *testing.T) {
+	httpReq, _ := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+	req := sein.NewRequest(httpReq, nil)
+
+	var executionOrder []int
+
+	req.Defer(func() {
+		executionOrder = append(executionOrder, 1)
+	})
+	req.Defer(func() {
+		executionOrder = append(executionOrder, 2)
+		panic("simulated panic in deferred post-response hook")
+	})
+	req.Defer(func() {
+		executionOrder = append(executionOrder, 3)
+	})
+
+	// Upon Release(), defers should execute in LIFO order (3, 2, 1) and recover panic on 2 safely
+	req.Release()
+
+	if len(executionOrder) != 3 {
+		t.Fatalf("expected 3 executed defers, got %d: %v", len(executionOrder), executionOrder)
+	}
+	if executionOrder[0] != 3 || executionOrder[1] != 2 || executionOrder[2] != 1 {
+		t.Fatalf("expected LIFO order [3, 2, 1], got %v", executionOrder)
+	}
+}
