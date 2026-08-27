@@ -33,7 +33,7 @@ func RegisterResolver[T any](s *Server, fn ResolverFunc[T]) *Server {
 	return Derive[T](s, fn)
 }
 
-// DeriveMiddleware creates a middleware that resolves dependency T and injects it into the request context.
+// DeriveMiddleware creates a middleware that resolves dependency T and injects it into the request context and fast slots.
 func DeriveMiddleware[T any](fn ResolverFunc[T]) Middleware {
 	t := reflect.TypeOf((*T)(nil)).Elem()
 	return func(next RawHandler) RawHandler {
@@ -42,6 +42,7 @@ func DeriveMiddleware[T any](fn ResolverFunc[T]) Middleware {
 			if err != nil {
 				return nil, err
 			}
+			Set(req, val)
 			req.ctx = context.WithValue(req.Context(), t, val)
 			return next(req)
 		}
@@ -53,32 +54,59 @@ func ProvideMiddleware[T any](fn ResolverFunc[T]) Middleware {
 	return DeriveMiddleware[T](fn)
 }
 
-func findServer(r RouteBuilder) *Server {
-	if srv, ok := r.(*Server); ok {
-		return srv
-	}
-	if g, ok := r.(*Group); ok {
-		return findServer(g.parent)
-	}
-	if gs, ok := r.(*GuardScope); ok {
-		return findServer(gs.Group)
-	}
-	return nil
+// Derive registers a request-scoped type resolver for type T on this group.
+func (g *Group) Derive(t reflect.Type, fn any) *Group {
+	g.resolvers.Store(t, fn)
+	return g
+}
+
+// GroupDerive registers a typed resolver on a group.
+func GroupDerive[T any](g *Group, fn ResolverFunc[T]) *Group {
+	t := reflect.TypeOf((*T)(nil)).Elem()
+	g.resolvers.Store(t, fn)
+	return g
+}
+
+// GroupProvide is an alias for [GroupDerive].
+func GroupProvide[T any](g *Group, fn ResolverFunc[T]) *Group {
+	return GroupDerive[T](g, fn)
 }
 
 func getResolver[T any](r RouteBuilder) ResolverFunc[T] {
-	srv := findServer(r)
-	if srv != nil {
-		t := reflect.TypeOf((*T)(nil)).Elem()
-		if raw, ok := srv.resolvers.Load(t); ok {
-			if fn, ok := raw.(ResolverFunc[T]); ok {
-				return fn
+	t := reflect.TypeOf((*T)(nil)).Elem()
+
+	curr := r
+	for curr != nil {
+		if g, ok := curr.(*Group); ok {
+			if raw, found := g.resolvers.Load(t); found {
+				if fn, ok := raw.(ResolverFunc[T]); ok {
+					return fn
+				}
 			}
+			curr = g.parent
+			continue
 		}
+		if gs, ok := curr.(*GuardScope); ok {
+			curr = gs.Group
+			continue
+		}
+		if srv, ok := curr.(*Server); ok {
+			if raw, found := srv.resolvers.Load(t); found {
+				if fn, ok := raw.(ResolverFunc[T]); ok {
+					return fn
+				}
+			}
+			break
+		}
+		break
 	}
 
 	return func(req *Request) (T, error) {
-		ctxVal := req.Context().Value(reflect.TypeOf((*T)(nil)).Elem())
+		if val, ok := Get[T](req); ok {
+			return val, nil
+		}
+
+		ctxVal := req.Context().Value(t)
 		if ctxVal != nil {
 			if typed, ok := ctxVal.(T); ok {
 				return typed, nil

@@ -5,8 +5,6 @@
 package h1engine
 
 import (
-	"strings"
-
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 	"github.com/lemon4ksan/foundation/silicon/simd"
@@ -101,6 +99,17 @@ func (h *Headers) Entries() []HeaderEntry {
 	return h.entries
 }
 
+// trimASCIIByteSpaces trims ASCII spaces and tabs from both ends of b without heap allocations.
+func trimASCIIByteSpaces(b []byte) []byte {
+	for len(b) > 0 && (b[0] == ' ' || b[0] == '\t' || b[0] == '\r' || b[0] == '\n') {
+		b = b[1:]
+	}
+	for len(b) > 0 && (b[len(b)-1] == ' ' || b[len(b)-1] == '\t' || b[len(b)-1] == '\r' || b[len(b)-1] == '\n') {
+		b = b[:len(b)-1]
+	}
+	return b
+}
+
 // ParseHeaderLine parses a single raw "Key: Value\r\n" or "Key: Value" byte slice using SIMD.
 func (h *Headers) ParseHeaderLine(line []byte) bool {
 	colonIdx := simd.ScanByteVector(line, ':')
@@ -108,8 +117,8 @@ func (h *Headers) ParseHeaderLine(line []byte) bool {
 		return false
 	}
 
-	key := strings.TrimSpace(bytesconv.B2S(line[:colonIdx]))
-	val := strings.TrimSpace(bytesconv.B2S(line[colonIdx+1:]))
+	key := bytesconv.B2S(trimASCIIByteSpaces(line[:colonIdx]))
+	val := bytesconv.B2S(trimASCIIByteSpaces(line[colonIdx+1:]))
 
 	h.entries = append(h.entries, HeaderEntry{Key: key, Value: val})
 

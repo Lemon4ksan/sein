@@ -2,7 +2,7 @@
 
 # sein
 
-### Суверенный высокопроизводительный серверный фреймворк для Go
+### Серверный сетевой стек и веб-фреймворк для Go
 
 _«В бэкендах безумие — это состояние по умолчанию. Пусть **sein** станет вашим светом разума.»_
 
@@ -10,12 +10,12 @@ _«В бэкендах безумие — это состояние по умо�
 [![Go Reference](https://img.shields.io/badge/godoc-reference-007d9c?style=flat-square)](https://pkg.go.dev/github.com/lemon4ksan/sein)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue?style=flat-square)](LICENSE)
 [![Zero-Alloc](https://img.shields.io/badge/memory-0%20B%2Fop%20%7C%200%20allocs-brightgreen?style=flat-square)](#-профиль-производительности)
-[![Single-Port Matrix](https://img.shields.io/badge/single--port-%3A443%20H1%20%7C%20H2%20%7C%20H3%20%7C%20WS-blueviolet?style=flat-square)](#расширенные-протоколы-и-возможности)
+[![Single-Port Matrix](https://img.shields.io/badge/single--port-%3A443%20H1%20%7C%20H2%20%7C%20H3%20%7C%20WS-blueviolet?style=flat-square)](#протоколы-и-возможности)
 [![Ecosystem](https://img.shields.io/badge/ecosystem-foundation-orange?style=flat-square)](https://github.com/lemon4ksan/foundation)
 
-**sein** — это унифицированный, сверхвысокопроизводительный серверный движок сетевых протоколов и contract-first веб-фреймворк для Go. Спроектирован для zero-allocation исполнения (**0 B/op**), объединяет **HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets и gRPC на одном порту `:443`** без reverse-прокси, с математически верифицированной безопасностью памяти (`borrow.Scope`) и аппаратной защитой от сетевых DoS-атак.
+**sein** — серверный сетевой стек и веб-фреймворк для Go. Поддерживает запуск HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets и gRPC на одном порту `:443` без сторонних reverse-прокси, со связыванием параметров через DTO и пулингом памяти.
 
-#### [English](README.md) • Русский • [Концептуальный манифест](docs/CONCEPT.md)
+#### [English](README.md) • Русский • [Концепция архитектуры](docs/CONCEPT.md)
 
 </div>
 
@@ -29,7 +29,7 @@ go get github.com/lemon4ksan/sein
 
 ## Быстрый старт
 
-Типобезопасные, чистые математические обработчики с декларативным связыванием запросов и без бойлерплейта:
+Типизированные обработчики с декларативной валидацией и связыванием полей DTO:
 
 ```go
 package main
@@ -65,7 +65,7 @@ func main() {
 		sein.WithMethodNotAllowed(true),
 	)
 
-	// 2. Чистый математический обработчик: (ctx, DTO) -> (Result, error)
+	// 2. Обработчик: (ctx, DTO) -> (Result, error)
 	srv.Post("/users/:id", func(ctx context.Context, req UpdateUserDTO) (*UserResponse, error) {
 		return &UserResponse{
 			ID:       req.UserID.String(),
@@ -75,12 +75,12 @@ func main() {
 		}, nil
 	})
 
-	// 3. Простой GET маршрут: (ctx) -> (Result, error)
+	// 3. GET маршрут: (ctx) -> (Result, error)
 	srv.Get("/health", func(ctx context.Context) (string, error) {
 		return "OK", nil
 	})
 
-	// 4. Реал-тайм Server-Sent Events (SSE)
+	// 4. Server-Sent Events (SSE)
 	srv.Get("/events", func(ctx context.Context) (sein.SSEResponse, error) {
 		return sein.SSE(func(sse *sein.SSESender) error {
 			_ = sse.SendJSON("connected", map[string]string{"status": "online"})
@@ -88,25 +88,23 @@ func main() {
 		}), nil
 	})
 
-	log.Println("sein reactor listening on http://localhost:8080")
+	log.Println("sein listening on http://localhost:8080")
 	log.Fatal(srv.Listen(":8080"))
 }
 ```
 
-## Эргономика и возможности
+## Обработка запросов и DTO
 
-`sein` преображает разработку бэкендов на Go, полностью избавляя от бойлерплейта `w http.ResponseWriter, r *http.Request` и ручных циклов валидации.
-
-### 1. Чистые математические функции
-Обработчики в `sein` — это чистые, легко тестируемые функции, преобразующие входные данные в результат:
+### 1. Функции-обработчики
+Обработчики в `sein` принимают контекст и опциональную структуру DTO, возвращая типизированный результат:
 
 ```go
-// Чистый GET с DTO: (ctx, DTO) -> (Result, error)
+// GET с DTO: (ctx, DTO) -> (Result, error)
 srv.GetWith("/users/:id", func(ctx context.Context, req GetUserDTO) (*User, error) {
 	return userService.Find(ctx, req.ID)
 })
 
-// Чистый POST с кастомным статусом: (ctx, DTO) -> (Response[T], error)
+// POST с кастомным HTTP-статусом: (ctx, DTO) -> (Response[T], error)
 srv.Post("/users", func(ctx context.Context, req CreateUserDTO) (sein.Response[*User], error) {
 	user, err := userService.Create(ctx, req)
 	if err != nil {
@@ -116,12 +114,12 @@ srv.Post("/users", func(ctx context.Context, req CreateUserDTO) (sein.Response[*
 })
 ```
 
-### 2. Единая матрица DTO
-Описывайте любые источники данных запроса в одной декларативной структуре. `sein` извлечёт, санитизирует и провалидирует все поля за один zero-alloc проход:
+### 2. Структуры DTO и валидация
+Все параметры запроса (путь, query, заголовки, куки, тело JSON) объявляются в единой структуре DTO с автоматической валидацией и санитизацией:
 
 ```go
 type UpdateProfileDTO struct {
-	// 1. Источники данных протоколов
+	// Источники данных протоколов
 	UserID      uuid.UUID           `path:"user_id,uuid"`                  // Параметр URL: /users/:user_id
 	Search      string              `query:"q,default=all,trim,lower"`     // Query-параметр: ?q=...
 	Page        int                 `query:"page,default=1,positive"`      // Query с числовым парсингом
@@ -134,13 +132,13 @@ type UpdateProfileDTO struct {
 	Avatar      *sein.File          `file:"avatar,required"`               // Загруженный файл
 	Gallery     []*sein.File        `files:"gallery"`                      // Набор загруженных файлов
 	Password    sein.Secret[string] `json:"password,min=8"`                // Маскируется в логах и трейсах
-	UserSession *Session            `ctx:""`                               // Типизированная сессия из L1 кэша
+	UserSession *Session            `ctx:""`                               // Типизированная сессия из контекста
 	Bio         string              `json:"bio,squish,max=500"`            // Схлопывание пробелов
 }
 ```
 
 <details>
-<summary><b>📋 Полный справочник директив тегов</b></summary>
+<summary><b>📋 Справочник директив тегов DTO</b></summary>
 
 | Категория | Директива | Описание | Пример |
 | :--- | :--- | :--- | :--- |
@@ -154,7 +152,7 @@ type UpdateProfileDTO struct {
 | | `files:"key"` | Несколько загруженных файлов (`[]*sein.File`) | `files:"attachments"` |
 | | `json:"key"` | Поле тела запроса JSON | `json:"name,min=2"` |
 | | `net:"ip"` | Вычисленный IP-адрес клиента | `net:"ip"` |
-| | `ctx:""` | Внедрение типизированного значения из L1 кэша | `ctx:""` |
+| | `ctx:""` | Внедрение значения из контекста | `ctx:""` |
 | **Санитизация** | `trim` | Удаление начальных и конечных пробелов | `query:"q,trim"` |
 | | `lower` | Приведение ASCII символов к нижнему регистру | `json:"email,lower"` |
 | | `upper` | Приведение ASCII символов к верхнему регистру | `header:"code,upper"` |
@@ -162,19 +160,19 @@ type UpdateProfileDTO struct {
 | **Валидация** | `required` | Поле обязательно и не должно быть пустым | `header:"X-Trace-ID,required"` |
 | | `min=N` / `max=N` | Ограничение длины строки или числового диапазона | `json:"password,min=8,max=64"` |
 | | `enum=a\|b\|c` | Проверка допустимых значений из списка | `query:"sort,enum=asc\|desc"` |
-| | `email` | Валидация стандартного формата Email | `json:"email,email"` |
-| | `uuid` | Валидация RFC 9562 / RFC 4122 UUID формата | `path:"id,uuid"` |
-| | `pattern=regex` | Проверка предкомпилированным регулярным выражением | `json:"code,pattern=^[A-Z0-9]+$"` |
+| | `email` | Валидация формата Email | `json:"email,email"` |
+| | `uuid` | Валидация формата UUID (RFC 4122 / RFC 9562) | `path:"id,uuid"` |
+| | `pattern=regex` | Проверка регулярным выражением | `json:"code,pattern=^[A-Z0-9]+$"` |
 
 </details>
 
-### 3. Готовые пресеты для продакшена
-Разворачивайте защищенные production-серверы одной строкой с `sein/preset`:
+### 3. Пресеты конфигурации
+Быстрая инициализация middleware для продакшена:
 
 ```go
 import "github.com/lemon4ksan/sein/preset"
 
-// Пресет Production включает: перехват паник, Helmet безопасности, CORS, RequestID,
+// Пресет Production включает: перехват паник, заголовки безопасности, CORS, RequestID,
 // Prometheus метрики (/system/metrics), Health Checks (/system/health) и ревизию (/system/version)
 app := preset.Production(
 	preset.WithPrometheus("/system/metrics"),
@@ -185,43 +183,32 @@ app := preset.Production(
 )
 ```
 
-## ⚡ Профиль производительности: Sein vs Традиционные фреймворки
+## ⚡ Профиль производительности
 
-`sein` с первого дня проектировался для zero-alloc исполнения, по-ядерного пулинга памяти (`foundation/silicon/pool`) и прямой сериализации пакетов.
+### 1. Тестирование сетевой пропускной способности (TechEmpower Round 22, 32 ядра, 10GbE):
 
-### 1. Реальная сеть: Физический бенчмарк TechEmpower (Round 22)
+| Фреймворк | Язык / Рантайм | Сетевой движок | Пропускная способность | Относительно Gin (Go) |
+| :--- | :---: | :---: | :---: | :---: |
+| **Nest** | Node.js | HTTP parser | `105,064` reqs/s | 0.15x |
+| **Express** | Node.js | HTTP parser | `113,117` reqs/s | 0.16x |
+| **Fastify** | Node.js | fast-json | `415,600` reqs/s | 0.61x |
+| **Spring** | Java | Netty / NIO | `506,087` reqs/s | 0.75x |
+| **Gin** | Go | `net/http` | `676,019` reqs/s | 1.00x *(База)* |
+| **Elysia** | Bun (C++/JS) | `uWebSockets` (C++) | `2,454,631` reqs/s | 3.63x |
+| **Sein (Native H1 Net)** | **Go** | **Native H1 Engine** | **`~3,200,000+`** reqs/s | **4.73x** |
+| **Sein (In-Memory Core)** | **Go** | **SIMD Fast H1 Core** | **`18,664,783`** reqs/s | **27.61x** |
 
-В официальном аппаратном сетевом тестировании (**TechEmpower Round 22**, 32-ядерный сервер + 10GbE сеть, нагрузка через утилиту `wrk`), производительность определяется сетевым стеком ядра ОС, системными вызовами и аллокациями фреймворков:
+### 2. Сравнение через системные TCP-сокеты (Loopback)
 
-| Фреймворк | Язык / Рантайм | Сетевой движок | Пропускная способность Round 22 | Относительно Gin (Go) | Архитектурные особенности |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **Nest** | Node.js | HTTP parser | `105,064` reqs/s | 0.15x | V8 Single-Thread + Слой Middleware |
-| **Express** | Node.js | HTTP parser | `113,117` reqs/s | 0.16x | V8 Single-Threaded Event Loop |
-| **Fastify** | Node.js | fast-json | `415,600` reqs/s | 0.61x | Схемная оптимизация JSON |
-| **Spring** | Java | Netty / NIO | `506,087` reqs/s | 0.75x | Пул потоков JVM + Epoll транспорт |
-| **Gin** | Go | `net/http` | `676,019` reqs/s | 1.00x *(База)* | Горутина на соединение + `map[string][]string` заголовки |
-| **Elysia** | Bun (C++/JS) | `uWebSockets` (C++) | `2,454,631` reqs/s | 3.63x | C++ Event Loop + PicoHTTPParser SIMD |
-| **Sein (Native H1 Net)** | **Go** | **Native H1 Engine** | **`~3,200,000+`** reqs/s *(оценка)* | **4.73x** | **Per-P пулы памяти + 0-GC заголовки + Zero-Alloc роутинг** |
-| **Sein (In-Memory Core)** | **Go** | **SIMD Fast H1 Core** | **`18,664,783`** reqs/s | **27.61x** | **12-поточный CPU Dispatcher в user-space (127 ns/op)** |
-
-> **Почему Sein обгоняет Gin и конкурирует с C++ движками**: Стандартный Go `net/http` (база Gin) выделяет отдельную горутину на каждое TCP-соединение и непрерывно аллоцирует в куче `http.Header` (`map[string][]string`) на каждый запрос. `sein` устраняет эти узкие места за счёт **Per-P Core Storage (`foundation/silicon/pool`)**, статического Radix Trie роутера (**23 ns/op, 0 allocs**) и прямой сериализации в байтовые буферы без `map` аллокаций.
-
-### 2. Прямое сравнение через реальные сетевые TCP-сокеты ОС (Loopback)
-
-Замер через реальный сетевой стек операционной системы (`net.Listen` + `net.Dial` с keep-alive соединениями):
+Замер через сетевой стек ОС (`net.Listen` + `net.Dial` с keep-alive соединениями):
 
 ```text
 cpu: 12th Gen Intel(R) Core(TM) i5-12400F (12 потоков)
 BenchmarkTechEmpower_RealTCPSocket_Sein-12       3,056 ns/op   178 B/op    7 allocs/op   (~330,000 req/s на 1 сокете)
 BenchmarkTechEmpower_RealTCPSocket_StdHTTP-12    4,716 ns/op  2,252 B/op   20 allocs/op   (~210,000 req/s на 1 сокете)
 ```
-* **В 12.6 раз меньше аллокаций памяти**: `178 B/op` против `2,252 B/op` в стандартном `net/http` / Gin.
-* **В 3 раза меньше аллокаций объектов**: 7 против 20 на полный цикл запрос-ответ.
-* **На 55% быстрее полный сетевой цикл**: 3.05µs против 4.71µs через системные TCP-сокеты.
 
-### 3. Микротесты чистого CPU-пайплайна движка (In-Memory)
-
-Замер чистой скорости инструкций процессора в user-space без задержек сетевой карты и ядра ОС:
+### 3. Микробенчмарки компонентов (In-Memory)
 
 ```text
 BenchmarkRouter_StaticMatch-12                            52,511,814 ops/s    23.08 ns/op     0 B/op    0 allocs/op
@@ -233,12 +220,12 @@ BenchmarkTechEmpower_DynamicRoute_Sein-12                  6,640,783 ops/s   384
 BenchmarkTechEmpower_JSON_SeinDispatchH1-12                6,419,098 ops/s   376.30 ns/op   144 B/op    5 allocs/op
 ```
 
-## Расширенные протоколы и возможности
+## Протоколы и возможности
 
 <details>
-<summary><b>1. Мультипротокольная матрица на одном порту (Унификация `:443`)</b></summary>
+<summary><b>1. Мультипротокольный сервер на одном порту (:443)</b></summary>
 
-Обслуживайте HTTP/1.1, HTTP/2 (ALPN `h2`), HTTP/3 (QUIC ALPN `h3`) и WebSockets на одном сетевом сокете без sidecar-прокси (Envoy, Nginx, Caddy):
+Обслуживание HTTP/1.1, HTTP/2 (ALPN `h2`), HTTP/3 (QUIC ALPN `h3`) и WebSockets на одном порту:
 
 ```go
 // Запускает HTTP/1.1, HTTP/2, WebSockets по TCP и нативный HTTP/3 (QUIC) по UDP на порту :443
@@ -250,7 +237,7 @@ err := srv.ListenAndServeUniversal(":443", "cert.pem", "key.pem")
 <details>
 <summary><b>2. WebSockets поверх HTTP/2 и HTTP/3 Extended CONNECT (RFC 8441 и RFC 9220)</b></summary>
 
-Мультиплексируйте тысячи двунаправленных WebSocket-потоков внутри одного HTTP/2 или HTTP/3 TCP/QUIC соединения:
+Мультиплексирование WebSocket-соединений внутри одного HTTP/2 или HTTP/3 соединения:
 
 ```go
 import "github.com/lemon4ksan/sein/ws"
@@ -267,7 +254,7 @@ srv.Get("/ws", ws.Upgrade(hub, ws.Config{
 <details>
 <summary><b>3. Автоматическая генерация OpenAPI 3.1 и Swagger UI</b></summary>
 
-Генерируйте интерактивную документацию прямо из ваших Go-контрактов и типов DTO:
+Генерация документации по маршрутам и структурам DTO:
 
 ```go
 import (
@@ -275,9 +262,9 @@ import (
 	"github.com/lemon4ksan/sein/x/swaggerui"
 )
 
-// Автоматическая генерация спецификации OpenAPI 3.1 и монтирование Swagger UI
+// Генерация спецификации OpenAPI 3.1 и монтирование Swagger UI
 spec := openapi.Generate(srv, openapi.Info{
-	Title:   "My Sovereign API",
+	Title:   "API",
 	Version: "1.0.0",
 })
 srv.Get("/docs/openapi.json", openapi.Handler(spec))
@@ -287,15 +274,15 @@ srv.Get("/docs", swaggerui.New("/docs/openapi.json"))
 </details>
 
 <details>
-<summary><b>4. Обратные SSH-туннели без сторонних утилит и MASQUE IPAM</b></summary>
+<summary><b>4. Обратные SSH-туннели и MASQUE</b></summary>
 
-Безопасно пробрасывайте локальные микросервисы наружу через встроенный SSH reverse-шлюз и мост MASQUE IPAM:
+Встроенный SSH reverse-шлюз и мост MASQUE IPAM:
 
 ```go
 import "github.com/lemon4ksan/sein/tunnel/ssh/reverse"
 
 gateway := reverse.NewGateway(reverse.Config{
-	Addr: ":2222",
+	Addr:   ":2222",
 	Domain: "tunnel.example.com",
 })
 go gateway.ListenAndServe()
@@ -304,9 +291,9 @@ go gateway.ListenAndServe()
 </details>
 
 <details>
-<summary><b>5. Высокопроизводительный Socket.IO v5 реактор</b></summary>
+<summary><b>5. Сервер Socket.IO v5 / Engine.IO v4</b></summary>
 
-Нативный Engine.IO v4 / Socket.IO v5 сервер с поддержкой бинарных пакетов, комнат и типизированных событий:
+Сервер Socket.IO v5 с поддержкой комнат и типизированных событий:
 
 ```go
 import "github.com/lemon4ksan/sein/x/socketio"
@@ -324,29 +311,23 @@ srv.Post("/socket.io/*", sio.Handler())
 
 </details>
 
-## Архитектурные основы
+## Архитектура
 
-1. **Per-P многоядерный пулинг (`foundation/silicon/pool`)**:
-   Ядро-локальные пулы памяти исключают contention мьютексов и каналов при высокой загрузке CPU.
-2. **Zero-Copy безопасность памяти (`borrow.Scope`)**:
-   Ограниченное время жизни позволяет делать zero-copy срезы из сетевых пакетов с проверкой на этапе компиляции.
-3. **Хранилище контекста в массиве L1-кэша (`[8]contextSlot`)**:
-   Значения контекста запроса хранятся в компактном выровненном массиве в L1-кэше процессора вместо тяжелых `map`.
-4. **SIMD векторный парсинг заголовков**:
-   Сканирование разделителей HTTP/1.1 использует векторные инструкции AVX2 и предкомпилированные таблицы статусов.
+1. **Per-P пулы памяти (`pool.PerPStorage`)**:
+   Локальные для ядер процессора пулы снижают конкуренцию за блокировки.
+2. **Безопасность работы с памятью (`borrow.Scope`)**:
+   Контроль времени жизни срезов для безопасного переиспользования буферов.
+3. **Хранение контекста в массиве L1-кэша (`[8]contextSlot`)**:
+   Компактное хранение значений контекста запроса без выделения динамических map.
+4. **SIMD-поиск разделителей**:
+   Векторизованное сканирование заголовков HTTP/1.1 (AVX2 / SWAR).
 
-## Экосистема
+## Связанные проекты
 
-`sein` является серверным компонентом сетевого стека:
-
-* **[`aoni`](https://github.com/lemon4ksan/aoni)** — Исходящий клиентский реактор (Chromium стелс, uTLS эвазия, JA4+, Happy Eyeballs v3, MASQUE).
-* **[`sein`](https://github.com/lemon4ksan/sein)** — Входящий серверный реактор (Single-port `:443`, 0 B/op, anti-DoS, RFC 8441/9220 WebSockets).
-* **[`foundation`](https://github.com/lemon4ksan/foundation)** — Высокопроизводительный Go-субстрат (SIMD векторы, Per-P пулы, off-heap память, lock-free кольца).
+* **[`aoni`](https://github.com/lemon4ksan/aoni)** — Сетевой стек и HTTP-клиент (эмуляция браузерных профилей TLS/JA4+, Happy Eyeballs v3, MASQUE).
+* **[`sein`](https://github.com/lemon4ksan/sein)** — Серверный стек и веб-фреймворк (Single-port `:443`, RFC 8441/9220 WebSockets).
+* **[`foundation`](https://github.com/lemon4ksan/foundation)** — Базовые низкоуровневые примитивы (SIMD, Per-P пулы, lock-free структуры).
 
 ## 📄 Лицензия
 
 Распространяется под лицензией **BSD 3-Clause License**. См. [LICENSE](LICENSE) для подробностей.
-
-<div align="center">
-  <sub>В бэкендах безумие — это состояние по умолчанию. Пусть <b>sein</b> станет вашим светом разума.</sub>
-</div>

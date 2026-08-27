@@ -18,7 +18,6 @@ import (
 	"net/netip"
 	"net/url"
 	"reflect"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -72,7 +71,6 @@ var requestStorage = pool.NewPerPStorage(func() *Request {
 func acquireRequest() *Request {
 	req := requestStorage.Get()
 	req.reset()
-	req.scope = borrow.NewScope()
 	return req
 }
 
@@ -507,10 +505,19 @@ func (r *Request) ClientIPWithTrust(trustedProxies []netip.Prefix) string {
 	}
 
 	if fwd := r.Header(header.XForwardedFor); fwd != "" {
-		items := strings.Split(fwd, ",")
 		var firstValidIP string
+		remaining := fwd
+		for len(remaining) > 0 {
+			var item string
+			lastComma := strings.LastIndexByte(remaining, ',')
+			if lastComma == -1 {
+				item = remaining
+				remaining = ""
+			} else {
+				item = remaining[lastComma+1:]
+				remaining = remaining[:lastComma]
+			}
 
-		for _, item := range slices.Backward(items) {
 			rawIP := strings.TrimSpace(item)
 			if rawIP == "" {
 				continue
@@ -522,7 +529,7 @@ func (r *Request) ClientIPWithTrust(trustedProxies []netip.Prefix) string {
 			}
 
 			if firstValidIP == "" {
-				firstValidIP = addr.String()
+				firstValidIP = rawIP
 			}
 
 			isTrusted := false
@@ -534,7 +541,7 @@ func (r *Request) ClientIPWithTrust(trustedProxies []netip.Prefix) string {
 			}
 
 			if !isTrusted {
-				return addr.String()
+				return rawIP
 			}
 		}
 
@@ -740,9 +747,9 @@ func (r *Request) FormValue(key string) string {
 
 	ct := r.Header(header.ContentType)
 	if strings.HasPrefix(ct, header.MIMEApplicationForm) {
-		body := string(r.Body())
-		for _, pair := range strings.Split(body, "&") {
-			if k, v, found := strings.Cut(pair, "="); found && k == key {
+		body := bytesconv.B2S(r.Body())
+		for k, v := range bytesconv.ScanPairs(body, '&', '=') {
+			if k == key {
 				unescaped, err := url.QueryUnescape(v)
 				if err == nil {
 					return unescaped
@@ -763,12 +770,9 @@ func (r *Request) Cookie(name string) (string, error) {
 		return "", http.ErrNoCookie
 	}
 
-	for _, part := range strings.Split(cookieHeader, ";") {
-		part = strings.TrimSpace(part)
-		if k, v, found := strings.Cut(part, "="); found {
-			if k == name {
-				return v, nil
-			}
+	for k, v := range bytesconv.ScanPairs(cookieHeader, ';', '=') {
+		if strings.TrimSpace(k) == name {
+			return strings.TrimSpace(v), nil
 		}
 	}
 

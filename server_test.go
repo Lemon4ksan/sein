@@ -259,6 +259,55 @@ func TestDomainErrors(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, recBanned.Code)
 }
 
+func TestGroupMapError(t *testing.T) {
+	app := sein.New()
+
+	errDatabaseDuplicate := errors.New("db: unique constraint violated")
+	errUserNotFound := errors.New("service: user not found")
+
+	api := app.Group("/api/v1")
+	users := api.Group("/users")
+
+	// Map errors locally on group
+	users.MapError(errDatabaseDuplicate, sein.Conflict("USER_EXISTS", "User already registered")).
+		MapError(errUserNotFound, sein.NotFound("USER_NOT_FOUND", "User entity not found"))
+
+	users.Post("/create", func(ctx context.Context, req CreateUserDTO) (UserResponse, error) {
+		if req.Email == "duplicate@example.com" {
+			return UserResponse{}, errDatabaseDuplicate
+		}
+		return UserResponse{ID: 1, Name: req.Name}, nil
+	})
+
+	type testIDDTO struct {
+		ID int `path:"id"`
+	}
+
+	users.GetWith("/:id", func(ctx context.Context, req testIDDTO) (UserResponse, error) {
+		if req.ID == 999 {
+			return UserResponse{}, errUserNotFound
+		}
+		return UserResponse{ID: uint64(req.ID), Name: "Alice"}, nil
+	})
+
+	// Test 1: Conflict from group error mapping
+	body, _ := json.Marshal(CreateUserDTO{Name: "Duplicate", Email: "duplicate@example.com"})
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/users/create", bytes.NewReader(body))
+	rec1 := httptest.NewRecorder()
+	app.ServeHTTP(rec1, req1)
+
+	assert.Equal(t, http.StatusConflict, rec1.Code)
+	assert.Contains(t, rec1.Body.String(), "USER_EXISTS")
+
+	// Test 2: NotFound from group error mapping
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/users/999", nil)
+	rec2 := httptest.NewRecorder()
+	app.ServeHTTP(rec2, req2)
+
+	assert.Equal(t, http.StatusNotFound, rec2.Code)
+	assert.Contains(t, rec2.Body.String(), "USER_NOT_FOUND")
+}
+
 func TestTypedParamDescriptors(t *testing.T) {
 	pUint := sein.ParamValue("18446744073709551615")
 	assert.Equal(t, uint64(18446744073709551615), pUint.AsUint64())

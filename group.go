@@ -6,8 +6,10 @@ package sein
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
+	"sync"
 )
 
 // Module represents a self-contained domain component that mounts its endpoints onto a Group.
@@ -30,9 +32,11 @@ type RouteBuilder interface {
 
 // Group is a scoped sub-router with a common URL prefix and middleware chain.
 type Group struct {
-	parent      RouteBuilder
-	prefix      string
-	middlewares []Middleware
+	parent       RouteBuilder
+	prefix       string
+	middlewares  []Middleware
+	errorMappers []ErrorMapper
+	resolvers    sync.Map
 }
 
 // NewGroup creates a new Group anchored to a parent RouteBuilder.
@@ -51,16 +55,44 @@ func (g *Group) Mount(prefix string, m Module, mw ...Middleware) *Group {
 	return g
 }
 
-// Group creates a nested subgroup inheriting the current prefix and middlewares.
+// Group creates a nested subgroup inheriting the current prefix, middlewares, and error mappers.
 func (g *Group) Group(prefix string, mw ...Middleware) *Group {
 	combinedPrefix := joinPaths(g.prefix, prefix)
 	combinedMW := append(slices.Clone(g.middlewares), mw...)
+	combinedMappers := slices.Clone(g.errorMappers)
 
-	return &Group{
-		parent:      g.parent,
-		prefix:      combinedPrefix,
-		middlewares: combinedMW,
+	sub := &Group{
+		parent:       g.parent,
+		prefix:       combinedPrefix,
+		middlewares:  combinedMW,
+		errorMappers: combinedMappers,
 	}
+
+	g.resolvers.Range(func(key, value any) bool {
+		sub.resolvers.Store(key, value)
+		return true
+	})
+
+	return sub
+}
+
+// MapError registers a scoped mapping from a sentinel error target to a DomainError for all routes in this group.
+func (g *Group) MapError(target error, domainErr DomainError) *Group {
+	g.errorMappers = append(g.errorMappers, func(err error) (DomainError, bool) {
+		if errors.Is(err, target) {
+			return domainErr, true
+		}
+
+		return nil, false
+	})
+
+	return g
+}
+
+// MapErrorFunc registers a custom scoped error mapping predicate for all routes in this group.
+func (g *Group) MapErrorFunc(fn ErrorMapper) *Group {
+	g.errorMappers = append(g.errorMappers, fn)
+	return g
 }
 
 // Guard creates a protected GuardScope inheriting the group's prefix with the specified middlewares applied.
@@ -94,6 +126,12 @@ func (gs *GuardScope) MountModule(m Module) *GuardScope {
 	return gs
 }
 
+// MapError registers a scoped error mapping on the guard scope.
+func (gs *GuardScope) MapError(target error, domainErr DomainError) *GuardScope {
+	gs.Group.MapError(target, domainErr)
+	return gs
+}
+
 // Use appends middlewares to the group.
 func (g *Group) Use(mw ...Middleware) {
 	g.middlewares = append(g.middlewares, mw...)
@@ -102,6 +140,25 @@ func (g *Group) Use(mw ...Middleware) {
 func (g *Group) registerRoute(method, path string, handler RawHandler, mw ...Middleware) {
 	fullPath := joinPaths(g.prefix, path)
 	combinedMW := append(slices.Clone(g.middlewares), mw...)
+
+	if len(g.errorMappers) > 0 {
+		mappers := slices.Clone(g.errorMappers)
+		wrappedHandler := func(req *Request) (any, error) {
+			res, err := handler(req)
+			if err != nil {
+				for _, mapper := range mappers {
+					if mapped, ok := mapper(err); ok {
+						return nil, mapped
+					}
+				}
+				return nil, err
+			}
+			return res, nil
+		}
+		g.parent.registerRoute(method, fullPath, wrappedHandler, combinedMW...)
+		return
+	}
+
 	g.parent.registerRoute(method, fullPath, handler, combinedMW...)
 }
 

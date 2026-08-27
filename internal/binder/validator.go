@@ -100,13 +100,17 @@ func CompileValidators(b *FieldBinding) []ValidatorFunc {
 
 	// 6. Enum Values
 	if len(b.EnumVals) > 0 {
-		lowerEnums := generic.Map(b.EnumVals, strings.ToLower)
-		enumSet := generic.NewSet(lowerEnums...)
+		enums := slices.Clone(b.EnumVals)
 		enumListStr := strings.Join(b.EnumVals, ", ")
 
 		validators = append(validators, func(s string) error {
-			if s == "" || enumSet.Has(strings.ToLower(s)) {
+			if s == "" {
 				return nil
+			}
+			for _, e := range enums {
+				if bytesconv.EqualFoldASCII(s, e) {
+					return nil
+				}
 			}
 
 			return ValidationError{Message: fmt.Sprintf("%s must be one of [%s], got %q", key, enumListStr, s)}

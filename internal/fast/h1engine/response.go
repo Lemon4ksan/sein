@@ -48,8 +48,9 @@ func (res *Response) WriteTo(bw *bufio.Writer, keepAlive bool, flush bool) error
 			statusText = "Unknown"
 		}
 
+		var stBuf [16]byte
 		_, _ = bw.WriteString("HTTP/1.1 ")
-		_, _ = bw.WriteString(strconv.Itoa(status))
+		_, _ = bw.Write(strconv.AppendInt(stBuf[:0], int64(status), 10))
 		_ = bw.WriteByte(' ')
 		_, _ = bw.WriteString(statusText)
 		_, _ = bw.Write(hdrCRLF)
@@ -79,8 +80,9 @@ func (res *Response) WriteTo(bw *bufio.Writer, keepAlive bool, flush bool) error
 		}
 	} else if status != http.StatusNoContent && status != http.StatusNotModified {
 		if res.Headers.Get(header.ContentLength) == "" && res.Headers.Get(header.TransferEncoding) == "" {
+			var clBuf [24]byte
 			_, _ = bw.Write(hdrContentLengthPrefix)
-			_, _ = bw.WriteString(strconv.Itoa(len(res.Body)))
+			_, _ = bw.Write(strconv.AppendInt(clBuf[:0], int64(len(res.Body)), 10))
 			_, _ = bw.Write(hdrCRLF)
 		}
 	}

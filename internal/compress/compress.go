@@ -51,6 +51,10 @@ var (
 		w, _ := gzip.NewWriterLevel(io.Discard, gzip.DefaultCompression)
 		return w
 	})
+	gzipFastWriterStorage = pool.NewPerPStorage(func() *gzip.Writer {
+		w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+		return w
+	})
 	gzipReaderStorage = pool.NewPerPStorage(func() *gzip.Reader {
 		return new(gzip.Reader)
 	})
@@ -153,14 +157,17 @@ func CompressGzip(src []byte, level int) ([]byte, error) {
 		w   *gzip.Writer
 	)
 
-	if level == gzip.DefaultCompression {
+	switch level {
+	case gzip.BestSpeed:
+		w = gzipFastWriterStorage.Get()
+		defer gzipFastWriterStorage.Put(w)
+		w.Reset(&buf)
+	case gzip.DefaultCompression, 6:
 		w = gzipWriterStorage.Get()
 		defer gzipWriterStorage.Put(w)
-
 		w.Reset(&buf)
-	} else {
+	default:
 		var err error
-
 		w, err = gzip.NewWriterLevel(&buf, level)
 		if err != nil {
 			return nil, err
