@@ -25,6 +25,7 @@ type routeNode struct {
 	isParam       bool
 	isWildcard    bool
 	trailingSlash bool
+	paramPrefix   string
 	paramName     string
 	handler       RawHandler
 	children      []*routeNode
@@ -93,17 +94,20 @@ func insertNode(curr *routeNode, segments []string, handler RawHandler, hasTrail
 	remaining := segments[1:]
 
 	isWildcard := strings.HasPrefix(seg, "*") || strings.HasPrefix(seg, "...")
-	isParam := strings.HasPrefix(seg, ":")
+	isParam := false
+	paramPrefix := ""
 	paramName := ""
 
-	if isParam {
-		paramName = strings.TrimPrefix(seg, ":")
-	} else if isWildcard {
+	if isWildcard {
 		if strings.HasPrefix(seg, "*") {
 			paramName = strings.TrimPrefix(seg, "*")
 		} else {
 			paramName = strings.TrimPrefix(seg, "...")
 		}
+	} else if idx := strings.IndexByte(seg, ':'); idx != -1 {
+		isParam = true
+		paramPrefix = seg[:idx]
+		paramName = seg[idx+1:]
 	}
 
 	// Look for existing matching child
@@ -118,6 +122,7 @@ func insertNode(curr *routeNode, segments []string, handler RawHandler, hasTrail
 		pathSegment: seg,
 		isParam:     isParam,
 		isWildcard:  isWildcard,
+		paramPrefix: paramPrefix,
 		paramName:   paramName,
 	}
 
@@ -190,8 +195,16 @@ func matchNode(curr *routeNode, segments []string, hasTrailingSlash bool, params
 	// 2. Try param match
 	for _, child := range curr.children {
 		if child.isParam {
+			if child.paramPrefix != "" && !strings.HasPrefix(seg, child.paramPrefix) {
+				continue
+			}
+
 			if params != nil {
-				params.Set(child.paramName, seg)
+				paramVal := seg
+				if child.paramPrefix != "" {
+					paramVal = strings.TrimPrefix(seg, child.paramPrefix)
+				}
+				params.Set(child.paramName, paramVal)
 			}
 			if h, ok := matchNode(child, remaining, hasTrailingSlash, params); ok {
 				return h, true
