@@ -14,7 +14,6 @@ import (
 )
 
 func FuzzH1Request(f *testing.F) {
-	// Seed corpus with valid and edge case requests
 	f.Add([]byte("GET /index.html HTTP/1.1\r\nHost: example.com\r\n\r\n"))
 	f.Add([]byte("POST /api/data HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhello"))
 	f.Add([]byte("GET /search?q=test HTTP/1.1\r\nHost: example.com\r\nUser-Agent: Fuzzer\r\n\r\n"))
@@ -37,5 +36,19 @@ func FuzzH1Chunked(f *testing.F) {
 		br := bufio.NewReader(bytes.NewReader(data))
 		r := h1engine.NewChunkedReader(br)
 		_, _ = io.ReadAll(r)
+	})
+}
+
+func FuzzH1Header(f *testing.F) {
+	f.Add("Host", "example.com")
+	f.Add("Content-Type", "application/json; charset=utf-8")
+	f.Add("X-Custom-Header", "value1, value2; q=0.8")
+	f.Add("Authorization", "Bearer eyJhbGciOiJIUzI1NiJ9")
+
+	f.Fuzz(func(t *testing.T, key, val string) {
+		var headers h1engine.Headers
+		headers.Set(key, val)
+		_ = headers.Get(key)
+		headers.Add(key, val)
 	})
 }

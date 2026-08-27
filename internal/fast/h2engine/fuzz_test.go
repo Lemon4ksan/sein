@@ -85,3 +85,16 @@ func FuzzFrameRead(f *testing.F) {
 		}
 	})
 }
+
+// FuzzHuffmanDecode tests H2 Huffman decoder robustness against arbitrary bit patterns.
+func FuzzHuffmanDecode(f *testing.F) {
+	f.Add([]byte{0xf1, 0xe3, 0xc2, 0xe5, 0xf2, 0x3a, 0x6b, 0xa0, 0xab, 0x90, 0xf4, 0xff})
+	f.Add([]byte{0xff, 0xff, 0xff, 0xff})
+	f.Add([]byte{0x00, 0x00, 0x00})
+	f.Add([]byte{})
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		dst := make([]byte, 0, len(data)*2+32)
+		_ = HuffmanDecode(dst, data)
+	})
+}

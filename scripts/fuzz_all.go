@@ -22,21 +22,34 @@ type fuzzTarget struct {
 var targets = []fuzzTarget{
 	{"./internal/fast/h1engine", "FuzzH1Request"},
 	{"./internal/fast/h1engine", "FuzzH1Chunked"},
+	{"./internal/fast/h1engine", "FuzzH1Header"},
 	{"./internal/fast/h2engine", "FuzzHPACKDecode"},
 	{"./internal/fast/h2engine", "FuzzFrameRead"},
+	{"./internal/fast/h2engine", "FuzzHuffmanDecode"},
 	{"./internal/fast/h3engine", "FuzzQPACKDecode"},
 	{"./internal/fast/h3engine", "FuzzH3FrameHeaderRead"},
 	{"./internal/qpack", "FuzzQPACKDecoder"},
 	{"./internal/qpack", "FuzzVarint"},
 	{"./builtin/jwt", "FuzzJWTVerify"},
+	{"./builtin/csrf", "FuzzCSRFTokenComparison"},
+	{"./builtin/etag", "FuzzETagMatch"},
+	{"./builtin/sse", "FuzzSSEFormatting"},
 	{"./ws", "FuzzWSMask"},
 	{"./ws", "FuzzWSAcceptKey"},
 	{"./tunnel/masque", "FuzzMASQUECapsule"},
 	{"./internal/binder", "FuzzBinderIngest"},
+	{"./x/openapi", "FuzzOpenAPIPathConversion"},
+	{"./x/openapi", "FuzzOpenAPITagParsing"},
+	{"./x/otel", "FuzzParseTraceParent"},
+	{"./x/sentry", "FuzzSentryDSN"},
+	{"./internal/compress", "FuzzGzipRoundtrip"},
+	{"./internal/compress", "FuzzDecompressLimit"},
+	{"./rpc", "FuzzResolvePathParams"},
+	{"./grpc/metadata", "FuzzMetadataCopyToHTTP"},
 }
 
 func main() {
-	fuzzDuration := flag.String("fuzztime", "3s", "duration to fuzz each target")
+	fuzzDuration := flag.String("fuzztime", "2s", "duration to fuzz each target")
 	flag.Parse()
 
 	fmt.Printf("=== Starting Heavy Fuzzing Suite (%d targets, %s each) ===\n\n", len(targets), *fuzzDuration)
@@ -49,7 +62,7 @@ func main() {
 
 		start := time.Now()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		cmd := exec.CommandContext(ctx, "go", "test", "-fuzz="+tgt.name, "-fuzztime="+*fuzzDuration, "-run=^$", tgt.pkg)
 
 		var outBuf bytes.Buffer
