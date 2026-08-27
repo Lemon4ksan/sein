@@ -104,6 +104,34 @@ func (r *Request) Detach() {
 	r.orphaned = true
 }
 
+// Scope returns the request-scoped lexical arena, guaranteed to be recycled with 0 GC allocations on request finish.
+func (r *Request) Scope() *borrow.Scope {
+	if r.scope == nil {
+		r.scope = borrow.AcquireScope()
+	}
+	return r.scope
+}
+
+// Arena is an alias for Scope, providing a per-request bump allocator with zero GC overhead.
+func (r *Request) Arena() *borrow.Scope {
+	return r.Scope()
+}
+
+// AllocBytes allocates a zero-copy byte slice of the requested size out of the per-request arena.
+func (r *Request) AllocBytes(size int) []byte {
+	return r.Scope().AllocBytes(size).Bytes()
+}
+
+// AllocString clones a string into the contiguous per-request arena buffer without heap allocation.
+func (r *Request) AllocString(s string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	b := r.AllocBytes(len(s))
+	copy(b, s)
+	return bytesconv.B2S(b)
+}
+
 // Release returns the Request and its internal borrow arena to the sharded per-P memory pool.
 func (r *Request) Release() {
 	if r == nil || r.orphaned {
@@ -236,15 +264,6 @@ func (r *Request) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	}
 
 	return nil, nil, errors.New("sein: hijacking not supported on this connection")
-}
-
-// Scope returns the request-scoped lexical memory arena.
-func (r *Request) Scope() *borrow.Scope {
-	if r.scope == nil {
-		r.scope = borrow.NewScope()
-	}
-
-	return r.scope
 }
 
 // Context returns the request-scoped context.

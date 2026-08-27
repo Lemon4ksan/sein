@@ -125,3 +125,29 @@ func TestRequest_Scheme_Sanitization(t *testing.T) {
 		})
 	}
 }
+
+func TestRequest_ArenaAllocation(t *testing.T) {
+	httpReq, _ := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+	req := sein.NewRequest(httpReq, nil)
+	defer req.Release()
+
+	// 1. Arena scope
+	arena := req.Arena()
+	if arena == nil {
+		t.Fatal("expected non-nil arena")
+	}
+
+	// 2. AllocBytes
+	b := req.AllocBytes(64)
+	if len(b) != 64 {
+		t.Fatalf("expected length 64, got %d", len(b))
+	}
+	copy(b, "zero-gc arena bytes")
+
+	// 3. AllocString
+	str := req.AllocString("hello from sein bump allocator")
+	if str != "hello from sein bump allocator" {
+		t.Fatalf("unexpected string: %s", str)
+	}
+}
+
