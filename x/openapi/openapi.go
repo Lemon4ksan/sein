@@ -2,14 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package openapi provides automated OpenAPI 3.1.0 document generation and interactive Scalar / Swagger UI rendering for sein.
+// Package openapi provides automated OpenAPI 3.1.0 document generation, DTO reflection, and interactive Scalar UI for sein.
 package openapi
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
+	"time"
 
 	"github.com/lemon4ksan/foundation/codec/json"
 	"github.com/lemon4ksan/foundation/net/http/header"
@@ -35,26 +37,111 @@ type Operation struct {
 	Summary     string              `json:"summary,omitempty"`
 	Description string              `json:"description,omitempty"`
 	Parameters  []Parameter         `json:"parameters,omitempty"`
+	RequestBody *RequestBody        `json:"requestBody,omitempty"`
 	Responses   map[string]Response `json:"responses"`
 }
 
-// Parameter describes a single operation parameter (path or query).
+// Parameter describes a single operation parameter (path, query, header, cookie).
 type Parameter struct {
-	Name        string `json:"name"`
-	In          string `json:"in"` // "path" or "query"
-	Required    bool   `json:"required"`
-	Description string `json:"description,omitempty"`
-	Schema      Schema `json:"schema"`
+	Name        string  `json:"name"`
+	In          string  `json:"in"` // "path", "query", "header", "cookie"
+	Required    bool    `json:"required"`
+	Description string  `json:"description,omitempty"`
+	Schema      *Schema `json:"schema,omitempty"`
+}
+
+// RequestBody describes a request payload.
+type RequestBody struct {
+	Description string               `json:"description,omitempty"`
+	Required    bool                 `json:"required,omitempty"`
+	Content     map[string]MediaType `json:"content"`
+}
+
+// MediaType describes a payload content-type schema.
+type MediaType struct {
+	Schema *Schema `json:"schema,omitempty"`
 }
 
 // Response describes an expected HTTP response.
 type Response struct {
-	Description string `json:"description"`
+	Description string               `json:"description"`
+	Content     map[string]MediaType `json:"content,omitempty"`
 }
 
-// Schema describes a data type.
+// Schema describes a data type schema in OpenAPI 3.1.
 type Schema struct {
-	Type string `json:"type"`
+	Type        string             `json:"type,omitempty"`
+	Format      string             `json:"format,omitempty"`
+	Description string             `json:"description,omitempty"`
+	Items       *Schema            `json:"items,omitempty"`
+	Properties  map[string]*Schema `json:"properties,omitempty"`
+	Required    []string           `json:"required,omitempty"`
+}
+
+var timeType = reflect.TypeFor[time.Time]()
+
+func schemaFromType(t reflect.Type) *Schema {
+	if t == nil {
+		return nil
+	}
+
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	if t == timeType {
+		return &Schema{Type: "string", Format: "date-time"}
+	}
+
+	switch t.Kind() {
+	case reflect.Bool:
+		return &Schema{Type: "boolean"}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return &Schema{Type: "integer"}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return &Schema{Type: "integer"}
+	case reflect.Float32, reflect.Float64:
+		return &Schema{Type: "number"}
+	case reflect.String:
+		return &Schema{Type: "string"}
+	case reflect.Slice, reflect.Array:
+		if t.Elem().Kind() == reflect.Uint8 {
+			return &Schema{Type: "string", Format: "byte"}
+		}
+		return &Schema{Type: "array", Items: schemaFromType(t.Elem())}
+	case reflect.Map:
+		return &Schema{Type: "object"}
+	case reflect.Struct:
+		s := &Schema{
+			Type:       "object",
+			Properties: make(map[string]*Schema),
+		}
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			if !f.IsExported() {
+				continue
+			}
+			jsonTag := f.Tag.Get("json")
+			if jsonTag == "-" {
+				continue
+			}
+			name := f.Name
+			if jsonTag != "" {
+				parts := strings.Split(jsonTag, ",")
+				if parts[0] != "" {
+					name = parts[0]
+				}
+			}
+			s.Properties[name] = schemaFromType(f.Type)
+			validateTag := f.Tag.Get("validate")
+			if strings.Contains(validateTag, "required") || strings.Contains(jsonTag, "required") {
+				s.Required = append(s.Required, name)
+			}
+		}
+		return s
+	default:
+		return &Schema{Type: "string"}
+	}
 }
 
 // Generate builds an OpenAPI 3.1.0 Document from all routes registered on the sein server.
@@ -70,26 +157,143 @@ func Generate(s *sein.Server, title, version string) *Document {
 
 	routes := s.Routes()
 	for _, r := range routes {
-		openApiPath, params := convertRouteToOpenAPI(r.Path)
+		openApiPath, pathParams := convertRouteToOpenAPI(r.Path)
 
 		if doc.Paths[openApiPath] == nil {
 			doc.Paths[openApiPath] = make(map[string]Operation)
 		}
 
+		op := buildOperation(r, pathParams)
 		methodKey := strings.ToLower(r.Method)
-		doc.Paths[openApiPath][methodKey] = Operation{
-			Summary:    fmt.Sprintf("%s %s", r.Method, r.Path),
-			Parameters: params,
-			Responses: map[string]Response{
-				"200": {Description: "Successful operation"},
-				"400": {Description: "Bad request"},
-				"401": {Description: "Unauthorized"},
-				"500": {Description: "Internal server error"},
-			},
-		}
+		doc.Paths[openApiPath][methodKey] = op
 	}
 
 	return doc
+}
+
+func buildOperation(r sein.RouteInfo, pathParams []Parameter) Operation {
+	params := append([]Parameter{}, pathParams...)
+	var reqBody *RequestBody
+	responses := map[string]Response{
+		"200": {Description: "Successful operation"},
+		"400": {Description: "Bad request"},
+		"401": {Description: "Unauthorized"},
+		"500": {Description: "Internal server error"},
+	}
+
+	if r.HandlerType != nil {
+		ht := r.HandlerType
+		numIn := ht.NumIn()
+		for i := 0; i < numIn; i++ {
+			inType := ht.In(i)
+			for inType.Kind() == reflect.Pointer {
+				inType = inType.Elem()
+			}
+			// Skip context and *sein.Request
+			if inType.Implements(reflect.TypeFor[context.Context]()) || inType.String() == "sein.Request" {
+				continue
+			}
+			if inType.Kind() == reflect.Struct {
+				var bodyProps map[string]*Schema
+				var bodyReq []string
+
+				for j := 0; j < inType.NumField(); j++ {
+					f := inType.Field(j)
+					if !f.IsExported() {
+						continue
+					}
+					if qTag := f.Tag.Get("query"); qTag != "" {
+						qName := parseTagName(qTag, f.Name)
+						params = append(params, Parameter{
+							Name:     qName,
+							In:       "query",
+							Required: strings.Contains(qTag, "required"),
+							Schema:   schemaFromType(f.Type),
+						})
+					} else if hTag := f.Tag.Get("header"); hTag != "" {
+						hName := parseTagName(hTag, f.Name)
+						params = append(params, Parameter{
+							Name:     hName,
+							In:       "header",
+							Required: strings.Contains(hTag, "required"),
+							Schema:   schemaFromType(f.Type),
+						})
+					} else if cTag := f.Tag.Get("cookie"); cTag != "" {
+						cName := parseTagName(cTag, f.Name)
+						params = append(params, Parameter{
+							Name:     cName,
+							In:       "cookie",
+							Required: strings.Contains(cTag, "required"),
+							Schema:   schemaFromType(f.Type),
+						})
+					} else {
+						// JSON Body field
+						jsonTag := f.Tag.Get("json")
+						if jsonTag != "-" {
+							if bodyProps == nil {
+								bodyProps = make(map[string]*Schema)
+							}
+							jName := parseTagName(jsonTag, f.Name)
+							bodyProps[jName] = schemaFromType(f.Type)
+							if strings.Contains(f.Tag.Get("validate"), "required") || strings.Contains(jsonTag, "required") {
+								bodyReq = append(bodyReq, jName)
+							}
+						}
+					}
+				}
+
+				if len(bodyProps) > 0 && (r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH") {
+					reqBody = &RequestBody{
+						Required: true,
+						Content: map[string]MediaType{
+							"application/json": {
+								Schema: &Schema{
+									Type:       "object",
+									Properties: bodyProps,
+									Required:   bodyReq,
+								},
+							},
+						},
+					}
+				}
+			}
+		}
+
+		if ht.NumOut() > 0 {
+			outType := ht.Out(0)
+			for outType.Kind() == reflect.Pointer {
+				outType = outType.Elem()
+			}
+			if !outType.Implements(reflect.TypeFor[error]()) && outType.Kind() != reflect.Interface {
+				schema := schemaFromType(outType)
+				if schema != nil {
+					responses["200"] = Response{
+						Description: "Successful operation",
+						Content: map[string]MediaType{
+							"application/json": {
+								Schema: schema,
+							},
+						},
+					}
+				}
+			}
+		}
+	}
+
+	return Operation{
+		Summary:     fmt.Sprintf("%s %s", r.Method, r.Path),
+		Parameters:  params,
+		RequestBody: reqBody,
+		Responses:   responses,
+	}
+}
+
+func parseTagName(tag, defaultName string) string {
+	parts := strings.Split(tag, ",")
+	if parts[0] != "" {
+		return parts[0]
+	}
+	return defaultName
 }
 
 // ToJSON serializes the document into pretty-printed JSON bytes.
@@ -118,7 +322,7 @@ func convertRouteToOpenAPI(routePath string) (string, []Parameter) {
 				Name:     paramName,
 				In:       "path",
 				Required: true,
-				Schema:   Schema{Type: "string"},
+				Schema:   &Schema{Type: "string"},
 			})
 		} else if strings.HasPrefix(seg, "*") {
 			paramName := strings.TrimPrefix(seg, "*")
@@ -127,7 +331,7 @@ func convertRouteToOpenAPI(routePath string) (string, []Parameter) {
 				Name:     paramName,
 				In:       "path",
 				Required: true,
-				Schema:   Schema{Type: "string"},
+				Schema:   &Schema{Type: "string"},
 			})
 		}
 	}

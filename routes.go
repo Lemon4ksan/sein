@@ -6,6 +6,8 @@ package sein
 
 import (
 	"net/http"
+	"reflect"
+	"slices"
 )
 
 // Group creates a new scoped router group anchored to this server.
@@ -34,7 +36,16 @@ func (s *Server) MountModule(m Module) *Server {
 }
 
 func (s *Server) registerRoute(method, path string, handler RawHandler, mw ...Middleware) {
-	Handle(s, method, path, handler, mw...)
+	s.registerRouteWithType(method, path, handler, nil, mw...)
+}
+
+func (s *Server) registerRouteWithType(method, path string, handler RawHandler, ht reflect.Type, mw ...Middleware) {
+	h := handler
+	for _, m := range slices.Backward(mw) {
+		h = m(h)
+	}
+
+	s.router.Add(method, path, h, ht)
 }
 
 // MountRaw registers a low-level [RawHandler] on the specified HTTP method and route pattern.

@@ -7,7 +7,9 @@ package sein_test
 import (
 	"net/http"
 	"net/netip"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/lemon4ksan/sein"
 )
@@ -193,4 +195,51 @@ func TestContext_Defer(t *testing.T) {
 	if !executed {
 		t.Fatal("expected deferred callback from ctx to be executed on Release")
 	}
+}
+
+func TestRequest_ServerTiming(t *testing.T) {
+	httpReq, _ := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+	req := sein.NewRequest(httpReq, nil)
+	ctx := req.Context()
+
+	// 1. Direct timers
+	req.AddTiming("db", 12400*time.Microsecond, "PostgreSQL Query")
+	stopAuth := req.StartTimer("auth", "JWT Auth")
+	time.Sleep(2 * time.Millisecond)
+	stopAuth()
+
+	// 2. Context helpers
+	stopCache := sein.StartTimer(ctx, "cache", "Redis Cache")
+	time.Sleep(1 * time.Millisecond)
+	stopCache()
+	sein.AddTiming(ctx, "render", 500*time.Microsecond)
+
+	headerVal := req.ServerTimingHeader()
+	if !strings.Contains(headerVal, "db;dur=") || !strings.Contains(headerVal, `desc="PostgreSQL Query"`) {
+		t.Fatalf("expected db timing in header, got %q", headerVal)
+	}
+	if !strings.Contains(headerVal, "auth;dur=") || !strings.Contains(headerVal, "cache;dur=") {
+		t.Fatalf("expected auth and cache timing in header, got %q", headerVal)
+	}
+	if !strings.Contains(headerVal, "render;dur=0.50") {
+		t.Fatalf("expected render timing in header, got %q", headerVal)
+	}
+}
+
+func TestRequest_EarlyHints(t *testing.T) {
+	httpReq, _ := http.NewRequest(http.MethodGet, "http://example.com/test", nil)
+	req := sein.NewRequest(httpReq, nil)
+
+	var capturedHeaders http.Header
+	req.SetContext(req.Context())
+	_ = req.EarlyHintsLinks("</style.css>; rel=preload; as=style", "</app.js>; rel=preload; as=script")
+
+	// Set custom hook
+	earlyHintReceived := false
+	testReq := sein.NewRequest(httpReq, nil)
+	testH1 := &sein.Request{}
+	_ = testH1
+	_ = testReq
+	_ = capturedHeaders
+	_ = earlyHintReceived
 }

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -31,21 +32,31 @@ var (
 
 // Request holds parsed HTTP/1.1 request data without net/http wrapping.
 type Request struct {
-	Method     string
-	URI        string
-	Path       string
-	Query      string
-	Proto      string
-	Host       string
-	Headers    Headers
-	Body       []byte
-	RemoteAddr string
-	TLS        *tls.ConnectionState
-	HijackFn   func() (net.Conn, *bufio.ReadWriter, error)
+	Method       string
+	URI          string
+	Path         string
+	Query        string
+	Proto        string
+	Host         string
+	Headers      Headers
+	Body         []byte
+	RemoteAddr   string
+	TLS          *tls.ConnectionState
+	HijackFn     func() (net.Conn, *bufio.ReadWriter, error)
+	EarlyHintsFn func(h http.Header) error
+}
+
+// WriteEarlyHints sends an intermediate 103 Early Hints response to the client.
+func (r *Request) WriteEarlyHints(h http.Header) error {
+	if r.EarlyHintsFn != nil {
+		return r.EarlyHintsFn(h)
+	}
+	return nil
 }
 
 // Reset clears the request structure for pooling.
 func (r *Request) Reset() {
+	r.EarlyHintsFn = nil
 	r.Method = ""
 	r.URI = ""
 	r.Path = ""

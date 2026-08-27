@@ -18,6 +18,7 @@ import (
 	"net/netip"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -67,6 +68,15 @@ type Request struct {
 	orphaned      bool
 	defers        []func()
 	cookieSecret  string
+	timings       []ServerTimingEntry
+	earlyHintsFn  func(h http.Header) error
+}
+
+// ServerTimingEntry records a single W3C Server-Timing entry.
+type ServerTimingEntry struct {
+	Name        string
+	Duration    time.Duration
+	Description string
 }
 
 var requestStorage = pool.NewPerPStorage(func() *Request {
@@ -97,8 +107,12 @@ func (r *Request) reset() {
 	r.slotCount = 0
 	r.orphaned = false
 	r.cookieSecret = ""
+	r.earlyHintsFn = nil
 	if len(r.defers) > 0 {
 		r.defers = r.defers[:0]
+	}
+	if len(r.timings) > 0 {
+		r.timings = r.timings[:0]
 	}
 	if r.overflow != nil {
 		clear(r.overflow)
@@ -113,6 +127,88 @@ func (r *Request) CookieSecret() string {
 // SetCookieSecret sets the secret key used for signed cookie verification on this request.
 func (r *Request) SetCookieSecret(secret string) {
 	r.cookieSecret = secret
+}
+
+// AddTiming records an explicit execution duration for the W3C Server-Timing header (e.g. database query, redis, auth).
+func (r *Request) AddTiming(name string, dur time.Duration, description ...string) {
+	desc := ""
+	if len(description) > 0 {
+		desc = description[0]
+	}
+	r.timings = append(r.timings, ServerTimingEntry{
+		Name:        name,
+		Duration:    dur,
+		Description: desc,
+	})
+}
+
+// StartTimer starts a stopwatch for name and returns a stop function that records the elapsed time upon invocation.
+//
+// # Example
+//
+//	stopDB := req.StartTimer("db", "PostgreSQL User Query")
+//	user, err := db.GetUser(ctx, id)
+//	stopDB()
+func (r *Request) StartTimer(name string, description ...string) func() {
+	start := time.Now()
+	desc := ""
+	if len(description) > 0 {
+		desc = description[0]
+	}
+	return func() {
+		r.AddTiming(name, time.Since(start), desc)
+	}
+}
+
+// ServerTimingHeader formats all recorded timings into a compliant W3C Server-Timing header value.
+// Format: name;dur=12.4;desc="Description", name2;dur=1.5
+func (r *Request) ServerTimingHeader() string {
+	if len(r.timings) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for i, t := range r.timings {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(t.Name)
+		durMs := float64(t.Duration.Nanoseconds()) / 1e6
+		sb.WriteString(";dur=")
+		sb.WriteString(strconv.FormatFloat(durMs, 'f', 2, 64))
+		if t.Description != "" {
+			sb.WriteString(";desc=\"")
+			sb.WriteString(t.Description)
+			sb.WriteByte('"')
+		}
+	}
+	return sb.String()
+}
+
+// EarlyHints emits an intermediate HTTP 103 Early Hints response to the client with the specified headers (RFC 8297).
+// Useful for preloading stylesheets, scripts, and fonts while background database queries execute.
+func (r *Request) EarlyHints(headers http.Header) error {
+	if len(headers) == 0 {
+		return nil
+	}
+	if r.earlyHintsFn != nil {
+		return r.earlyHintsFn(headers)
+	}
+	if r.h1Req != nil {
+		return r.h1Req.WriteEarlyHints(headers)
+	}
+	return nil
+}
+
+// EarlyHintsLinks emits 103 Early Hints preloading links (e.g. "</style.css>; rel=preload; as=style").
+func (r *Request) EarlyHintsLinks(links ...string) error {
+	if len(links) == 0 {
+		return nil
+	}
+	h := make(http.Header)
+	for _, l := range links {
+		h.Add("Link", l)
+	}
+	return r.EarlyHints(h)
 }
 
 // Defer registers a function to execute after the HTTP response has been completely written and flushed to the client.
@@ -342,6 +438,21 @@ func Defer(ctx context.Context, fn func()) {
 		defer func() { _ = recover() }()
 		fn()
 	}()
+}
+
+// StartTimer starts a named W3C Server-Timing stopwatch on the active request in ctx, returning a stop callback.
+func StartTimer(ctx context.Context, name string, description ...string) func() {
+	if req, ok := FromContext(ctx); ok && req != nil {
+		return req.StartTimer(name, description...)
+	}
+	return func() {}
+}
+
+// AddTiming records a named duration on the active request in ctx for the W3C Server-Timing header.
+func AddTiming(ctx context.Context, name string, dur time.Duration, description ...string) {
+	if req, ok := FromContext(ctx); ok && req != nil {
+		req.AddTiming(name, dur, description...)
+	}
 }
 
 // WithContext sets a new context on the request.

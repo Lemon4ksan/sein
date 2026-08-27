@@ -7,6 +7,7 @@ package sein
 import (
 	"errors"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -28,6 +29,7 @@ func (f ModuleFunc) Mount(g *Group) {
 // RouteBuilder is the common abstraction shared between Server and Group.
 type RouteBuilder interface {
 	registerRoute(method, path string, handler RawHandler, mw ...Middleware)
+	registerRouteWithType(method, path string, handler RawHandler, ht reflect.Type, mw ...Middleware)
 }
 
 // ErrorMapperFunc translates internal sentinel errors into typed DomainErrors.
@@ -108,11 +110,15 @@ func (g *Group) Use(mw ...Middleware) {
 }
 
 func (g *Group) registerRoute(method, path string, handler RawHandler, mw ...Middleware) {
+	g.registerRouteWithType(method, path, handler, nil, mw...)
+}
+
+func (g *Group) registerRouteWithType(method, path string, handler RawHandler, ht reflect.Type, mw ...Middleware) {
 	fullPath := joinPaths(g.prefix, path)
 	combinedMW := append(slices.Clone(g.middlewares), mw...)
 
 	if len(g.errorMappers) == 0 {
-		g.parent.registerRoute(method, fullPath, handler, combinedMW...)
+		g.parent.registerRouteWithType(method, fullPath, handler, ht, combinedMW...)
 		return
 	}
 
@@ -129,7 +135,7 @@ func (g *Group) registerRoute(method, path string, handler RawHandler, mw ...Mid
 		}
 		return res, nil
 	}
-	g.parent.registerRoute(method, fullPath, wrappedHandler, combinedMW...)
+	g.parent.registerRouteWithType(method, fullPath, wrappedHandler, ht, combinedMW...)
 }
 
 // MapError registers a mapping from an internal sentinel error to a Sein domain error.

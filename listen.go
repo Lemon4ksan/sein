@@ -347,6 +347,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req := NewRequest(r, &params)
 	req.routePattern = pattern
 	req.cookieSecret = s.cookieSecret
+	req.earlyHintsFn = func(h http.Header) error {
+		for k, vv := range h {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(http.StatusEarlyHints)
+		return nil
+	}
 	defer req.Release()
 
 	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {
@@ -365,6 +374,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.writeError(swWriter, err)
 		return
+	}
+
+	if st := req.ServerTimingHeader(); st != "" {
+		w.Header().Set("Server-Timing", st)
 	}
 
 	if responder, ok := result.(Responder); ok {

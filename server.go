@@ -453,6 +453,10 @@ func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 		return nil
 	}
 
+	if st := req.ServerTimingHeader(); st != "" {
+		h1Res.Headers.Set("Server-Timing", st)
+	}
+
 	if s.altSvcHeader != "" && h1Res.Headers.Get(header.AltSvc) == "" {
 		h1Res.Headers.Set(header.AltSvc, s.altSvcHeader)
 	}
@@ -494,6 +498,13 @@ func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.Serve
 		return nil
 	}
 
+	if st := req.ServerTimingHeader(); st != "" {
+		if h2Res.Headers == nil {
+			h2Res.Headers = make(http.Header)
+		}
+		h2Res.Headers.Set("Server-Timing", st)
+	}
+
 	return s.serializeH2Result(h2Res, result)
 }
 
@@ -525,6 +536,13 @@ func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.Serve
 	if err != nil {
 		s.writeH3Error(h3Res, err)
 		return nil
+	}
+
+	if st := req.ServerTimingHeader(); st != "" {
+		if h3Res.Headers == nil {
+			h3Res.Headers = make(http.Header)
+		}
+		h3Res.Headers.Set("Server-Timing", st)
 	}
 
 	return s.serializeH3Result(h3Res, result)

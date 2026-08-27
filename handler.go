@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"iter"
 	"reflect"
-	"slices"
 
 	"github.com/lemon4ksan/sein/internal/binder"
 )
@@ -252,22 +251,15 @@ func compileUniversalHandler(fn any, routePath string) RawHandler {
 
 func routeUniversal(r RouteBuilder, method, path string, handler any, mw ...Middleware) {
 	compiled := compileUniversalHandler(handler, path)
-	Handle(r, method, path, compiled, mw...)
+	var ht reflect.Type
+	if handler != nil {
+		ht = reflect.TypeOf(handler)
+	}
+	r.registerRouteWithType(method, path, compiled, ht, mw...)
 }
 
 // Handle registers a raw handler function on any RouteBuilder (Server or Group).
 func Handle(r RouteBuilder, method, path string, fn RawHandler, mw ...Middleware) {
-	if srv, ok := r.(*Server); ok {
-		handler := fn
-		for _, m := range slices.Backward(mw) {
-			handler = m(handler)
-		}
-
-		srv.router.Add(method, path, handler)
-
-		return
-	}
-
 	r.registerRoute(method, path, fn, mw...)
 }
 

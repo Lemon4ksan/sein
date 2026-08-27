@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
 	"time"
 
 	"github.com/lemon4ksan/foundation/net/http/header"
@@ -105,6 +106,22 @@ func (ch *ConnHandler) ServeConn(conn net.Conn) error {
 		req.RemoteAddr = remoteAddr
 		req.TLS = tlsState
 		req.HijackFn = hijackFn
+		req.EarlyHintsFn = func(h http.Header) error {
+			if len(h) == 0 {
+				return nil
+			}
+			_, _ = bw.WriteString("HTTP/1.1 103 Early Hints\r\n")
+			for k, vv := range h {
+				for _, v := range vv {
+					_, _ = bw.WriteString(k)
+					_, _ = bw.WriteString(": ")
+					_, _ = bw.WriteString(v)
+					_, _ = bw.WriteString("\r\n")
+				}
+			}
+			_, _ = bw.WriteString("\r\n")
+			return bw.Flush()
+		}
 
 		// Set read timeout
 		if ch.ReadTimeout > 0 {

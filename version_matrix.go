@@ -7,6 +7,7 @@ package sein
 import (
 	"cmp"
 	"net/http"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -275,6 +276,10 @@ func (vg *VersionGroup) Mount(prefix string, m Module, mw ...Middleware) *Versio
 }
 
 func (vg *VersionGroup) registerRoute(method, path string, handler RawHandler, mw ...Middleware) {
+	vg.registerRouteWithType(method, path, handler, nil, mw...)
+}
+
+func (vg *VersionGroup) registerRouteWithType(method, path string, handler RawHandler, ht reflect.Type, mw ...Middleware) {
 	for _, ver := range vg.activeVers {
 		targetGroup := vg.matrix.groups[ver]
 		if targetGroup == nil {
@@ -285,7 +290,7 @@ func (vg *VersionGroup) registerRoute(method, path string, handler RawHandler, m
 		combinedMW := append(slices.Clone(vg.middlewares), mw...)
 
 		if len(vg.errorMappers) == 0 {
-			targetGroup.registerRoute(method, fullPath, handler, combinedMW...)
+			targetGroup.registerRouteWithType(method, fullPath, handler, ht, combinedMW...)
 			continue
 		}
 
@@ -302,7 +307,7 @@ func (vg *VersionGroup) registerRoute(method, path string, handler RawHandler, m
 			}
 			return res, nil
 		}
-		targetGroup.registerRoute(method, fullPath, wrappedHandler, combinedMW...)
+		targetGroup.registerRouteWithType(method, fullPath, wrappedHandler, ht, combinedMW...)
 	}
 }
 

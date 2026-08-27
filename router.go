@@ -5,6 +5,7 @@
 package sein
 
 import (
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -18,6 +19,9 @@ type RouteInfo struct {
 
 	// Path is the URL route pattern (e.g., "/users/:id", "/assets/*filepath").
 	Path string
+
+	// HandlerType is the reflected type of the handler function for automated OpenAPI introspection.
+	HandlerType reflect.Type
 }
 
 type staticRoute struct {
@@ -56,13 +60,19 @@ func NewRouter() *Router {
 }
 
 // Add registers a new HTTP route pattern and its associated [RawHandler].
-func (r *Router) Add(method, pattern string, handler RawHandler) {
+func (r *Router) Add(method, pattern string, handler RawHandler, handlerType ...reflect.Type) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	var ht reflect.Type
+	if len(handlerType) > 0 {
+		ht = handlerType[0]
+	}
+
 	r.routeList = append(r.routeList, RouteInfo{
-		Method: method,
-		Path:   pattern,
+		Method:      method,
+		Path:        pattern,
+		HandlerType: ht,
 	})
 
 	// 1. If pattern has no dynamic parameters, register into O(1) static lookup table
