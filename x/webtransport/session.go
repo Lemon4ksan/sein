@@ -58,9 +58,9 @@ func NewSession(
 		transport:     transport,
 		ctx:           ctx,
 		cancel:        cancel,
-		bidiStreams:   make(chan *Stream, 64),
-		uniStreams:    make(chan *ReceiveStream, 64),
-		datagrams:     make(chan []byte, 128),
+		bidiStreams:   make(chan *Stream, 512),
+		uniStreams:    make(chan *ReceiveStream, 512),
+		datagrams:     make(chan []byte, 2048),
 	}
 
 	go s.controlLoop()
