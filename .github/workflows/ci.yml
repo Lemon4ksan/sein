@@ -74,3 +74,54 @@ jobs:
           name: coverage-report
           path: coverage.out
           retention-days: 7
+
+  wasm-build:
+    name: WebAssembly Build Matrix (WASI & JS)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Compile for WASI (wasip1/wasm)
+        env:
+          GOOS: wasip1
+          GOARCH: wasm
+        run: |
+          go build . ./builtin/... ./internal/... ./rpc/... ./tunnel/... ./ws/... ./x/...
+
+      - name: Compile for Web JS (js/wasm)
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: |
+          go build . ./builtin/... ./internal/... ./rpc/... ./tunnel/... ./ws/... ./x/...
+
+  fuzz-heavy:
+    name: Wire Security Fuzzing
+    runs-on: ubuntu-latest
+    env:
+      GOEXPERIMENT: "simd"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run Automated Heavy Fuzzing Suite
+        run: go run ./scripts/fuzz_all.go -fuzztime=3s
