@@ -211,25 +211,37 @@ api := srv.Group("/api/v1", authMiddleware)
 
 `sein` спроектирован для zero-allocation исполнения, аппаратного параллелизма, по-ядерного пулинга памяти (`foundation/silicon/pool`) и zero-copy сериализации пакетов.
 
-### Пропускная способность TechEmpower PlainText (Reqs/sec)
+### 1. Реальная сеть: Физический бенчмарк TechEmpower (Round 22)
 
-Сравнение с официальным лидербордом TechEmpower Round 22 PlainText:
+В официальном аппаратном сетевом тестировании (**TechEmpower Round 22**, 32-ядерный сервер + 10GbE сеть, нагрузка через утилиту `wrk`), производительность определяется сетевым стеком ядра ОС, системными вызовами и аллокациями фреймворков:
 
-| Фреймворк / Среда | Язык | Пропускная способность (reqs/s) | Относительная скорость |
-| :--- | :---: | :---: | :---: |
-| **Nest** | Node.js | `105,064` | 0.04x |
-| **Express** | Node.js | `113,117` | 0.04x |
-| **Fastify** | Node.js | `415,600` | 0.17x |
-| **Spring** | Java | `506,087` | 0.20x |
-| **Gin** | Go | `676,019` | 0.27x |
-| **Elysia** | Bun (C++/JS) | `2,454,631` | 1.00x *(База)* |
-| 🚀 **Sein (Native H1 Single-Core)** | **Go** | **`10,730,865`** | **4.37x быстрее** |
-| 🚀 **Sein (Native H1 Multi-Core)** | **Go** | **`18,664,783`** | **7.60x быстрее** |
-| ⚡ **Sein (SIMD Pipelined H1 Core)** | **Go** | **`42,150,445`** | **17.17x быстрее** |
+| Фреймворк | Язык / Рантайм | Сетевой движок | Пропускная способность Round 22 | Архитектурные особенности |
+| :--- | :---: | :---: | :---: | :--- |
+| **Nest** | Node.js | HTTP parser | `105,064` reqs/s | V8 Single-Thread + Слой Middleware |
+| **Express** | Node.js | HTTP parser | `113,117` reqs/s | V8 Single-Threaded Event Loop |
+| **Fastify** | Node.js | fast-json | `415,600` reqs/s | Схемная оптимизация JSON |
+| **Spring** | Java | Netty / NIO | `506,087` reqs/s | Пул потоков JVM + Epoll транспорт |
+| **Gin** | Go | `net/http` | `676,019` reqs/s | Горутина на соединение + `map[string][]string` заголовки |
+| **Elysia** | Bun (C++/JS) | `uWebSockets` (C++) | `2,454,631` reqs/s | C++ Event Loop + PicoHTTPParser SIMD |
 
-### Микротесты и профиль памяти (`go test -bench=. -benchmem`)
+> **Почему Gin выдаёт ~676k req/s**: Стандартный Go `net/http` выделяет отдельную горутину на каждое TCP-соединение и непрерывно аллоцирует в куче `http.Header` (`map[string][]string`) и `http.Request`. Под нагрузкой в тысячи соединений планировщик Go тратит до 40% CPU на переключение контекста горутин, а сборщик мусора (GC) вызывает микропаузы.
 
-*Оборудование: 12th Gen Intel(R) Core(TM) i5-12400F (12 потоков)*
+### 2. Прямое сравнение через реальные сетевые TCP-сокеты ОС (Loopback)
+
+Замер через реальный сетевой стек операционной системы (`net.Listen` + `net.Dial` с keep-alive соединениями):
+
+```text
+cpu: 12th Gen Intel(R) Core(TM) i5-12400F (12 потоков)
+BenchmarkTechEmpower_RealTCPSocket_Sein-12       3,056 ns/op   178 B/op    7 allocs/op   (~330,000 req/s на 1 сокете)
+BenchmarkTechEmpower_RealTCPSocket_StdHTTP-12    4,716 ns/op  2,252 B/op   20 allocs/op   (~210,000 req/s на 1 сокете)
+```
+* **В 12.6 раз меньше аллокаций памяти**: `178 B/op` против `2,252 B/op` в стандартном `net/http` / Gin.
+* **В 3 раза меньше аллокаций объектов**: 7 против 20 на полный цикл запрос-ответ.
+* **На 55% быстрее полный сетевой цикл**: 3.05µs против 4.71µs через системные TCP-сокеты.
+
+### 3. Микротесты чистого CPU-пайплайна движка (In-Memory)
+
+Замер чистой скорости инструкций процессора в user-space без задержек сетевой карты и ядра ОС:
 
 ```text
 BenchmarkRouter_StaticMatch-12                            52,511,814 ops/s    23.08 ns/op     0 B/op    0 allocs/op
@@ -240,18 +252,6 @@ BenchmarkTechEmpower_Plaintext_SeinDispatchH1-12          10,730,865 ops/s   221
 BenchmarkTechEmpower_DynamicRoute_Sein-12                  6,640,783 ops/s   384.00 ns/op   136 B/op    5 allocs/op
 BenchmarkTechEmpower_JSON_SeinDispatchH1-12                6,419,098 ops/s   376.30 ns/op   144 B/op    5 allocs/op
 ```
-
-### Замеры через реальный сетевой сокет ОС (Loopback TCP)
-
-Выполнение полного сетевого цикла через сокеты ОС (`net.Listen` + `net.Dial` over loopback):
-
-```text
-BenchmarkTechEmpower_RealTCPSocket_Sein-12       3,056 ns/op   178 B/op    7 allocs/op   (330,000 req/s на 1 сокете)
-BenchmarkTechEmpower_RealTCPSocket_StdHTTP-12    4,716 ns/op  2,252 B/op   20 allocs/op   (210,000 req/s на 1 сокете)
-```
-* **В 12.6 раз меньше аллокаций памяти**: `178 B/op` против `2,252 B/op` в стандартном `net/http` / Gin.
-* **В 3 раза меньше аллокаций объектов**: 7 против 20 на цикл запроса.
-* **На 55% быстрее полный сетевой цикл**: 3.0µs против 4.7µs на loopback TCP.
 
 ---
 

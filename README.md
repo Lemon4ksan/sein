@@ -201,27 +201,39 @@ api := srv.Group("/api/v1", authMiddleware)
 
 ## 5. Performance & Benchmarks
 
-`sein` was engineered from day one for zero-alloc hardware determinism, Per-CPU memory pooling (`foundation/silicon/pool`), and zero-copy packet serialization.
+`sein` is engineered from the ground up for zero-alloc hardware determinism, Per-CPU core memory pooling (`foundation/silicon/pool`), and zero-copy packet serialization.
 
-### TechEmpower PlainText Throughput (Reqs/sec)
+### 1. Real Network Environment (TechEmpower Context)
 
-Measured against the official TechEmpower Round 22 PlainText benchmark leaderboard:
+In official physical bare-metal network benchmarks (**TechEmpower Round 22**, 32-core bare metal + 10GbE network with `wrk`), server performance is bounded by OS kernel context switching, TCP/IP stack overhead, and framework allocations:
 
-| Framework / Runtime | Language | Throughput (reqs/s) | Relative Speed |
-| :--- | :---: | :---: | :---: |
-| **Nest** | Node.js | `105,064` | 0.04x |
-| **Express** | Node.js | `113,117` | 0.04x |
-| **Fastify** | Node.js | `415,600` | 0.17x |
-| **Spring** | Java | `506,087` | 0.20x |
-| **Gin** | Go | `676,019` | 0.27x |
-| **Elysia** | Bun (C++/JS) | `2,454,631` | 1.00x *(Baseline)* |
-| 🚀 **Sein (Native H1 Single-Core)** | **Go** | **`10,730,865`** | **4.37x faster** |
-| 🚀 **Sein (Native H1 Multi-Core)** | **Go** | **`18,664,783`** | **7.60x faster** |
-| ⚡ **Sein (SIMD Pipelined H1 Core)** | **Go** | **`42,150,445`** | **17.17x faster** |
+| Framework | Language / Runtime | Network Engine | Round 22 Throughput | Architecture Notes |
+| :--- | :---: | :---: | :---: | :--- |
+| **Nest** | Node.js | HTTP parser | `105,064` reqs/s | V8 Single-Thread + Heavy Middleware Layer |
+| **Express** | Node.js | HTTP parser | `113,117` reqs/s | V8 Single-Threaded Event Loop |
+| **Fastify** | Node.js | fast-json | `415,600` reqs/s | Schema-based JSON Optimization |
+| **Spring** | Java | Netty / NIO | `506,087` reqs/s | JVM Thread-Pool & Epoll Transport |
+| **Gin** | Go | `net/http` | `676,019` reqs/s | Goroutine-per-conn + `map[string][]string` headers |
+| **Elysia** | Bun (C++/JS) | `uWebSockets` (C++) | `2,454,631` reqs/s | C++ Event Loop + PicoHTTPParser SIMD |
 
-### Microbenchmarks & Memory Profile (`go test -bench=. -benchmem`)
+> **Why Gin sits at ~676k req/s**: Standard Go `net/http` creates a separate goroutine per TCP connection and allocates heap memory for `http.Header` (`map[string][]string`) and `http.Request` on every request, creating GC pressure and scheduler contention under thousands of concurrent connections.
 
-*Hardware: 12th Gen Intel(R) Core(TM) i5-12400F (12 Threads)*
+### 2. Head-to-Head Real OS TCP Socket Benchmark (Localhost Loopback)
+
+Under identical local operating system network conditions (`net.Listen` + `net.Dial` with keep-alive connections over OS TCP stack):
+
+```text
+cpu: 12th Gen Intel(R) Core(TM) i5-12400F (12 Threads)
+BenchmarkTechEmpower_RealTCPSocket_Sein-12       3,056 ns/op   178 B/op    7 allocs/op   (~330,000 req/s per socket)
+BenchmarkTechEmpower_RealTCPSocket_StdHTTP-12    4,716 ns/op  2,252 B/op   20 allocs/op   (~210,000 req/s per socket)
+```
+* **12.6x Less Memory Overhead**: `178 B/op` vs `2,252 B/op` in stdlib `net/http` / Gin.
+* **3x Fewer Heap Allocations**: 7 vs 20 allocations per full request-response cycle.
+* **55% Faster Network Turnaround**: 3.05µs vs 4.71µs over real OS TCP sockets.
+
+### 3. Framework Core & Pipeline Microbenchmarks (In-Memory CPU Cost)
+
+Measuring pure user-space CPU instruction efficiency without network card / OS kernel latency:
 
 ```text
 BenchmarkRouter_StaticMatch-12                            52,511,814 ops/s    23.08 ns/op     0 B/op    0 allocs/op
@@ -232,18 +244,6 @@ BenchmarkTechEmpower_Plaintext_SeinDispatchH1-12          10,730,865 ops/s   221
 BenchmarkTechEmpower_DynamicRoute_Sein-12                  6,640,783 ops/s   384.00 ns/op   136 B/op    5 allocs/op
 BenchmarkTechEmpower_JSON_SeinDispatchH1-12                6,419,098 ops/s   376.30 ns/op   144 B/op    5 allocs/op
 ```
-
-### Real OS TCP Socket Loopback Comparison
-
-Running through actual OS network sockets (`net.Listen` + `net.Dial` over loopback):
-
-```text
-BenchmarkTechEmpower_RealTCPSocket_Sein-12       3,056 ns/op   178 B/op    7 allocs/op   (330,000 req/s on 1 socket)
-BenchmarkTechEmpower_RealTCPSocket_StdHTTP-12    4,716 ns/op  2,252 B/op   20 allocs/op   (210,000 req/s on 1 socket)
-```
-* **12.6x Less Memory Allocation**: `178 B/op` vs `2,252 B/op` in stdlib `net/http` / Gin.
-* **3x Fewer Allocations**: 7 vs 20 per request cycle.
-* **55% Faster Network Turnaround**: 3.0µs vs 4.7µs on loopback TCP.
 
 ---
 
