@@ -10,10 +10,11 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Lint & Test
+  lint:
+    name: Lint & Code Standards
     runs-on: ubuntu-latest
-
+    env:
+      GOEXPERIMENT: "simd"
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -21,10 +22,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: "1.27.x"
           cache: true
 
-      - name: Install dependencies
+      - name: Download dependencies
         run: go mod download
 
       - name: golangci-lint
@@ -33,16 +34,41 @@ jobs:
           version: latest
           args: --timeout=5m
 
+  test-matrix:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    env:
+      GOEXPERIMENT: "simd"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
       - name: Run Tests with Race Detector
-        run: make race
+        run: go test -race -timeout 120s ./...
 
-      - name: Generate coverage report
-        run: go test -coverprofile=coverage.out ./...
-
-      - name: Run benchmarks (smoke check)
+      - name: Run Benchmarks (smoke check)
         run: go test -bench=. -benchtime=1x -benchmem ./...
 
+      - name: Generate coverage report
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -coverprofile=coverage.out ./...
+
       - name: Upload coverage artifact
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
