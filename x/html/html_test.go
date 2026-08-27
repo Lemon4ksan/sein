@@ -107,6 +107,80 @@ func TestHTMX_HeadersAndModifiers(t *testing.T) {
 		t.Errorf("expected HX-Retarget=#target-container, got %s", rec.Header().Get("HX-Retarget"))
 	}
 	if rec.Header().Get("HX-Push-Url") != "/items/42" {
-		t.Errorf("expected HX-Push-Url=/items/42, got %s", rec.Header().Get("HX-Push-Url"))
+		t.Errorf("expected HX-Push-Url '/items/42', got %q", rec.Header().Get("HX-Push-Url"))
+	}
+}
+
+func TestHTMX_AllInspectionAndModifiers(t *testing.T) {
+	app := sein.New()
+
+	app.Get("/htmx-inspect", func(req *sein.Request) (sein.Response[[]byte], error) {
+		if !html.IsHTMX(req) || !html.IsBoosted(req) || !html.IsHistoryRestoreRequest(req) {
+			return sein.Response[[]byte]{}, sein.ErrBadRequest("not htmx")
+		}
+
+		if html.Target(req) != "target-div" ||
+			html.CurrentURL(req) != "http://example.com/app" ||
+			html.Prompt(req) != "confirm" ||
+			html.TriggerName(req) != "btn1" ||
+			html.TriggerID(req) != "btn-id-1" {
+			return sein.Response[[]byte]{}, sein.ErrBadRequest("mismatched headers")
+		}
+
+		res := html.Raw([]byte("<b>Raw Bytes</b>"))
+		res = html.TriggerAfterSettle(res, "settleEvent")
+		res = html.TriggerAfterSwap(res, "swapEvent")
+		res = html.Redirect(res, "/target-redirect")
+		res = html.Location(res, "/target-location")
+		res = html.Refresh(res)
+		res = html.ReplaceURL(res, "/new-url")
+		res = html.StopPolling(res)
+
+		return res, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/htmx-inspect", nil)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Boosted", "true")
+	req.Header.Set("HX-History-Restore-Request", "true")
+	req.Header.Set("HX-Target", "target-div")
+	req.Header.Set("HX-Current-URL", "http://example.com/app")
+	req.Header.Set("HX-Prompt", "confirm")
+	req.Header.Set("HX-Trigger-Name", "btn1")
+	req.Header.Set("HX-Trigger", "btn-id-1")
+
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	if rec.Code != 286 {
+		t.Fatalf("expected 286 status code from StopPolling, got %d", rec.Code)
+	}
+
+	if rec.Header().Get("HX-Trigger-After-Settle") != "settleEvent" {
+		t.Errorf("HX-Trigger-After-Settle mismatch")
+	}
+	if rec.Header().Get("HX-Trigger-After-Swap") != "swapEvent" {
+		t.Errorf("HX-Trigger-After-Swap mismatch")
+	}
+	if rec.Header().Get("HX-Redirect") != "/target-redirect" {
+		t.Errorf("HX-Redirect mismatch")
+	}
+	if rec.Header().Get("HX-Location") != "/target-location" {
+		t.Errorf("HX-Location mismatch")
+	}
+	if rec.Header().Get("HX-Refresh") != "true" {
+		t.Errorf("HX-Refresh mismatch")
+	}
+	if rec.Header().Get("HX-Replace-Url") != "/new-url" {
+		t.Errorf("HX-Replace-Url mismatch")
+	}
+	if rec.Body.String() != "<b>Raw Bytes</b>" {
+		t.Errorf("body mismatch: %s", rec.Body.String())
+	}
+
+	// Test PreventDefault
+	prev := html.PreventDefault()
+	if prev.StatusCode() != http.StatusNoContent {
+		t.Errorf("expected 204 from PreventDefault")
 	}
 }

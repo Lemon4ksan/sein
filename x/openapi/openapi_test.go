@@ -8,7 +8,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/lemon4ksan/foundation/testkit/assert"
 	"github.com/lemon4ksan/foundation/testkit/require"
@@ -70,4 +72,43 @@ func TestEnableDocs(t *testing.T) {
 	app.ServeHTTP(rec2, req2)
 	assert.Equal(t, http.StatusOK, rec2.Code)
 	assert.Contains(t, rec2.Body.String(), `"openapi":"3.1.0"`)
+}
+
+type ComplexSearchDTO struct {
+	Query     string            `query:"q,required"`
+	Page      int               `query:"page"`
+	Auth      string            `header:"Authorization,required"`
+	Session   string            `cookie:"session_id"`
+	Active    bool              `json:"active"`
+	Score     float64           `json:"score"`
+	Tags      []string          `json:"tags"`
+	Metadata  map[string]string `json:"metadata"`
+	RawBytes  []byte            `json:"raw_bytes"`
+	CreatedAt time.Time         `json:"created_at"`
+}
+
+type SearchResponse struct {
+	Total int      `json:"total"`
+	Items []string `json:"items"`
+}
+
+func TestOpenAPI_Export_And_ComplexTypes(t *testing.T) {
+	app := sein.New()
+
+	app.Post("/search/*wildcard", func(ctx context.Context, dto ComplexSearchDTO) (SearchResponse, error) {
+		return SearchResponse{Total: 1, Items: []string{"found"}}, nil
+	})
+
+	doc := openapi.Generate(app, "Complex API", "3.1.0")
+	require.NotNil(t, doc)
+
+	// Test Export to disk
+	tmpFile := t.TempDir() + "/spec.json"
+	err := doc.Export(tmpFile)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(tmpFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"openapi":"3.1.0"`)
+	assert.Contains(t, string(data), "Complex API")
 }

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -104,4 +105,34 @@ func TestCSRF_Workflow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
+}
+
+func TestCSRF_CustomOptions_And_ErrorHandler(t *testing.T) {
+	app := sein.New()
+	app.Use(csrf.New(
+		csrf.WithCookieName("custom_csrf_cookie"),
+		csrf.WithHeaderName("X-Custom-CSRF"),
+		csrf.WithFormField("custom_csrf_field"),
+		csrf.WithCookieSecure(true),
+		csrf.WithCookieHTTPOnly(true),
+		csrf.WithCookieSameSite(http.SameSiteStrictMode),
+		csrf.WithCookieDomain("example.com"),
+		csrf.WithCookiePath("/api"),
+		csrf.WithExpiration(12*time.Hour),
+		csrf.WithErrorHandler(func(req *sein.Request) (any, error) {
+			return sein.StatusWith[any](http.StatusTeapot, "custom csrf rejection", nil), nil
+		}),
+	))
+
+	app.Post("/api/action", func(ctx context.Context) (string, error) {
+		return "action done", nil
+	})
+
+	// Missing CSRF with custom error handler -> 418 Teapot
+	req := httptest.NewRequest(http.MethodPost, "/api/action", nil)
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusTeapot, rec.Code)
+	assert.Contains(t, rec.Body.String(), "custom csrf rejection")
 }

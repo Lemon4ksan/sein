@@ -86,3 +86,72 @@ func TestRPC_Mount(t *testing.T) {
 	assert.Equal(t, "ord-1234", res.OrderID)
 	assert.Equal(t, "created", res.Status)
 }
+
+type PingRes struct {
+	Reply string `json:"reply"`
+}
+
+type TimeRes struct {
+	Date string `json:"date"`
+}
+
+type ItemRes struct {
+	Item string `json:"item"`
+}
+
+type MultiSignatureService struct{}
+
+func (s *MultiSignatureService) Ping() (PingRes, error) {
+	return PingRes{Reply: "pong"}, nil
+}
+
+func (s *MultiSignatureService) GetTime(ctx context.Context) (TimeRes, error) {
+	return TimeRes{Date: "2026-08-27"}, nil
+}
+
+func (s *MultiSignatureService) Echo(in CreateOrderReq) (ItemRes, error) {
+	return ItemRes{Item: in.Item}, nil
+}
+
+func TestRPC_AllSignatures_And_Errors(t *testing.T) {
+	app := sein.New()
+	rpc.Mount(app, "/multi", &MultiSignatureService{})
+
+	app.Get("/health", func(ctx context.Context) (PingRes, error) {
+		return PingRes{Reply: "healthy"}, nil
+	})
+
+	app.Get("/error", func(ctx context.Context) (string, error) {
+		return "", sein.ErrBadRequest("validation failed")
+	})
+
+	srv := httptest.NewServer(app)
+	defer srv.Close()
+
+	ctx := context.Background()
+
+	// 1. func(s *Service) (Res, error)
+	res1, err := rpc.Call[PingRes, any](ctx, http.DefaultClient, http.MethodPost, srv.URL+"/multi/Ping", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "pong", res1.Reply)
+
+	// 2. func(s *Service, ctx context.Context) (Res, error)
+	res2, err := rpc.Call[TimeRes, any](ctx, http.DefaultClient, http.MethodPost, srv.URL+"/multi/GetTime", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "2026-08-27", res2.Date)
+
+	// 3. func(s *Service, in Req) (Res, error)
+	res3, err := rpc.Call[ItemRes, CreateOrderReq](ctx, http.DefaultClient, http.MethodPost, srv.URL+"/multi/Echo", CreateOrderReq{Item: "Box"})
+	require.NoError(t, err)
+	assert.Equal(t, "Box", res3.Item)
+
+	// 4. GET method call
+	res4, err := rpc.Call[PingRes, any](ctx, http.DefaultClient, http.MethodGet, srv.URL+"/health", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "healthy", res4.Reply)
+
+	// 5. Server error handling
+	_, err = rpc.Call[string, any](ctx, http.DefaultClient, http.MethodGet, srv.URL+"/error", nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "400")
+}
