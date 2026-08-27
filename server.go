@@ -340,13 +340,14 @@ func (s *Server) PrintRoutes() string {
 func (s *Server) resolveRoute(
 	method, path string,
 	params *Params,
-) (handler RawHandler, allowHeader, redirectURL string, redirectCode, status int) {
-	h, found := s.router.Match(method, path, params)
+) (handler RawHandler, pattern, allowHeader, redirectURL string, redirectCode, status int) {
+	h, pat, found := s.router.Match(method, path, params)
 	if found {
-		return h, "", "", 0, http.StatusOK
+		return h, pat, "", "", 0, http.StatusOK
 	}
 
-	return s.resolveRouteSlow(method, path)
+	h, allowHeader, redirectURL, redirectCode, status = s.resolveRouteSlow(method, path)
+	return h, "", allowHeader, redirectURL, redirectCode, status
 }
 
 //go:noinline
@@ -401,12 +402,13 @@ func (s *Server) DispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 // dispatchH1 is the native zero-net/http request pipeline dispatcher.
 func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) error {
 	var params Params
-	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h1Req.Method, h1Req.Path, &params)
+	handler, pattern, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h1Req.Method, h1Req.Path, &params)
 	if redirectURL != "" {
 		return s.serializeH1Result(h1Res, Redirect(redirectURL, redirectCode))
 	}
 
 	req := NewH1Request(h1Req, &params)
+	req.routePattern = pattern
 	defer req.Release()
 
 	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {
@@ -440,12 +442,13 @@ func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 // DispatchH2 is the native zero-net/http HTTP/2 stream request dispatcher.
 func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.ServerResponse) error {
 	var params Params
-	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h2Req.Method, h2Req.Path, &params)
+	handler, pattern, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h2Req.Method, h2Req.Path, &params)
 	if redirectURL != "" {
 		return s.serializeH2Result(h2Res, Redirect(redirectURL, redirectCode))
 	}
 
 	req := NewH2Request(h2Req.Method, h2Req.Path, h2Req.Authority, h2Req.RemoteAddr, h2Req.Headers, h2Req.Body, &params)
+	req.routePattern = pattern
 	defer req.Release()
 
 	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {
@@ -471,12 +474,13 @@ func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.Serve
 // DispatchH3 is the native zero-net/http HTTP/3 stream request dispatcher.
 func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.ServerResponse) error {
 	var params Params
-	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h3Req.Method, h3Req.Path, &params)
+	handler, pattern, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h3Req.Method, h3Req.Path, &params)
 	if redirectURL != "" {
 		return s.serializeH3Result(h3Res, Redirect(redirectURL, redirectCode))
 	}
 
 	req := NewH3Request(h3Req.Method, h3Req.Path, h3Req.Authority, h3Req.RemoteAddr, h3Req.Headers, h3Req.Body, &params)
+	req.routePattern = pattern
 	defer req.Release()
 
 	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {
@@ -578,11 +582,12 @@ func (s *Server) handleUnmatchedH3(h3Res *h3engine.ServerResponse, status int, a
 func (s *Server) resolveUnmatched(r *Request, origMethod, origPath string, h1Res *h1engine.Response, status int, allowHeader string) (any, error) {
 	if r.Path() != origPath || r.Method() != origMethod {
 		r.params.Reset()
-		newHandler, newAllow, newRedir, newRedirCode, newStatus := s.resolveRoute(r.Method(), r.Path(), &r.params)
+		newHandler, newPattern, newAllow, newRedir, newRedirCode, newStatus := s.resolveRoute(r.Method(), r.Path(), &r.params)
 		if newRedir != "" {
 			return Redirect(newRedir, newRedirCode), nil
 		}
 		if newHandler != nil {
+			r.routePattern = newPattern
 			return newHandler(r)
 		}
 		if newStatus == http.StatusMethodNotAllowed {

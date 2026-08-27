@@ -23,6 +23,10 @@ func TestPrometheus_MetricsGathering(t *testing.T) {
 	app := sein.New()
 	prometheus.Register(app)
 
+	app.Get("/users/:id", func(ctx context.Context, id string) (string, error) {
+		return "user " + id, nil
+	})
+
 	app.Get("/users", func(ctx context.Context) (string, error) {
 		return "users list", nil
 	})
@@ -49,6 +53,14 @@ func TestPrometheus_MetricsGathering(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	}
 
+	// Dynamic path parameters should group under /users/:id
+	for _, id := range []string{"1001", "1002", "1003"} {
+		resp, err := client.Get("http://" + addr + "/users/" + id)
+		require.NoError(t, err)
+		_ = resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	}
+
 	respFail, err := client.Get("http://" + addr + "/fail")
 	require.NoError(t, err)
 	_ = respFail.Body.Close()
@@ -65,6 +77,7 @@ func TestPrometheus_MetricsGathering(t *testing.T) {
 
 	metricsText := string(body)
 	assert.Contains(t, metricsText, "http_requests_total{method=\"GET\",path=\"/users\",status=\"200\"} 3")
+	assert.Contains(t, metricsText, "http_requests_total{method=\"GET\",path=\"/users/:id\",status=\"200\"} 3")
 	assert.Contains(t, metricsText, "http_requests_total{method=\"GET\",path=\"/fail\",status=\"400\"} 1")
 	assert.Contains(t, metricsText, "go_goroutines")
 	assert.Contains(t, metricsText, "process_resident_memory_bytes")

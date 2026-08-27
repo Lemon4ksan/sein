@@ -106,7 +106,7 @@ func BenchmarkRouter_StaticMatch(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = router.Match("GET", "/api/v1/users/profile", nil)
+		_, _, _ = router.Match("GET", "/api/v1/users/profile", nil)
 	}
 }
 
@@ -123,7 +123,7 @@ func BenchmarkRouter_ParamMatch(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		params.Reset()
-		_, _ = router.Match("GET", "/api/v1/users/42/posts/100", &params)
+		_, _, _ = router.Match("GET", "/api/v1/users/42/posts/100", &params)
 	}
 }
 

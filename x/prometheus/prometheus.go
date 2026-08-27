@@ -232,7 +232,7 @@ func New(opts ...Option) (sein.Middleware, *Registry) {
 				}
 			}
 
-			reg.observe(req.Method(), path, status, duration)
+			reg.observe(req.Method(), req.RoutePattern(), status, duration)
 
 			return res, err
 		}

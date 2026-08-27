@@ -166,3 +166,49 @@ func TestBinderValidationFailures(t *testing.T) {
 	err4 := binder.Ingest(req4, &dto4)
 	assert.Error(t, err4)
 }
+
+type CustomID uint64
+type CustomSlug string
+
+type CustomAliasDTO struct {
+	ID   CustomID   `path:"id"`
+	Slug CustomSlug `query:"slug,trim"`
+	Age  *int       `query:"age"`
+}
+
+func TestBinderCustomAliasesAndPointers(t *testing.T) {
+	req := &mockRequestView{
+		params:  map[string]string{"id": "99998888"},
+		queries: map[string]string{"slug": "  custom-slug-value  ", "age": "42"},
+	}
+
+	var dto CustomAliasDTO
+	err := binder.Ingest(req, &dto)
+	require.NoError(t, err)
+
+	assert.Equal(t, CustomID(99998888), dto.ID)
+	assert.Equal(t, CustomSlug("custom-slug-value"), dto.Slug)
+	require.NotNil(t, dto.Age)
+	assert.Equal(t, 42, *dto.Age)
+}
+
+func TestBinderScalarIngestion(t *testing.T) {
+	req := &mockRequestView{
+		params: map[string]string{"": "777666"},
+	}
+
+	var id uint64
+	err := binder.IngestScalarType(req, reflect.TypeOf(id), &id)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(777666), id)
+
+	var customID CustomID
+	err = binder.IngestScalarType(req, reflect.TypeOf(customID), &customID)
+	require.NoError(t, err)
+	assert.Equal(t, CustomID(777666), customID)
+
+	var str string
+	err = binder.IngestScalarType(req, reflect.TypeOf(str), &str)
+	require.NoError(t, err)
+	assert.Equal(t, "777666", str)
+}

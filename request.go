@@ -47,6 +47,7 @@ type Request struct {
 	ctx           context.Context
 	method        string
 	path          string
+	routePattern  string
 	query         string
 	proto         string
 	host          string
@@ -79,6 +80,7 @@ func (r *Request) reset() {
 	r.ctx = context.Background()
 	r.method = ""
 	r.path = ""
+	r.routePattern = ""
 	r.query = ""
 	r.proto = ""
 	r.host = ""
@@ -293,6 +295,21 @@ func (r *Request) Path() string {
 	}
 
 	return ""
+}
+
+// RoutePattern returns the registered route template pattern (e.g. "/users/:id").
+// If the route is an unmatched 404 or unregistered path, it defaults to Path().
+func (r *Request) RoutePattern() string {
+	if r.routePattern != "" {
+		return r.routePattern
+	}
+
+	return r.Path()
+}
+
+// SetRoutePattern manually sets the route pattern for custom request dispatching.
+func (r *Request) SetRoutePattern(pattern string) {
+	r.routePattern = pattern
 }
 
 // Proto returns the HTTP protocol version (e.g. "HTTP/1.1", "HTTP/2.0", "HTTP/3.0").

@@ -254,7 +254,7 @@ func (sw *statusWriter) WriteHeader(code int) {
 // ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib test recorders.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var params Params
-	handler, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(r.Method, r.URL.Path, &params)
+	handler, pattern, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(r.Method, r.URL.Path, &params)
 	if redirectURL != "" {
 		w.Header().Set(header.Location, redirectURL)
 		w.WriteHeader(redirectCode)
@@ -263,6 +263,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	swWriter := &statusWriter{ResponseWriter: w, statusCode: http.StatusOK}
 	req := NewRequest(r, &params)
+	req.routePattern = pattern
 	defer req.Release()
 
 	if len(s.afterResponseHooks) > 0 || len(s.traceHooks) > 0 {

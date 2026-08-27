@@ -20,8 +20,14 @@ type RouteInfo struct {
 	Path string
 }
 
+type staticRoute struct {
+	handler RawHandler
+	pattern string
+}
+
 type routeNode struct {
 	pathSegment   string
+	pattern       string
 	isParam       bool
 	isWildcard    bool
 	trailingSlash bool
@@ -36,7 +42,7 @@ type routeNode struct {
 type Router struct {
 	mu        sync.RWMutex
 	routes    map[string]*routeNode
-	static    map[string]map[string]RawHandler
+	static    map[string]map[string]staticRoute
 	routeList []RouteInfo
 }
 
@@ -44,7 +50,7 @@ type Router struct {
 func NewRouter() *Router {
 	return &Router{
 		routes:    make(map[string]*routeNode),
-		static:    make(map[string]map[string]RawHandler),
+		static:    make(map[string]map[string]staticRoute),
 		routeList: make([]RouteInfo, 0, 32),
 	}
 }
@@ -62,10 +68,13 @@ func (r *Router) Add(method, pattern string, handler RawHandler) {
 	// 1. If pattern has no dynamic parameters, register into O(1) static lookup table
 	if !strings.Contains(pattern, ":") && !strings.Contains(pattern, "*") && !strings.Contains(pattern, "...") {
 		if r.static[method] == nil {
-			r.static[method] = make(map[string]RawHandler)
+			r.static[method] = make(map[string]staticRoute)
 		}
 
-		r.static[method][pattern] = handler
+		r.static[method][pattern] = staticRoute{
+			handler: handler,
+			pattern: pattern,
+		}
 	}
 
 	// 2. Also register into Trie for fallback and traversal
@@ -79,12 +88,13 @@ func (r *Router) Add(method, pattern string, handler RawHandler) {
 	segments := splitPathBuf(pattern, &segBuf)
 	hasTrailingSlash := len(pattern) > 1 && strings.HasSuffix(pattern, "/")
 
-	insertNode(root, segments, handler, hasTrailingSlash)
+	insertNode(root, segments, handler, pattern, hasTrailingSlash)
 }
 
-func insertNode(curr *routeNode, segments []string, handler RawHandler, hasTrailingSlash bool) {
+func insertNode(curr *routeNode, segments []string, handler RawHandler, pattern string, hasTrailingSlash bool) {
 	if len(segments) == 0 {
 		curr.handler = handler
+		curr.pattern = pattern
 		curr.trailingSlash = hasTrailingSlash
 
 		return
@@ -113,7 +123,7 @@ func insertNode(curr *routeNode, segments []string, handler RawHandler, hasTrail
 	// Look for existing matching child
 	for _, child := range curr.children {
 		if child.isWildcard == isWildcard && child.isParam == isParam && child.pathSegment == seg {
-			insertNode(child, remaining, handler, hasTrailingSlash)
+			insertNode(child, remaining, handler, pattern, hasTrailingSlash)
 			return
 		}
 	}
@@ -127,44 +137,45 @@ func insertNode(curr *routeNode, segments []string, handler RawHandler, hasTrail
 	}
 
 	curr.children = append(curr.children, newNode)
-	insertNode(newNode, remaining, handler, hasTrailingSlash)
+	insertNode(newNode, remaining, handler, pattern, hasTrailingSlash)
 }
 
 // Match searches the routing tree for a registered [RawHandler] matching the HTTP method and path.
-// When matched, extracted path variables are populated into params without heap allocations.
-func (r *Router) Match(method, path string, params *Params) (RawHandler, bool) {
+// When matched, extracted path variables are populated into params without heap allocations,
+// and the matched route pattern is returned.
+func (r *Router) Match(method, path string, params *Params) (RawHandler, string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	// Fast Path: Check static route table (0 B/op, O(1) lookup)
 	if m, ok := r.static[method]; ok {
-		if h, ok := m[path]; ok {
-			return h, true
+		if s, ok := m[path]; ok {
+			return s.handler, s.pattern, true
 		}
 	}
 
 	root, ok := r.routes[method]
 	if !ok {
-		return nil, false
+		return nil, "", false
 	}
 
 	var segBuf [16]string
 	segments := splitPathBuf(path, &segBuf)
 	hasTrailingSlash := len(path) > 1 && strings.HasSuffix(path, "/")
 
-	handler, ok := matchNode(root, segments, hasTrailingSlash, params)
-	if !ok {
-		return nil, false
+	node, ok := matchNode(root, segments, hasTrailingSlash, params)
+	if !ok || node == nil || node.handler == nil {
+		return nil, "", false
 	}
 
-	return handler, true
+	return node.handler, node.pattern, true
 }
 
-func matchNode(curr *routeNode, segments []string, hasTrailingSlash bool, params *Params) (RawHandler, bool) {
+func matchNode(curr *routeNode, segments []string, hasTrailingSlash bool, params *Params) (*routeNode, bool) {
 	if len(segments) == 0 {
 		if curr.handler != nil {
 			if curr.isWildcard || curr.trailingSlash == hasTrailingSlash {
-				return curr.handler, true
+				return curr, true
 			}
 
 			return nil, false
@@ -173,7 +184,7 @@ func matchNode(curr *routeNode, segments []string, hasTrailingSlash bool, params
 		// Check for wildcard matching empty suffix
 		for _, child := range curr.children {
 			if child.isWildcard && child.handler != nil {
-				return child.handler, true
+				return child, true
 			}
 		}
 
@@ -186,8 +197,8 @@ func matchNode(curr *routeNode, segments []string, hasTrailingSlash bool, params
 	// 1. Try exact match first
 	for _, child := range curr.children {
 		if !child.isParam && !child.isWildcard && child.pathSegment == seg {
-			if h, ok := matchNode(child, remaining, hasTrailingSlash, params); ok {
-				return h, true
+			if n, ok := matchNode(child, remaining, hasTrailingSlash, params); ok {
+				return n, true
 			}
 		}
 	}
@@ -206,8 +217,8 @@ func matchNode(curr *routeNode, segments []string, hasTrailingSlash bool, params
 				}
 				params.Set(child.paramName, paramVal)
 			}
-			if h, ok := matchNode(child, remaining, hasTrailingSlash, params); ok {
-				return h, true
+			if n, ok := matchNode(child, remaining, hasTrailingSlash, params); ok {
+				return n, true
 			}
 		}
 	}
@@ -219,45 +230,80 @@ func matchNode(curr *routeNode, segments []string, hasTrailingSlash bool, params
 				params.Set(child.paramName, strings.Join(segments, "/"))
 			}
 
-			if child.handler != nil {
-				return child.handler, true
-			}
+			return child, true
 		}
 	}
 
 	return nil, false
 }
 
-func splitPathBuf(path string, buf *[16]string) []string {
-	trimmed := strings.Trim(path, "/")
-	if trimmed == "" {
-		return nil
+// FindTrailingSlash tests if an alternate route exists with the opposite trailing slash.
+func (r *Router) FindTrailingSlash(method, path string) (string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var altPath string
+	if strings.HasSuffix(path, "/") {
+		altPath = strings.TrimSuffix(path, "/")
+	} else {
+		altPath = path + "/"
 	}
 
-	count := 0
-	start := 0
-	for i := 0; i < len(trimmed); i++ {
-		if trimmed[i] == '/' {
-			if count < len(buf) {
-				buf[count] = trimmed[start:i]
-				count++
-			}
-			start = i + 1
+	if m, ok := r.static[method]; ok {
+		if _, ok := m[altPath]; ok {
+			return altPath, true
 		}
 	}
-	if start <= len(trimmed) && count < len(buf) {
-		buf[count] = trimmed[start:]
-		count++
+
+	root, ok := r.routes[method]
+	if !ok {
+		return "", false
 	}
 
-	if count <= len(buf) {
-		return buf[:count]
+	var segBuf [16]string
+	segments := splitPathBuf(altPath, &segBuf)
+	hasTrailingSlash := len(altPath) > 1 && strings.HasSuffix(altPath, "/")
+
+	if n, ok := matchNode(root, segments, hasTrailingSlash, nil); ok && n != nil && n.handler != nil {
+		return altPath, true
 	}
 
-	return strings.Split(trimmed, "/")
+	return "", false
 }
 
-// HasPath reports whether the specified URL path matches any registered route under any HTTP verb.
+// AllowedMethods returns all HTTP verbs registered for a given path across all routing trees.
+func (r *Router) AllowedMethods(path string) []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var allowed []string
+
+	for method, m := range r.static {
+		if _, ok := m[path]; ok {
+			if !slices.Contains(allowed, method) {
+				allowed = append(allowed, method)
+			}
+		}
+	}
+
+	var segBuf [16]string
+	segments := splitPathBuf(path, &segBuf)
+	hasTrailingSlash := len(path) > 1 && strings.HasSuffix(path, "/")
+
+	for method, root := range r.routes {
+		if slices.Contains(allowed, method) {
+			continue
+		}
+
+		if n, ok := matchNode(root, segments, hasTrailingSlash, nil); ok && n != nil && n.handler != nil {
+			allowed = append(allowed, method)
+		}
+	}
+
+	return allowed
+}
+
+// HasPath returns true if any HTTP method is registered for the specified path.
 func (r *Router) HasPath(path string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -271,8 +317,9 @@ func (r *Router) HasPath(path string) bool {
 	var segBuf [16]string
 	segments := splitPathBuf(path, &segBuf)
 	hasTrailingSlash := len(path) > 1 && strings.HasSuffix(path, "/")
+
 	for _, root := range r.routes {
-		if _, ok := matchNode(root, segments, hasTrailingSlash, nil); ok {
+		if n, ok := matchNode(root, segments, hasTrailingSlash, nil); ok && n != nil && n.handler != nil {
 			return true
 		}
 	}
@@ -280,66 +327,45 @@ func (r *Router) HasPath(path string) bool {
 	return false
 }
 
-// AllowedMethods returns all uppercase HTTP methods registered for the specified URL path.
-func (r *Router) AllowedMethods(path string) []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var methods []string
-
-	// Check static routes
-	for m, routes := range r.static {
-		if _, ok := routes[path]; ok {
-			methods = append(methods, m)
-		}
-	}
-
-	// Check dynamic trie routes
-	var segBuf [16]string
-	segments := splitPathBuf(path, &segBuf)
-	hasTrailingSlash := len(path) > 1 && strings.HasSuffix(path, "/")
-	for m, root := range r.routes {
-		if slices.Contains(methods, m) {
-			continue
-		}
-
-		if _, ok := matchNode(root, segments, hasTrailingSlash, nil); ok {
-			methods = append(methods, m)
-		}
-	}
-
-	slices.Sort(methods)
-
-	return methods
-}
-
-// FindTrailingSlash tests if inverting the trailing slash state of path matches a registered route.
-func (r *Router) FindTrailingSlash(method, path string) (string, bool) {
-	if path == "/" {
-		return "", false
-	}
-
-	var altPath string
-	if strings.HasSuffix(path, "/") {
-		altPath = strings.TrimSuffix(path, "/")
-	} else {
-		altPath = path + "/"
-	}
-
-	if _, ok := r.Match(method, altPath, nil); ok {
-		return altPath, true
-	}
-
-	return "", false
-}
-
-// Routes returns an immutable snapshot slice of all registered routes across all HTTP methods.
+// Routes returns an immutable slice of all registered [RouteInfo] metadata entries.
 func (r *Router) Routes() []RouteInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	res := make([]RouteInfo, len(r.routeList))
 	copy(res, r.routeList)
+
+	return res
+}
+
+func splitPathBuf(path string, buf *[16]string) []string {
+	path = strings.TrimPrefix(path, "/")
+	if path == "" {
+		return nil
+	}
+
+	var count int
+	start := 0
+
+	for i := 0; i < len(path); i++ {
+		if path[i] == '/' {
+			if i > start {
+				if count < len(buf) {
+					buf[count] = path[start:i]
+					count++
+				}
+			}
+			start = i + 1
+		}
+	}
+
+	if start < len(path) && count < len(buf) {
+		buf[count] = path[start:]
+		count++
+	}
+
+	res := make([]string, count)
+	copy(res, buf[:count])
 
 	return res
 }
