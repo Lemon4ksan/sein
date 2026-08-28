@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/foundation/codec/json"
-	"github.com/lemon4ksan/foundation/generic"
 
 	"github.com/lemon4ksan/sein"
 )
@@ -492,7 +491,11 @@ func New(opts ...Option) sein.Middleware {
 				authHdr := req.Header(headerKey)
 				if authHdr != "" {
 					prefix := cfg.AuthScheme + " "
-					tokenStr = generic.Ternary(strings.HasPrefix(authHdr, prefix), strings.TrimPrefix(authHdr, prefix), authHdr)
+					if after, ok := strings.CutPrefix(authHdr, prefix); ok {
+						tokenStr = after
+					} else {
+						tokenStr = authHdr
+					}
 				}
 			} else if cookieName, ok := strings.CutPrefix(cfg.TokenLookup, "cookie:"); ok {
 				tokenStr, _ = req.Cookie(cookieName)

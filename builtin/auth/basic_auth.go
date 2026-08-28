@@ -33,7 +33,10 @@ type BasicAuthConfig struct {
 
 // BasicAuth returns an HTTP Basic Authentication middleware verifying credentials against accounts.
 func BasicAuth(accounts map[string]string, realm ...string) sein.Middleware {
-	r := generic.Ternary(len(realm) > 0 && realm[0] != "", realm[0], "Restricted")
+	r := "Restricted"
+	if len(realm) > 0 && realm[0] != "" {
+		r = realm[0]
+	}
 
 	return NewBasicAuth(BasicAuthConfig{
 		Accounts: accounts,

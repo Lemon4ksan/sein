@@ -11,8 +11,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/lemon4ksan/foundation/generic"
-
 	"github.com/lemon4ksan/sein"
 )
 
@@ -93,7 +91,10 @@ func New(opts ...Option) sein.Middleware {
 				if prefix, ok := strings.CutSuffix(from, "/*"); ok {
 					if strings.HasPrefix(path, prefix+"/") || path == prefix {
 						rest := strings.TrimPrefix(path, prefix)
-						newPath := generic.Ternary(strings.HasSuffix(to, "/$1"), strings.TrimSuffix(to, "/$1")+rest, to+rest)
+						newPath := to + rest
+						if base, ok := strings.CutSuffix(to, "/$1"); ok {
+							newPath = base + rest
+						}
 						req.SetPath(newPath)
 						return next(req)
 					}

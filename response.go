@@ -269,7 +269,10 @@ func NotModified() Response[any] {
 //
 //	return sein.Redirect("/login"), nil
 func Redirect(targetURL string, status ...int) Response[any] {
-	code := generic.Ternary(len(status) > 0, status[0], http.StatusFound)
+	code := http.StatusFound
+	if len(status) > 0 {
+		code = status[0]
+	}
 
 	r := Response[any]{Status: code}
 

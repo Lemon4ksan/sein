@@ -54,7 +54,11 @@ func WithCORS(cfg cors.Config) Option {
 // WithPrometheus enables Prometheus metrics on the given path (default "/metrics").
 func WithPrometheus(path ...string) Option {
 	return func(o *Options) {
-		o.Prometheus = generic.Ternary(len(path) > 0 && path[0] != "", path[0], "/metrics")
+		if len(path) > 0 && path[0] != "" {
+			o.Prometheus = path[0]
+		} else {
+			o.Prometheus = "/metrics"
+		}
 	}
 }
 
@@ -62,7 +66,11 @@ func WithPrometheus(path ...string) Option {
 func WithRevision(version string, path ...string) Option {
 	return func(o *Options) {
 		o.Revision = version
-		o.RevisionPath = generic.Ternary(len(path) > 0 && path[0] != "", path[0], "/version")
+		if len(path) > 0 && path[0] != "" {
+			o.RevisionPath = path[0]
+		} else {
+			o.RevisionPath = "/version"
+		}
 	}
 }
 

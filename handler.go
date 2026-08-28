@@ -11,7 +11,6 @@ import (
 	"reflect"
 
 	"github.com/lemon4ksan/foundation/generic"
-
 	"github.com/lemon4ksan/sein/internal/binder"
 )
 

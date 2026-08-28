@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/lemon4ksan/foundation/codec/json"
+	"google.golang.org/protobuf/proto"
 )
 
 // Codec defines the interface gRPC uses to encode and decode messages.
@@ -61,6 +62,10 @@ func (ProtoCodec) Marshal(v any) ([]byte, error) {
 		return lm.Marshal()
 	}
 
+	if pm, ok := v.(proto.Message); ok {
+		return proto.Marshal(pm)
+	}
+
 	if b, ok := v.([]byte); ok {
 		return b, nil
 	}
@@ -81,6 +86,10 @@ func (ProtoCodec) Unmarshal(data []byte, v any) error {
 
 	if lm, ok := v.(legacyUnmarshaler); ok {
 		return lm.Unmarshal(data)
+	}
+
+	if pm, ok := v.(proto.Message); ok {
+		return proto.Unmarshal(data, pm)
 	}
 
 	if bp, ok := v.(*[]byte); ok {

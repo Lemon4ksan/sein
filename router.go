@@ -9,8 +9,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-
-	"github.com/lemon4ksan/foundation/generic"
 )
 
 // RouteInfo encapsulates metadata describing a registered route in the server routing tree.
@@ -66,7 +64,10 @@ func (r *Router) Add(method, pattern string, handler RawHandler, handlerType ...
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	ht := generic.Ternary(len(handlerType) > 0, handlerType[0], nil)
+	var ht reflect.Type
+	if len(handlerType) > 0 {
+		ht = handlerType[0]
+	}
 
 	r.routeList = append(r.routeList, RouteInfo{
 		Method:      method,
@@ -118,7 +119,11 @@ func insertNode(curr *routeNode, segments []string, handler RawHandler, pattern 
 	paramName := ""
 
 	if isWildcard {
-		paramName = generic.Ternary(strings.HasPrefix(seg, "*"), strings.TrimPrefix(seg, "*"), strings.TrimPrefix(seg, "..."))
+		if after, ok := strings.CutPrefix(seg, "*"); ok {
+			paramName = after
+		} else {
+			paramName = strings.TrimPrefix(seg, "...")
+		}
 	} else if idx := strings.IndexByte(seg, ':'); idx != -1 {
 		isParam = true
 		paramPrefix = seg[:idx]
@@ -247,7 +252,10 @@ func (r *Router) FindTrailingSlash(method, path string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	altPath := generic.Ternary(strings.HasSuffix(path, "/"), strings.TrimSuffix(path, "/"), path+"/")
+	altPath := path + "/"
+	if trimmed, ok := strings.CutSuffix(path, "/"); ok {
+		altPath = trimmed
+	}
 
 	if m, ok := r.static[method]; ok {
 		if _, ok := m[altPath]; ok {

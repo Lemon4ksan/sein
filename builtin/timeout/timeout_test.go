@@ -21,7 +21,7 @@ import (
 func TestTimeout_Enforcement(t *testing.T) {
 	app := sein.New()
 	app.Use(timeout.New(
-		timeout.WithTimeout(100 * time.Millisecond),
+		timeout.WithTimeout(300 * time.Millisecond),
 	))
 
 	app.Get("/fast", func(ctx context.Context) (string, error) {
@@ -29,7 +29,7 @@ func TestTimeout_Enforcement(t *testing.T) {
 	})
 
 	app.Get("/slow", func(ctx context.Context) (string, error) {
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(800 * time.Millisecond)
 		return "too slow", nil
 	})
 

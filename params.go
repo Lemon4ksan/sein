@@ -160,7 +160,10 @@ func (p ParamValue) Int() (int, error) {
 func (p ParamValue) AsInt(fallback ...int) int {
 	v, err := p.Int()
 	if err != nil {
-		return generic.Ternary(len(fallback) > 0, fallback[0], 0)
+		if len(fallback) > 0 {
+			return fallback[0]
+		}
+		return 0
 	}
 
 	return v
@@ -175,7 +178,10 @@ func (p ParamValue) Uint64() (uint64, error) {
 func (p ParamValue) AsUint64(fallback ...uint64) uint64 {
 	v, err := p.Uint64()
 	if err != nil {
-		return generic.Ternary(len(fallback) > 0, fallback[0], 0)
+		if len(fallback) > 0 {
+			return fallback[0]
+		}
+		return 0
 	}
 
 	return v
@@ -190,7 +196,10 @@ func (p ParamValue) Int64() (int64, error) {
 func (p ParamValue) AsInt64(fallback ...int64) int64 {
 	v, err := p.Int64()
 	if err != nil {
-		return generic.Ternary(len(fallback) > 0, fallback[0], 0)
+		if len(fallback) > 0 {
+			return fallback[0]
+		}
+		return 0
 	}
 
 	return v
@@ -205,7 +214,10 @@ func (p ParamValue) Bool() (bool, error) {
 func (p ParamValue) AsBool(fallback ...bool) bool {
 	v, err := p.Bool()
 	if err != nil {
-		return generic.Ternary(len(fallback) > 0, fallback[0], false)
+		if len(fallback) > 0 {
+			return fallback[0]
+		}
+		return false
 	}
 
 	return v
@@ -230,8 +242,7 @@ func (p PathParamDef[T]) Name() string {
 func (p PathParamDef[T]) Get(req *Request) (T, error) {
 	val := req.Param(p.name)
 	if val.IsEmpty() {
-		var zero T
-		return zero, ErrMissingPathParam.WithDetail("param", p.name)
+		return generic.Zero[T](), ErrMissingPathParam.WithDetail("param", p.name)
 	}
 
 	return parseScalar[T](string(val))
@@ -276,8 +287,7 @@ func (q QueryParamDef[T]) Name() string {
 func (q QueryParamDef[T]) Get(req *Request) (T, error) {
 	val := req.Query(q.name)
 	if val.IsEmpty() {
-		var zero T
-		return zero, ErrMissingQueryParam.WithDetail("param", q.name)
+		return generic.Zero[T](), ErrMissingQueryParam.WithDetail("param", q.name)
 	}
 
 	return parseScalar[T](string(val))
@@ -317,8 +327,7 @@ func (h HeaderParamDef[T]) Name() string {
 func (h HeaderParamDef[T]) Get(req *Request) (T, error) {
 	val := req.Header(h.name)
 	if val == "" {
-		var zero T
-		return zero, ErrMissingHeader.WithDetail("header", h.name)
+		return generic.Zero[T](), ErrMissingHeader.WithDetail("header", h.name)
 	}
 
 	return parseScalar[T](val)
