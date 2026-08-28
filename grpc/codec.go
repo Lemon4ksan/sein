@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/lemon4ksan/foundation/codec/json"
-	"google.golang.org/protobuf/proto"
 )
 
 // Codec defines the interface gRPC uses to encode and decode messages.
@@ -41,6 +40,8 @@ type legacyUnmarshaler interface {
 }
 
 // ProtoCodec is the default Codec implementation for protobuf messages.
+// It natively supports vtprotobuf (vtMarshaler) and standard Go protobuf (legacyMarshaler)
+// with zero external dependencies. Custom codecs can be registered via [RegisterCodec].
 type ProtoCodec struct{}
 
 // Name returns proto.
@@ -60,10 +61,6 @@ func (ProtoCodec) Marshal(v any) ([]byte, error) {
 
 	if lm, ok := v.(legacyMarshaler); ok {
 		return lm.Marshal()
-	}
-
-	if pm, ok := v.(proto.Message); ok {
-		return proto.Marshal(pm)
 	}
 
 	if b, ok := v.([]byte); ok {
@@ -86,10 +83,6 @@ func (ProtoCodec) Unmarshal(data []byte, v any) error {
 
 	if lm, ok := v.(legacyUnmarshaler); ok {
 		return lm.Unmarshal(data)
-	}
-
-	if pm, ok := v.(proto.Message); ok {
-		return proto.Unmarshal(data, pm)
 	}
 
 	if bp, ok := v.(*[]byte); ok {

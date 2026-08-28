@@ -239,7 +239,7 @@ app := preset.Production(
 | **Sein (Native H1 Net)** | **Go** | **Native H1 Engine** | **`~3,200,000+`**\* reqs/s | **4.73x** |
 | **Sein (In-Memory Core)** | **Go** | **SIMD Fast H1 Core** | **`21,291,486`**\* reqs/s | **31.50x** |
 
-> \* Estimated results. Not actually tested on an actual server.
+> \* Local results. Not tested on an actual server.
 
 ### 2. OS TCP Socket Comparison (Loopback)
 
