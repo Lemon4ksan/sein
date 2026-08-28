@@ -40,8 +40,9 @@ type legacyUnmarshaler interface {
 }
 
 // ProtoCodec is the default Codec implementation for protobuf messages.
-// It natively supports vtprotobuf (vtMarshaler) and standard Go protobuf (legacyMarshaler)
-// with zero external dependencies. Custom codecs can be registered via [RegisterCodec].
+// It natively supports vtprotobuf (vtMarshaler), standard marshaler interfaces,
+// and zero-allocation byte buffers with zero external dependencies.
+// Custom codecs can be registered via [RegisterCodec].
 type ProtoCodec struct{}
 
 // Name returns proto.

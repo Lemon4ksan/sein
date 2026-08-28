@@ -91,16 +91,14 @@ func TestOTel_TracingLifecycle(t *testing.T) {
 }
 
 func TestOTel_OTLPExporter_Filter_And_Errors(t *testing.T) {
-	var (
-		receivedMu sync.Mutex
-		received   bool
-	)
+	receivedCh := make(chan struct{}, 1)
 
 	mockOTLP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/v1/traces", r.URL.Path)
-		receivedMu.Lock()
-		received = true
-		receivedMu.Unlock()
+		select {
+		case receivedCh <- struct{}{}:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer mockOTLP.Close()
@@ -136,10 +134,10 @@ func TestOTel_OTLPExporter_Filter_And_Errors(t *testing.T) {
 	app.ServeHTTP(recErr, reqErr)
 	assert.Equal(t, http.StatusUnauthorized, recErr.Code)
 
-	// Wait briefly for OTLP worker flush
-	time.Sleep(600 * time.Millisecond)
-
-	receivedMu.Lock()
-	defer receivedMu.Unlock()
-	assert.True(t, received)
+	// Wait for OTLP exporter worker flush
+	select {
+	case <-receivedCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for OTLP export")
+	}
 }
