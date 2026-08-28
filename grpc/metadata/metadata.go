@@ -8,6 +8,7 @@ package metadata
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -23,7 +24,7 @@ func (md MD) Len() int {
 func (md MD) Copy() MD {
 	out := make(MD, len(md))
 	for k, v := range md {
-		out[k] = append([]string(nil), v...)
+		out[k] = slices.Clone(v)
 	}
 
 	return out

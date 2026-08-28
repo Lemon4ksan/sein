@@ -6,18 +6,15 @@ package brotli
    See file LICENSE for detail or copy at https://opensource.org/licenses/MIT
 */
 
-/*
-A ringBuffer(window_bits, tail_bits) contains `1 << window_bits' bytes of
-
-	data in a circular manner: writing a byte writes it to:
-	  `position() % (1 << window_bits)'.
-	For convenience, the ringBuffer array contains another copy of the
-	first `1 << tail_bits' bytes:
-	  buffer_[i] == buffer_[i + (1 << window_bits)], if i < (1 << tail_bits),
-	and another copy of the last two bytes:
-	  buffer_[-1] == buffer_[(1 << window_bits) - 1] and
-	  buffer_[-2] == buffer_[(1 << window_bits) - 2].
-*/
+/* A ringBuffer(window_bits, tail_bits) contains `1 << window_bits' bytes of
+   data in a circular manner: writing a byte writes it to:
+     `position() % (1 << window_bits)'.
+   For convenience, the ringBuffer array contains another copy of the
+   first `1 << tail_bits' bytes:
+     buffer_[i] == buffer_[i + (1 << window_bits)], if i < (1 << tail_bits),
+   and another copy of the last two bytes:
+     buffer_[-1] == buffer_[(1 << window_bits) - 1] and
+     buffer_[-2] == buffer_[(1 << window_bits) - 2]. */
 type ringBuffer struct {
 	size_       uint32
 	mask_       uint32
@@ -34,11 +31,8 @@ func ringBufferInit(rb *ringBuffer) {
 }
 
 func ringBufferSetup(params *encoderParams, rb *ringBuffer) {
-	var (
-		window_bits int = computeRbBits(params)
-		tail_bits   int = params.lgblock
-	)
-
+	var window_bits int = computeRbBits(params)
+	var tail_bits int = params.lgblock
 	*(*uint32)(&rb.size_) = 1 << uint(window_bits)
 	*(*uint32)(&rb.mask_) = (1 << uint(window_bits)) - 1
 	*(*uint32)(&rb.tail_size_) = 1 << uint(tail_bits)
@@ -47,24 +41,17 @@ func ringBufferSetup(params *encoderParams, rb *ringBuffer) {
 
 const kSlackForEightByteHashingEverywhere uint = 7
 
-/*
-Allocates or re-allocates data_ to the given length + plus some slack
-
-	region before and after. Fills the slack regions with zeros.
-*/
+/* Allocates or re-allocates data_ to the given length + plus some slack
+   region before and after. Fills the slack regions with zeros. */
 func ringBufferInitBuffer(buflen uint32, rb *ringBuffer) {
-	var (
-		new_data []byte
-		i        uint
-	)
-
+	var new_data []byte
+	var i uint
 	size := 2 + int(buflen) + int(kSlackForEightByteHashingEverywhere)
 	if cap(rb.data_) < size {
 		new_data = make([]byte, size)
 	} else {
 		new_data = rb.data_[:size]
 	}
-
 	if rb.data_ != nil {
 		copy(new_data, rb.data_[:2+rb.cur_size_+uint32(kSlackForEightByteHashingEverywhere)])
 	}
@@ -73,7 +60,6 @@ func ringBufferInitBuffer(buflen uint32, rb *ringBuffer) {
 	rb.cur_size_ = buflen
 	rb.buffer_ = rb.data_[2:]
 	rb.data_[1] = 0
-
 	rb.data_[0] = rb.data_[1]
 	for i = 0; i < kSlackForEightByteHashingEverywhere; i++ {
 		rb.buffer_[rb.cur_size_+uint32(i)] = 0
@@ -102,7 +88,6 @@ func ringBufferWrite(bytes []byte, n uint, rb *ringBuffer) {
 
 		ringBufferInitBuffer(rb.pos_, rb)
 		copy(rb.buffer_, bytes[:n])
-
 		return
 	}
 
@@ -116,7 +101,6 @@ func ringBufferWrite(bytes []byte, n uint, rb *ringBuffer) {
 
 		rb.buffer_[rb.size_-1] = 0
 	}
-
 	{
 		var masked_pos uint = uint(rb.pos_ & rb.mask_)
 
@@ -136,16 +120,11 @@ func ringBufferWrite(bytes []byte, n uint, rb *ringBuffer) {
 			copy(rb.buffer_, bytes[rb.size_-uint32(masked_pos):][:uint32(n)-(rb.size_-uint32(masked_pos))])
 		}
 	}
-
 	{
-		var (
-			not_first_lap bool   = rb.pos_&(1<<31) != 0
-			rb_pos_mask   uint32 = (1 << 31) - 1
-		)
-
+		var not_first_lap bool = rb.pos_&(1<<31) != 0
+		var rb_pos_mask uint32 = (1 << 31) - 1
 		rb.data_[0] = rb.buffer_[rb.size_-2]
 		rb.data_[1] = rb.buffer_[rb.size_-1]
-
 		rb.pos_ = (rb.pos_ & rb_pos_mask) + uint32(uint32(n)&rb_pos_mask)
 		if not_first_lap {
 			/* Wrap, but preserve not-a-first-lap feature. */

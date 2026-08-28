@@ -586,6 +586,7 @@ func testConnectionUnpackFailureFatal(t *testing.T, unpackErr error) error {
 	)
 
 	tc.connRunner.EXPECT().ReplaceWithClosed(gomock.Any(), gomock.Any(), gomock.Any())
+	tc.packer.EXPECT().AppendPacket(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	unpacker.EXPECT().
 		UnpackShortHeader(gomock.Any(), gomock.Any()).
 		Return(protocol.PacketNumber(0), protocol.PacketNumberLen(0), protocol.KeyPhaseBit(0), nil, unpackErr)
@@ -596,7 +597,7 @@ func testConnectionUnpackFailureFatal(t *testing.T, unpackErr error) error {
 	errChan := make(chan error, 1)
 	go func() { errChan <- tc.conn.run() }()
 
-	tc.sendConn.EXPECT().Write(gomock.Any(), gomock.Any(), gomock.Any())
+	tc.sendConn.EXPECT().Write(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	tc.conn.handlePacket(getShortHeaderPacket(t, tc.remoteAddr, tc.srcConnID, 0x42, nil))
 
 	select {

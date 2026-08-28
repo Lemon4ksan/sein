@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lemon4ksan/foundation/generic"
+
 	"github.com/lemon4ksan/sein"
 )
 
@@ -147,15 +149,7 @@ func (s *Scheduler) run(ctx context.Context) {
 		sleepDur := 100 * time.Millisecond
 		if !earliest.IsZero() {
 			d := time.Until(earliest)
-			if d > 0 {
-				if d > 1*time.Second {
-					sleepDur = 1 * time.Second
-				} else {
-					sleepDur = d
-				}
-			} else {
-				sleepDur = 5 * time.Millisecond
-			}
+			sleepDur = generic.Ternary(d > 0, min(d, 1*time.Second), 5*time.Millisecond)
 		}
 
 		timer := time.NewTimer(sleepDur)
@@ -176,10 +170,7 @@ func (s *Scheduler) Entries() []Entry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make([]Entry, len(s.entries))
-	for i, e := range s.entries {
-		result[i] = *e
-	}
-
-	return result
+	return generic.Map(s.entries, func(e *Entry) Entry {
+		return *e
+	})
 }

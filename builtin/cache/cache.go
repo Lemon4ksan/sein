@@ -39,13 +39,13 @@ type Store interface {
 type memoryStore struct {
 	lru     *generic.LRU[string, *cacheEntry]
 	mu      sync.RWMutex
-	tagKeys map[string]map[string]struct{}
+	tagKeys map[string]generic.Set[string]
 }
 
 func newMemoryStore() *memoryStore {
 	return &memoryStore{
 		lru:     generic.NewLRU[string, *cacheEntry](10000),
-		tagKeys: make(map[string]map[string]struct{}),
+		tagKeys: make(map[string]generic.Set[string]),
 	}
 }
 
@@ -65,9 +65,9 @@ func (s *memoryStore) Set(key string, entry *cacheEntry) {
 		s.mu.Lock()
 		for _, tag := range entry.tags {
 			if s.tagKeys[tag] == nil {
-				s.tagKeys[tag] = make(map[string]struct{})
+				s.tagKeys[tag] = generic.NewSet[string]()
 			}
-			s.tagKeys[tag][key] = struct{}{}
+			s.tagKeys[tag].Add(key)
 		}
 		s.mu.Unlock()
 	}

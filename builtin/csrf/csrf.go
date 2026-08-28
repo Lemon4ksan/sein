@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lemon4ksan/foundation/generic"
+
 	"github.com/lemon4ksan/sein"
 )
 
@@ -176,18 +178,12 @@ func New(opts ...Option) sein.Middleware {
 			}
 
 			// 2. Mutating methods: extract client-submitted token
-			clientToken := req.Header(cfg.HeaderName)
-			if clientToken == "" {
-				clientToken = req.Header("X-XSRF-Token")
-			}
-
-			if clientToken == "" {
-				clientToken = req.FormValue(cfg.FormField)
-			}
-
-			if clientToken == "" {
-				clientToken = string(req.Query(cfg.FormField))
-			}
+			clientToken := generic.Coalesce(
+				req.Header(cfg.HeaderName),
+				req.Header("X-XSRF-Token"),
+				req.FormValue(cfg.FormField),
+				string(req.Query(cfg.FormField)),
+			)
 
 			// Constant-time token comparison
 			if clientToken == "" || subtle.ConstantTimeCompare([]byte(clientToken), []byte(cookieToken)) != 1 {

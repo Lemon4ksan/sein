@@ -1,5 +1,3 @@
-github.com/andybalholm/brotli v1.2.2 h1:HzTuoo2ErYQqf5qvcJInB8uvqSVxRttzkFexPWtnceM=
-github.com/andybalholm/brotli v1.2.2/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/lemon4ksan/foundation v0.0.0-20260827200220-5aa5e93578ae h1:/wnrvtfipmmcNnVySXaxTfL32TB9HXxL6uRPNbC03VM=
 github.com/lemon4ksan/foundation v0.0.0-20260827200220-5aa5e93578ae/go.mod h1:MsA5LvHlsPmx1MBCumICPaT7D0p3f1B51zpGDIEaTKc=
 golang.org/x/crypto v0.55.0 h1:+KWHjbgOaAQ66dh/YlkZKHlz9ZUlq61AFirAR9ntP8M=

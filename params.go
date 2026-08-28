@@ -8,6 +8,8 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
+
+	"github.com/lemon4ksan/foundation/generic"
 )
 
 // ParamConstraint defines supported primitive and scalar types for URL and Header parameters.
@@ -158,11 +160,7 @@ func (p ParamValue) Int() (int, error) {
 func (p ParamValue) AsInt(fallback ...int) int {
 	v, err := p.Int()
 	if err != nil {
-		if len(fallback) > 0 {
-			return fallback[0]
-		}
-
-		return 0
+		return generic.Ternary(len(fallback) > 0, fallback[0], 0)
 	}
 
 	return v
@@ -177,11 +175,7 @@ func (p ParamValue) Uint64() (uint64, error) {
 func (p ParamValue) AsUint64(fallback ...uint64) uint64 {
 	v, err := p.Uint64()
 	if err != nil {
-		if len(fallback) > 0 {
-			return fallback[0]
-		}
-
-		return 0
+		return generic.Ternary(len(fallback) > 0, fallback[0], 0)
 	}
 
 	return v
@@ -196,11 +190,7 @@ func (p ParamValue) Int64() (int64, error) {
 func (p ParamValue) AsInt64(fallback ...int64) int64 {
 	v, err := p.Int64()
 	if err != nil {
-		if len(fallback) > 0 {
-			return fallback[0]
-		}
-
-		return 0
+		return generic.Ternary(len(fallback) > 0, fallback[0], 0)
 	}
 
 	return v
@@ -215,11 +205,7 @@ func (p ParamValue) Bool() (bool, error) {
 func (p ParamValue) AsBool(fallback ...bool) bool {
 	v, err := p.Bool()
 	if err != nil {
-		if len(fallback) > 0 {
-			return fallback[0]
-		}
-
-		return false
+		return generic.Ternary(len(fallback) > 0, fallback[0], false)
 	}
 
 	return v

@@ -9,6 +9,8 @@ package preset
 import (
 	"time"
 
+	"github.com/lemon4ksan/foundation/generic"
+
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/builtin/cache"
 	"github.com/lemon4ksan/sein/builtin/compress"
@@ -52,11 +54,7 @@ func WithCORS(cfg cors.Config) Option {
 // WithPrometheus enables Prometheus metrics on the given path (default "/metrics").
 func WithPrometheus(path ...string) Option {
 	return func(o *Options) {
-		if len(path) > 0 && path[0] != "" {
-			o.Prometheus = path[0]
-		} else {
-			o.Prometheus = "/metrics"
-		}
+		o.Prometheus = generic.Ternary(len(path) > 0 && path[0] != "", path[0], "/metrics")
 	}
 }
 
@@ -64,11 +62,7 @@ func WithPrometheus(path ...string) Option {
 func WithRevision(version string, path ...string) Option {
 	return func(o *Options) {
 		o.Revision = version
-		if len(path) > 0 && path[0] != "" {
-			o.RevisionPath = path[0]
-		} else {
-			o.RevisionPath = "/version"
-		}
+		o.RevisionPath = generic.Ternary(len(path) > 0 && path[0] != "", path[0], "/version")
 	}
 }
 
@@ -116,11 +110,8 @@ func Apply(s *sein.Server, opts ...Option) *sein.Server {
 	s.Use(compress.New())
 
 	// 7. Adaptive Load Shedding
-	if o.LoadShedding > 0 {
-		s.Use(loadshed.New(loadshed.WithMaxLatencyThreshold(o.LoadShedding)))
-	} else {
-		s.Use(loadshed.New(loadshed.WithMaxLatencyThreshold(50 * time.Millisecond)))
-	}
+	shedLatency := generic.Ternary(o.LoadShedding > 0, o.LoadShedding, 50*time.Millisecond)
+	s.Use(loadshed.New(loadshed.WithMaxLatencyThreshold(shedLatency)))
 
 	// 8. Prometheus Exporter
 	if o.Prometheus != "" {
@@ -129,10 +120,7 @@ func Apply(s *sein.Server, opts ...Option) *sein.Server {
 
 	// 9. Revision diagnostics
 	if o.Revision != "" {
-		revPath := "/version"
-		if o.RevisionPath != "" {
-			revPath = o.RevisionPath
-		}
+		revPath := generic.Coalesce(o.RevisionPath, "/version")
 		revision.Register(s, revision.WithVersion(o.Revision), revision.WithPath(revPath))
 	}
 

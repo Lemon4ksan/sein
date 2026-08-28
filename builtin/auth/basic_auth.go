@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 
 	"github.com/lemon4ksan/sein"
@@ -32,10 +33,7 @@ type BasicAuthConfig struct {
 
 // BasicAuth returns an HTTP Basic Authentication middleware verifying credentials against accounts.
 func BasicAuth(accounts map[string]string, realm ...string) sein.Middleware {
-	r := "Restricted"
-	if len(realm) > 0 && realm[0] != "" {
-		r = realm[0]
-	}
+	r := generic.Ternary(len(realm) > 0 && realm[0] != "", realm[0], "Restricted")
 
 	return NewBasicAuth(BasicAuthConfig{
 		Accounts: accounts,
@@ -45,20 +43,18 @@ func BasicAuth(accounts map[string]string, realm ...string) sein.Middleware {
 
 // NewBasicAuth creates an HTTP Basic Authentication middleware with custom configuration.
 func NewBasicAuth(cfg BasicAuthConfig) sein.Middleware {
-	if cfg.Realm == "" {
-		cfg.Realm = "Restricted"
-	}
-
-	challengeHeader := "Basic realm=" + strconv.Quote(cfg.Realm)
+	realm := generic.Coalesce(cfg.Realm, "Restricted")
+	challengeHeader := "Basic realm=" + strconv.Quote(realm)
 
 	return func(next sein.RawHandler) sein.RawHandler {
 		return func(req *sein.Request) (any, error) {
 			authHdr := req.Header(header.Authorization)
-			if authHdr == "" || !strings.HasPrefix(authHdr, "Basic ") {
+			payloadB64, ok := strings.CutPrefix(authHdr, "Basic ")
+			if !ok {
 				return unauthorizedResponse(challengeHeader)
 			}
 
-			payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(authHdr, "Basic "))
+			payload, err := base64.StdEncoding.DecodeString(payloadB64)
 			if err != nil {
 				return unauthorizedResponse(challengeHeader)
 			}

@@ -30,15 +30,12 @@ type slot struct {
 	next  uint16
 }
 
-/*
-A (forgetful) hash table to the data seen by the compressor, to
+/* A (forgetful) hash table to the data seen by the compressor, to
+   help create backward references to previous data.
 
-	help create backward references to previous data.
-
-	Hashes are stored in chains which are bucketed to groups. Group of chains
-	share a storage "bank". When more than "bank size" chain nodes are added,
-	oldest nodes are replaced; this way several chains may share a tail.
-*/
+   Hashes are stored in chains which are bucketed to groups. Group of chains
+   share a storage "bank". When more than "bank size" chain nodes are added,
+   oldest nodes are replaced; this way several chains may share a tail. */
 type hashForgetfulChain struct {
 	hasherCommon
 
@@ -62,7 +59,6 @@ func (h *hashForgetfulChain) Initialize(params *encoderParams) {
 	} else {
 		q = 8
 	}
-
 	h.max_hops = q << uint(params.quality-4)
 
 	bankSize := 1 << h.bankBits
@@ -70,12 +66,10 @@ func (h *hashForgetfulChain) Initialize(params *encoderParams) {
 
 	h.addr = make([]uint32, bucketSize)
 	h.head = make([]uint16, bucketSize)
-
 	h.banks = make([][]slot, h.numBanks)
 	for i := range h.banks {
 		h.banks[i] = make([]slot, bankSize)
 	}
-
 	h.free_slot_idx = make([]uint16, h.numBanks)
 }
 
@@ -111,42 +105,32 @@ func (h *hashForgetfulChain) Prepare(one_shot bool, input_size uint, data []byte
 	}
 }
 
-/*
-Look at 4 bytes at &data[ix & mask]. Compute a hash from these, and prepend
-
-	node to corresponding chain; also update tiny_hash for current position.
-*/
-func (h *hashForgetfulChain) Store(data []byte, mask, ix uint) {
-	var (
-		key  uint = h.HashBytes(data[ix&mask:])
-		bank uint = key & (h.numBanks - 1)
-	)
-
+/* Look at 4 bytes at &data[ix & mask]. Compute a hash from these, and prepend
+   node to corresponding chain; also update tiny_hash for current position. */
+func (h *hashForgetfulChain) Store(data []byte, mask uint, ix uint) {
+	var key uint = h.HashBytes(data[ix&mask:])
+	var bank uint = key & (h.numBanks - 1)
 	idx := uint(h.free_slot_idx[bank]) & ((1 << h.bankBits) - 1)
 	h.free_slot_idx[bank]++
-
 	var delta uint = ix - uint(h.addr[key])
-
 	h.tiny_hash[uint16(ix)] = byte(key)
-
 	if delta > 0xFFFF {
 		delta = 0xFFFF
 	}
-
 	h.banks[bank][idx].delta = uint16(delta)
 	h.banks[bank][idx].next = h.head[key]
 	h.addr[key] = uint32(ix)
 	h.head[key] = uint16(idx)
 }
 
-func (h *hashForgetfulChain) StoreRange(data []byte, mask, ix_start, ix_end uint) {
+func (h *hashForgetfulChain) StoreRange(data []byte, mask uint, ix_start uint, ix_end uint) {
 	var i uint
 	for i = ix_start; i < ix_end; i++ {
 		h.Store(data, mask, i)
 	}
 }
 
-func (h *hashForgetfulChain) StitchToPreviousBlock(num_bytes, position uint, ringbuffer []byte, ring_buffer_mask uint) {
+func (h *hashForgetfulChain) StitchToPreviousBlock(num_bytes uint, position uint, ringbuffer []byte, ring_buffer_mask uint) {
 	if num_bytes >= h.HashTypeLength()-1 && position >= 3 {
 		/* Prepare the hashes for three last bytes of the last write.
 		   These could not be calculated before, since they require knowledge
@@ -161,36 +145,24 @@ func (h *hashForgetfulChain) PrepareDistanceCache(distance_cache []int) {
 	prepareDistanceCache(distance_cache, h.numLastDistancesToCheck)
 }
 
-/*
-Find a longest backward match of &data[cur_ix] up to the length of
+/* Find a longest backward match of &data[cur_ix] up to the length of
+   max_length and stores the position cur_ix in the hash table.
 
-	max_length and stores the position cur_ix in the hash table.
+   REQUIRES: PrepareDistanceCachehashForgetfulChain must be invoked for current distance cache
+             values; if this method is invoked repeatedly with the same distance
+             cache values, it is enough to invoke PrepareDistanceCachehashForgetfulChain once.
 
-	REQUIRES: PrepareDistanceCachehashForgetfulChain must be invoked for current distance cache
-	          values; if this method is invoked repeatedly with the same distance
-	          cache values, it is enough to invoke PrepareDistanceCachehashForgetfulChain once.
-
-	Does not look for matches longer than max_length.
-	Does not look for matches further away than max_backward.
-	Writes the best match into |out|.
-	|out|->score is updated only if a better match is found.
-*/
-func (h *hashForgetfulChain) FindLongestMatch(
-	dictionary *encoderDictionary,
-	data []byte,
-	ring_buffer_mask uint,
-	distance_cache []int,
-	cur_ix, max_length, max_backward, gap, max_distance uint,
-	out *hasherSearchResult,
-) {
-	var (
-		cur_ix_masked uint = cur_ix & ring_buffer_mask
-		min_score     uint = out.score
-		best_score    uint = out.score
-		best_len      uint = out.len
-		key           uint = h.HashBytes(data[cur_ix_masked:])
-		tiny_hash     byte = byte(key)
-	)
+   Does not look for matches longer than max_length.
+   Does not look for matches further away than max_backward.
+   Writes the best match into |out|.
+   |out|->score is updated only if a better match is found. */
+func (h *hashForgetfulChain) FindLongestMatch(dictionary *encoderDictionary, data []byte, ring_buffer_mask uint, distance_cache []int, cur_ix uint, max_length uint, max_backward uint, gap uint, max_distance uint, out *hasherSearchResult) {
+	var cur_ix_masked uint = cur_ix & ring_buffer_mask
+	var min_score uint = out.score
+	var best_score uint = out.score
+	var best_len uint = out.len
+	var key uint = h.HashBytes(data[cur_ix_masked:])
+	var tiny_hash byte = byte(key)
 	/* Don't accept a short copy from far away. */
 	out.len = 0
 
@@ -198,16 +170,13 @@ func (h *hashForgetfulChain) FindLongestMatch(
 
 	/* Try last distance first. */
 	for i := 0; i < h.numLastDistancesToCheck; i++ {
-		var (
-			backward uint = uint(distance_cache[i])
-			prev_ix  uint = (cur_ix - backward)
-		)
+		var backward uint = uint(distance_cache[i])
+		var prev_ix uint = (cur_ix - backward)
 
 		/* For distance code 0 we want to consider 2-byte matches. */
 		if i > 0 && h.tiny_hash[uint16(prev_ix)] != tiny_hash {
 			continue
 		}
-
 		if prev_ix >= cur_ix || backward > max_backward {
 			continue
 		}
@@ -221,7 +190,6 @@ func (h *hashForgetfulChain) FindLongestMatch(
 					if i != 0 {
 						score -= backwardReferencePenaltyUsingLastDistance(uint(i))
 					}
-
 					if best_score < score {
 						best_score = score
 						best_len = uint(len)
@@ -233,42 +201,30 @@ func (h *hashForgetfulChain) FindLongestMatch(
 			}
 		}
 	}
-
 	{
-		var (
-			bank     uint = key & (h.numBanks - 1)
-			backward uint = 0
-			hops     uint = h.max_hops
-			delta    uint = cur_ix - uint(h.addr[key])
-			slot     uint = uint(h.head[key])
-		)
+		var bank uint = key & (h.numBanks - 1)
+		var backward uint = 0
+		var hops uint = h.max_hops
+		var delta uint = cur_ix - uint(h.addr[key])
+		var slot uint = uint(h.head[key])
 		for {
 			tmp6 := hops
 			hops--
-
 			if tmp6 == 0 {
 				break
 			}
-
-			var (
-				prev_ix uint
-				last    uint = slot
-			)
-
+			var prev_ix uint
+			var last uint = slot
 			backward += delta
 			if backward > max_backward {
 				break
 			}
-
 			prev_ix = (cur_ix - backward) & ring_buffer_mask
 			slot = uint(h.banks[bank][last].next)
 			delta = uint(h.banks[bank][last].delta)
-
-			if cur_ix_masked+best_len > ring_buffer_mask || prev_ix+best_len > ring_buffer_mask ||
-				data[cur_ix_masked+best_len] != data[prev_ix+best_len] {
+			if cur_ix_masked+best_len > ring_buffer_mask || prev_ix+best_len > ring_buffer_mask || data[cur_ix_masked+best_len] != data[prev_ix+best_len] {
 				continue
 			}
-
 			{
 				var len uint = findMatchLengthWithLimit(data[prev_ix:], data[cur_ix_masked:], max_length)
 				if len >= 4 {
@@ -291,15 +247,6 @@ func (h *hashForgetfulChain) FindLongestMatch(
 	}
 
 	if out.score == min_score {
-		searchInStaticDictionary(
-			dictionary,
-			h,
-			data[cur_ix_masked:],
-			max_length,
-			max_backward+gap,
-			max_distance,
-			out,
-			false,
-		)
+		searchInStaticDictionary(dictionary, h, data[cur_ix_masked:], max_length, max_backward+gap, max_distance, out, false)
 	}
 }

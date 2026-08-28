@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !windows
+//go:build (linux || darwin || dragonfly || freebsd || netbsd || openbsd) && !wasip1 && !js
 
 package prefork
 
@@ -10,9 +10,9 @@ import (
 	"context"
 	"net"
 	"syscall"
-)
 
-const soReusePort = 0x0F // unix.SO_REUSEPORT on Linux/Darwin
+	"golang.org/x/sys/unix"
+)
 
 // Listen creates a high-performance TCP listener configured with SO_REUSEPORT,
 // enabling multiple isolated worker processes to bind to the same listening port concurrently.
@@ -22,7 +22,7 @@ func Listen(network, address string) (net.Listener, error) {
 			var opErr error
 
 			err := c.Control(func(fd uintptr) {
-				opErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, soReusePort, 1)
+				opErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
 			})
 			if err != nil {
 				return err

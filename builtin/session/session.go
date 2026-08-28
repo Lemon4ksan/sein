@@ -9,6 +9,7 @@ package session
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -54,12 +55,7 @@ func (m *MemoryStore) Get(id string) (map[string]any, error) {
 		return nil, nil
 	}
 
-	copied := make(map[string]any, len(entry.data))
-	for k, v := range entry.data {
-		copied[k] = v
-	}
-
-	return copied, nil
+	return maps.Clone(entry.data), nil
 }
 
 // Set stores session data in memory.
@@ -67,13 +63,8 @@ func (m *MemoryStore) Set(id string, data map[string]any, ttl time.Duration) err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	copied := make(map[string]any, len(data))
-	for k, v := range data {
-		copied[k] = v
-	}
-
 	m.entries[id] = memoryEntry{
-		data:      copied,
+		data:      maps.Clone(data),
 		expiresAt: time.Now().Add(ttl),
 	}
 
@@ -306,10 +297,7 @@ func New(opts ...Option) sein.Middleware {
 			// Extract flashes
 			flashes := make(map[string]any)
 			if f, ok := existingData["_flashes"].(map[string]any); ok {
-				for k, v := range f {
-					flashes[k] = v
-				}
-
+				maps.Copy(flashes, f)
 				delete(existingData, "_flashes")
 			}
 
@@ -348,9 +336,9 @@ func New(opts ...Option) sein.Middleware {
 			}
 
 			if sess.modified || isNew || len(flashes) > 0 {
-				dataToSave := make(map[string]any, len(sess.data)+1)
-				for k, v := range sess.data {
-					dataToSave[k] = v
+				dataToSave := maps.Clone(sess.data)
+				if dataToSave == nil {
+					dataToSave = make(map[string]any)
 				}
 
 				if len(sess.freshFlashes) > 0 {

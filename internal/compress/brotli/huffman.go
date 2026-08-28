@@ -10,11 +10,8 @@ package brotli
 
 const huffmanMaxCodeLength = 15
 
-/*
-Maximum possible Huffman table size for an alphabet size of (index * 32),
-
-	max code length 15 and root table bits 8.
-*/
+/* Maximum possible Huffman table size for an alphabet size of (index * 32),
+   max code length 15 and root table bits 8. */
 var kMaxHuffmanTableSize = []uint16{
 	256,
 	402,
@@ -75,10 +72,8 @@ type huffmanCode struct {
 
 func constructHuffmanCode(bits byte, value uint16) huffmanCode {
 	var h huffmanCode
-
 	h.bits = bits
 	h.value = value
-
 	return h
 }
 
@@ -368,22 +363,18 @@ var kReverseBits = [1 << reverseBitsMax]byte{
 
 const reverseBitsLowest = (uint64(1) << (reverseBitsMax - 1 + reverseBitsBase))
 
-/*
-Returns reverse(num >> BROTLI_REVERSE_BITS_BASE, BROTLI_REVERSE_BITS_MAX),
-
-	where reverse(value, len) is the bit-wise reversal of the len least
-	significant bits of value.
-*/
+/* Returns reverse(num >> BROTLI_REVERSE_BITS_BASE, BROTLI_REVERSE_BITS_MAX),
+   where reverse(value, len) is the bit-wise reversal of the len least
+   significant bits of value. */
 func reverseBits8(num uint64) uint64 {
 	return uint64(kReverseBits[num])
 }
 
 /* Stores code in table[0], table[step], table[2*step], ..., table[end] */
 /* Assumes that end is an integer multiple of step */
-func replicateValue(table []huffmanCode, step, end int, code huffmanCode) {
+func replicateValue(table []huffmanCode, step int, end int, code huffmanCode) {
 	for {
 		end -= step
-
 		table[end] = code
 		if end <= 0 {
 			break
@@ -391,20 +382,16 @@ func replicateValue(table []huffmanCode, step, end int, code huffmanCode) {
 	}
 }
 
-/*
-Returns the table width of the next 2nd level table. |count| is the histogram
-
-	of bit lengths for the remaining symbols, |len| is the code length of the
-	next processed symbol.
-*/
-func nextTableBitSize(count []uint16, len, root_bits int) int {
+/* Returns the table width of the next 2nd level table. |count| is the histogram
+   of bit lengths for the remaining symbols, |len| is the code length of the
+   next processed symbol. */
+func nextTableBitSize(count []uint16, len int, root_bits int) int {
 	var left int = 1 << uint(len-root_bits)
 	for len < huffmanMaxCodeLength {
 		left -= int(count[len])
 		if left <= 0 {
 			break
 		}
-
 		len++
 		left <<= 1
 	}
@@ -414,18 +401,15 @@ func nextTableBitSize(count []uint16, len, root_bits int) int {
 
 func buildCodeLengthsHuffmanTable(table []huffmanCode, code_lengths []byte, count []uint16) {
 	var code huffmanCode /* current table entry */ /* symbol index in original or sorted table */ /* prefix code */ /* prefix code addend */ /* step size to replicate values in current table */ /* size of current table */ /* symbols sorted by code length */
-
-	var (
-		symbol     int
-		key        uint64
-		key_step   uint64
-		step       int
-		table_size int
-		sorted     [codeLengthCodes]int
-		offset     [huffmanMaxCodeLengthCodeLength + 1]int
-		bits       int
-		bits_count int
-	)
+	var symbol int
+	var key uint64
+	var key_step uint64
+	var step int
+	var table_size int
+	var sorted [codeLengthCodes]int
+	var offset [huffmanMaxCodeLengthCodeLength + 1]int
+	var bits int
+	var bits_count int
 	/* offsets in sorted table for each length */
 	assert(huffmanMaxCodeLengthCodeLength <= reverseBitsMax)
 
@@ -433,7 +417,6 @@ func buildCodeLengthsHuffmanTable(table []huffmanCode, code_lengths []byte, coun
 	symbol = -1
 
 	bits = 1
-
 	var i int
 	for i = 0; i < huffmanMaxCodeLengthCodeLength; i++ {
 		symbol += int(count[bits])
@@ -454,7 +437,6 @@ func buildCodeLengthsHuffmanTable(table []huffmanCode, code_lengths []byte, coun
 			sorted[offset[code_lengths[symbol]]] = symbol
 			offset[code_lengths[symbol]]--
 		}
-
 		if symbol == 0 {
 			break
 		}
@@ -478,20 +460,17 @@ func buildCodeLengthsHuffmanTable(table []huffmanCode, code_lengths []byte, coun
 	key_step = reverseBitsLowest
 	symbol = 0
 	bits = 1
-
 	step = 2
 	for {
 		for bits_count = int(count[bits]); bits_count != 0; bits_count-- {
 			code = constructHuffmanCode(byte(bits), uint16(sorted[symbol]))
 			symbol++
-
 			replicateValue(table[reverseBits8(key):], step, table_size, code)
 			key += key_step
 		}
 
 		step <<= 1
 		key_step >>= 1
-
 		bits++
 		if bits > huffmanMaxCodeLengthCodeLength {
 			break
@@ -501,23 +480,20 @@ func buildCodeLengthsHuffmanTable(table []huffmanCode, code_lengths []byte, coun
 
 func buildHuffmanTable(root_table []huffmanCode, root_bits int, symbol_lists symbolList, count []uint16) uint32 {
 	var code huffmanCode /* current table entry */ /* next available space in table */ /* current code length */ /* symbol index in original or sorted table */ /* prefix code */ /* prefix code addend */ /* 2nd level table prefix code */ /* 2nd level table prefix code addend */ /* step size to replicate values in current table */ /* key length of current table */ /* size of current table */ /* sum of root table size and 2nd level table sizes */
-
-	var (
-		table        []huffmanCode
-		len          int
-		symbol       int
-		key          uint64
-		key_step     uint64
-		sub_key      uint64
-		sub_key_step uint64
-		step         int
-		table_bits   int
-		table_size   int
-		total_size   int
-		max_length   int = -1
-		bits         int
-		bits_count   int
-	)
+	var table []huffmanCode
+	var len int
+	var symbol int
+	var key uint64
+	var key_step uint64
+	var sub_key uint64
+	var sub_key_step uint64
+	var step int
+	var table_bits int
+	var table_size int
+	var total_size int
+	var max_length int = -1
+	var bits int
+	var bits_count int
 
 	assert(root_bits <= reverseBitsMax)
 	assert(huffmanMaxCodeLength-root_bits <= reverseBitsMax)
@@ -525,7 +501,6 @@ func buildHuffmanTable(root_table []huffmanCode, root_bits int, symbol_lists sym
 	for symbolListGet(symbol_lists, max_length) == 0xFFFF {
 		max_length--
 	}
-
 	max_length += huffmanMaxCodeLength + 1
 
 	table = root_table
@@ -543,7 +518,6 @@ func buildHuffmanTable(root_table []huffmanCode, root_bits int, symbol_lists sym
 	key = 0
 	key_step = reverseBitsLowest
 	bits = 1
-
 	step = 2
 	for {
 		symbol = bits - (huffmanMaxCodeLength + 1)
@@ -556,7 +530,6 @@ func buildHuffmanTable(root_table []huffmanCode, root_bits int, symbol_lists sym
 
 		step <<= 1
 		key_step >>= 1
-
 		bits++
 		if bits > table_bits {
 			break
@@ -575,7 +548,6 @@ func buildHuffmanTable(root_table []huffmanCode, root_bits int, symbol_lists sym
 	sub_key = reverseBitsLowest << 1
 	sub_key_step = reverseBitsLowest
 	len = root_bits + 1
-
 	step = 2
 	for ; len <= max_length; len++ {
 		symbol = len - (huffmanMaxCodeLength + 1)
@@ -587,10 +559,7 @@ func buildHuffmanTable(root_table []huffmanCode, root_bits int, symbol_lists sym
 				total_size += table_size
 				sub_key = reverseBits8(key)
 				key += key_step
-				root_table[sub_key] = constructHuffmanCode(
-					byte(table_bits+root_bits),
-					uint16(uint64(uint(-cap(table)+cap(root_table)))-sub_key),
-				)
+				root_table[sub_key] = constructHuffmanCode(byte(table_bits+root_bits), uint16(uint64(uint(-cap(table)+cap(root_table)))-sub_key))
 				sub_key = 0
 			}
 
@@ -608,11 +577,8 @@ func buildHuffmanTable(root_table []huffmanCode, root_bits int, symbol_lists sym
 }
 
 func buildSimpleHuffmanTable(table []huffmanCode, root_bits int, val []uint16, num_symbols uint32) uint32 {
-	var (
-		table_size uint32 = 1
-		goal_size  uint32 = 1 << uint(root_bits)
-	)
-
+	var table_size uint32 = 1
+	var goal_size uint32 = 1 << uint(root_bits)
 	switch num_symbols {
 	case 0:
 		table[0] = constructHuffmanCode(0, val[0])
@@ -630,7 +596,6 @@ func buildSimpleHuffmanTable(table []huffmanCode, root_bits int, val []uint16, n
 
 	case 2:
 		table[0] = constructHuffmanCode(1, val[0])
-
 		table[2] = constructHuffmanCode(1, val[0])
 		if val[2] > val[1] {
 			table[1] = constructHuffmanCode(2, val[1])
@@ -643,15 +608,12 @@ func buildSimpleHuffmanTable(table []huffmanCode, root_bits int, val []uint16, n
 		table_size = 4
 
 	case 3:
-		var (
-			i int
-			k int
-		)
+		var i int
+		var k int
 		for i = 0; i < 3; i++ {
 			for k = i + 1; k < 4; k++ {
 				if val[k] < val[i] {
 					var t uint16 = val[k]
-
 					val[k] = val[i]
 					val[i] = t
 				}
@@ -667,7 +629,6 @@ func buildSimpleHuffmanTable(table []huffmanCode, root_bits int, val []uint16, n
 	case 4:
 		if val[3] < val[2] {
 			var t uint16 = val[3]
-
 			val[3] = val[2]
 			val[2] = t
 		}

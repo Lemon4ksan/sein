@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 
 	"github.com/lemon4ksan/sein"
@@ -71,10 +72,7 @@ func New(config ...Config) sein.Middleware {
 	allowHeadersHeader := strings.Join(cfg.AllowHeaders, ", ")
 	exposeHeadersHeader := strings.Join(cfg.ExposeHeaders, ", ")
 
-	maxAgeHeader := ""
-	if cfg.MaxAge > 0 {
-		maxAgeHeader = strconv.Itoa(cfg.MaxAge)
-	}
+	maxAgeHeader := generic.Ternary(cfg.MaxAge > 0, strconv.Itoa(cfg.MaxAge), "")
 
 	allowAllOrigins := len(cfg.AllowOrigins) == 1 && cfg.AllowOrigins[0] == "*"
 
@@ -89,17 +87,10 @@ func New(config ...Config) sein.Middleware {
 			// Validate origin
 			matchedOrigin := ""
 			if allowAllOrigins {
-				if cfg.AllowCredentials {
-					matchedOrigin = origin
-				} else {
-					matchedOrigin = "*"
-				}
+				matchedOrigin = generic.Ternary(cfg.AllowCredentials, origin, "*")
 			} else {
-				for _, allowed := range cfg.AllowOrigins {
-					if matchOrigin(allowed, origin) {
-						matchedOrigin = origin
-						break
-					}
+				if generic.Any(cfg.AllowOrigins, func(allowed string) bool { return matchOrigin(allowed, origin) }) {
+					matchedOrigin = origin
 				}
 			}
 

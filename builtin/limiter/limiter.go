@@ -5,6 +5,7 @@
 package limiter
 
 import (
+	"maps"
 	"net/http"
 	"strconv"
 	"sync"
@@ -89,11 +90,9 @@ func (rl *rateLimiter) allow(key string) (allowed bool, remaining, resetInSecs i
 		if !exists {
 			// Periodic cleanup if shard map grows beyond capacity
 			if len(shard.entries) > 2048 {
-				for k, v := range shard.entries {
-					if now >= atomic.LoadInt64(&v.resetTime) {
-						delete(shard.entries, k)
-					}
-				}
+				maps.DeleteFunc(shard.entries, func(_ string, v *bucket) bool {
+					return now >= atomic.LoadInt64(&v.resetTime)
+				})
 			}
 
 			b = &bucket{

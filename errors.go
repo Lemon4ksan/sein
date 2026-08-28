@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/lemon4ksan/foundation/generic"
 )
 
 // DomainError is the standard interface for typed business domain errors.
@@ -51,11 +53,7 @@ func DefineError(status int, code, message string) DefinedError {
 }
 
 func resolveMessage(code string, message ...string) string {
-	if len(message) > 0 && message[0] != "" {
-		return message[0]
-	}
-
-	return code
+	return generic.Ternary(len(message) > 0 && message[0] != "", message[0], code)
 }
 
 // Core framework sentinels (exported, customizable, checkable via errors.Is)
@@ -172,16 +170,11 @@ func (e HTTPError) Unwrap() error {
 
 // NewError creates a custom semantic HTTPError.
 func NewError(status int, message string, cause ...error) HTTPError {
-	var c error
-	if len(cause) > 0 {
-		c = cause[0]
-	}
-
 	return HTTPError{
 		Status:  status,
 		Code:    http.StatusText(status),
 		Message: message,
-		Cause:   c,
+		Cause:   generic.Ternary(len(cause) > 0, cause[0], nil),
 	}
 }
 

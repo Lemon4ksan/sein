@@ -10,6 +10,8 @@ import (
 	"iter"
 	"reflect"
 
+	"github.com/lemon4ksan/foundation/generic"
+
 	"github.com/lemon4ksan/sein/internal/binder"
 )
 
@@ -109,12 +111,7 @@ func compileUniversalHandler(fn any, routePath string) RawHandler {
 				return nil, mapBinderError(err)
 			}
 
-			var inVal reflect.Value
-			if isPtr {
-				inVal = destVal
-			} else {
-				inVal = destVal.Elem()
-			}
+			inVal := generic.Ternary(isPtr, destVal, destVal.Elem())
 
 			results := val.Call([]reflect.Value{
 				reflect.ValueOf(req.Context()),
@@ -162,12 +159,7 @@ func compileUniversalHandler(fn any, routePath string) RawHandler {
 				return nil, mapBinderError(err)
 			}
 
-			var p1In reflect.Value
-			if p1IsPtr {
-				p1In = p1Dest
-			} else {
-				p1In = p1Dest.Elem()
-			}
+			p1In := generic.Ternary(p1IsPtr, p1Dest, p1Dest.Elem())
 
 			// Bind P2 from body/query
 			p2Dest := reflect.New(p2ElemType)
@@ -175,12 +167,7 @@ func compileUniversalHandler(fn any, routePath string) RawHandler {
 				return nil, mapBinderError(err)
 			}
 
-			var p2In reflect.Value
-			if p2IsPtr {
-				p2In = p2Dest
-			} else {
-				p2In = p2Dest.Elem()
-			}
+			p2In := generic.Ternary(p2IsPtr, p2Dest, p2Dest.Elem())
 
 			results := val.Call([]reflect.Value{
 				reflect.ValueOf(req.Context()),
@@ -220,12 +207,7 @@ func compileUniversalHandler(fn any, routePath string) RawHandler {
 				return nil, mapBinderError(err)
 			}
 
-			var inVal reflect.Value
-			if isPtr {
-				inVal = destVal
-			} else {
-				inVal = destVal.Elem()
-			}
+			inVal := generic.Ternary(isPtr, destVal, destVal.Elem())
 
 			results := val.Call([]reflect.Value{
 				reflect.ValueOf(req),
@@ -251,10 +233,7 @@ func compileUniversalHandler(fn any, routePath string) RawHandler {
 
 func routeUniversal(r RouteBuilder, method, path string, handler any, mw ...Middleware) {
 	compiled := compileUniversalHandler(handler, path)
-	var ht reflect.Type
-	if handler != nil {
-		ht = reflect.TypeOf(handler)
-	}
+	ht := generic.Ternary(handler != nil, reflect.TypeOf(handler), nil)
 	r.registerRouteWithType(method, path, compiled, ht, mw...)
 }
 

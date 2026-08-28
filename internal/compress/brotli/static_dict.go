@@ -14,11 +14,10 @@ const maxStaticDictionaryMatchLen = 37
 
 const kInvalidMatch uint32 = 0xFFFFFFF
 
-/*
-Copyright 2013 Google Inc. All Rights Reserved.
+/* Copyright 2013 Google Inc. All Rights Reserved.
 
-	Distributed under MIT license.
-	See file LICENSE for detail or copy at https://opensource.org/licenses/MIT
+   Distributed under MIT license.
+   See file LICENSE for detail or copy at https://opensource.org/licenses/MIT
 */
 func hash(data []byte) uint32 {
 	var h uint32 = binary.LittleEndian.Uint32(data) * kDictHashMul32
@@ -28,13 +27,12 @@ func hash(data []byte) uint32 {
 	return h >> uint(32-kDictNumBits)
 }
 
-func addMatch(distance, len, len_code uint, matches []uint32) {
+func addMatch(distance uint, len uint, len_code uint, matches []uint32) {
 	var match uint32 = uint32((distance << 5) + len_code)
-
 	matches[len] = brotli_min_uint32_t(matches[len], match)
 }
 
-func dictMatchLength(dict *dictionary, data []byte, id, len, maxlen uint) uint {
+func dictMatchLength(dict *dictionary, data []byte, id uint, len uint, maxlen uint) uint {
 	var offset uint = uint(dict.offsets_by_length[len]) + len*id
 	return findMatchLengthWithLimit(dict.data[offset:], data, brotli_min_size_t(uint(len), maxlen))
 }
@@ -43,18 +41,15 @@ func isMatch(d *dictionary, w dictWord, data []byte, max_length uint) bool {
 	if uint(w.len) > max_length {
 		return false
 	} else {
-		var (
-			offset uint   = uint(d.offsets_by_length[w.len]) + uint(w.len)*uint(w.idx)
-			dict   []byte = d.data[offset:]
-		)
+		var offset uint = uint(d.offsets_by_length[w.len]) + uint(w.len)*uint(w.idx)
+		var dict []byte = d.data[offset:]
 		if w.transform == 0 {
 			/* Match against base dictionary word. */
 			return findMatchLengthWithLimit(dict, data, uint(w.len)) == uint(w.len)
 		} else if w.transform == 10 {
 			/* Match against uppercase first transform.
 			   Note that there are only ASCII uppercase words in the lookup table. */
-			return dict[0] >= 'a' && dict[0] <= 'z' && (dict[0]^32) == data[0] &&
-				findMatchLengthWithLimit(dict[1:], data[1:], uint(w.len)-1) == uint(w.len-1)
+			return dict[0] >= 'a' && dict[0] <= 'z' && (dict[0]^32) == data[0] && findMatchLengthWithLimit(dict[1:], data[1:], uint(w.len)-1) == uint(w.len-1)
 		} else {
 			/* Match against uppercase all transform.
 			   Note that there are only ASCII uppercase words in the lookup table. */
@@ -76,44 +71,29 @@ func isMatch(d *dictionary, w dictWord, data []byte, max_length uint) bool {
 	}
 }
 
-func findAllStaticDictionaryMatches(
-	dict *encoderDictionary,
-	data []byte,
-	min_length, max_length uint,
-	matches []uint32,
-) bool {
+func findAllStaticDictionaryMatches(dict *encoderDictionary, data []byte, min_length uint, max_length uint, matches []uint32) bool {
 	var has_found_match bool = false
 	{
-		var (
-			offset uint = uint(dict.buckets[hash(data)])
-			end    bool = offset == 0
-		)
+		var offset uint = uint(dict.buckets[hash(data)])
+		var end bool = offset == 0
 		for !end {
 			w := dict.dict_words[offset]
 			offset++
-
-			var (
-				l  uint = uint(w.len) & 0x1F
-				n  uint = uint(1) << dict.words.size_bits_by_length[l]
-				id uint = uint(w.idx)
-			)
-
+			var l uint = uint(w.len) & 0x1F
+			var n uint = uint(1) << dict.words.size_bits_by_length[l]
+			var id uint = uint(w.idx)
 			end = !(w.len&0x80 == 0)
-
 			w.len = byte(l)
 			if w.transform == 0 {
-				var (
-					matchlen uint = dictMatchLength(dict.words, data, id, l, max_length)
-					s        []byte
-					minlen   uint
-					maxlen   uint
-					len      uint
-				)
+				var matchlen uint = dictMatchLength(dict.words, data, id, l, max_length)
+				var s []byte
+				var minlen uint
+				var maxlen uint
+				var len uint
 
 				/* Transform "" + BROTLI_TRANSFORM_IDENTITY + "" */
 				if matchlen == l {
 					addMatch(id, l, l, matches)
-
 					has_found_match = true
 				}
 
@@ -121,7 +101,6 @@ func findAllStaticDictionaryMatches(
 				   "" + BROTLI_TRANSFORM_OMIT_LAST_1 + "ing " */
 				if matchlen >= l-1 {
 					addMatch(id+12*n, l-1, l, matches)
-
 					if l+2 < max_length && data[l-1] == 'i' && data[l] == 'n' && data[l+1] == 'g' && data[l+2] == ' ' {
 						addMatch(id+49*n, l+3, l, matches)
 					}
@@ -135,15 +114,11 @@ func findAllStaticDictionaryMatches(
 				if l > 9 {
 					minlen = brotli_max_size_t(minlen, l-9)
 				}
-
 				maxlen = brotli_min_size_t(matchlen, l-2)
 				for len = minlen; len <= maxlen; len++ {
-					var (
-						cut          uint = l - len
-						transform_id uint = (cut << 2) + uint((dict.cutoffTransforms>>(cut*6))&0x3F)
-					)
+					var cut uint = l - len
+					var transform_id uint = (cut << 2) + uint((dict.cutoffTransforms>>(cut*6))&0x3F)
 					addMatch(id+transform_id*n, uint(len), l, matches)
-
 					has_found_match = true
 				}
 
@@ -156,7 +131,6 @@ func findAllStaticDictionaryMatches(
 				/* Transforms "" + BROTLI_TRANSFORM_IDENTITY + <suffix> */
 				if s[0] == ' ' {
 					addMatch(id+n, l+1, l, matches)
-
 					if s[1] == 'a' {
 						if s[2] == ' ' {
 							addMatch(id+28*n, l+3, l, matches)
@@ -234,16 +208,13 @@ func findAllStaticDictionaryMatches(
 					}
 				} else if s[0] == '"' {
 					addMatch(id+19*n, l+1, l, matches)
-
 					if s[1] == '>' {
 						addMatch(id+21*n, l+2, l, matches)
 					}
 				} else if s[0] == '.' {
 					addMatch(id+20*n, l+1, l, matches)
-
 					if s[1] == ' ' {
 						addMatch(id+31*n, l+2, l, matches)
-
 						if s[2] == 'T' && s[3] == 'h' {
 							if s[4] == 'e' {
 								if s[5] == ' ' {
@@ -258,13 +229,11 @@ func findAllStaticDictionaryMatches(
 					}
 				} else if s[0] == ',' {
 					addMatch(id+76*n, l+1, l, matches)
-
 					if s[1] == ' ' {
 						addMatch(id+14*n, l+2, l, matches)
 					}
 				} else if s[0] == '\n' {
 					addMatch(id+22*n, l+1, l, matches)
-
 					if s[1] == '\t' {
 						addMatch(id+50*n, l+2, l, matches)
 					}
@@ -336,7 +305,6 @@ func findAllStaticDictionaryMatches(
 				transform. */
 
 				var s []byte
-
 				if !isMatch(dict.words, w, data, max_length) {
 					continue
 				}
@@ -348,11 +316,9 @@ func findAllStaticDictionaryMatches(
 				} else {
 					tmp = 9
 				}
-
 				addMatch(id+uint(tmp)*n, l, l, matches)
 
 				has_found_match = true
-
 				if l+1 >= max_length {
 					continue
 				}
@@ -367,7 +333,6 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 4
 					}
-
 					addMatch(id+uint(tmp)*n, l+1, l, matches)
 				} else if s[0] == '"' {
 					var tmp int
@@ -376,9 +341,7 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 66
 					}
-
 					addMatch(id+uint(tmp)*n, l+1, l, matches)
-
 					if s[1] == '>' {
 						var tmp int
 						if is_all_caps {
@@ -386,7 +349,6 @@ func findAllStaticDictionaryMatches(
 						} else {
 							tmp = 69
 						}
-
 						addMatch(id+uint(tmp)*n, l+2, l, matches)
 					}
 				} else if s[0] == '.' {
@@ -396,9 +358,7 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 79
 					}
-
 					addMatch(id+uint(tmp)*n, l+1, l, matches)
-
 					if s[1] == ' ' {
 						var tmp int
 						if is_all_caps {
@@ -406,7 +366,6 @@ func findAllStaticDictionaryMatches(
 						} else {
 							tmp = 88
 						}
-
 						addMatch(id+uint(tmp)*n, l+2, l, matches)
 					}
 				} else if s[0] == ',' {
@@ -416,9 +375,7 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 99
 					}
-
 					addMatch(id+uint(tmp)*n, l+1, l, matches)
-
 					if s[1] == ' ' {
 						var tmp int
 						if is_all_caps {
@@ -426,7 +383,6 @@ func findAllStaticDictionaryMatches(
 						} else {
 							tmp = 58
 						}
-
 						addMatch(id+uint(tmp)*n, l+2, l, matches)
 					}
 				} else if s[0] == '\'' {
@@ -436,7 +392,6 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 74
 					}
-
 					addMatch(id+uint(tmp)*n, l+1, l, matches)
 				} else if s[0] == '(' {
 					var tmp int
@@ -445,7 +400,6 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 78
 					}
-
 					addMatch(id+uint(tmp)*n, l+1, l, matches)
 				} else if s[0] == '=' {
 					if s[1] == '"' {
@@ -455,7 +409,6 @@ func findAllStaticDictionaryMatches(
 						} else {
 							tmp = 104
 						}
-
 						addMatch(id+uint(tmp)*n, l+2, l, matches)
 					} else if s[1] == '\'' {
 						var tmp int
@@ -464,7 +417,6 @@ func findAllStaticDictionaryMatches(
 						} else {
 							tmp = 108
 						}
-
 						addMatch(id+uint(tmp)*n, l+2, l, matches)
 					}
 				}
@@ -474,27 +426,19 @@ func findAllStaticDictionaryMatches(
 
 	/* Transforms with prefixes " " and "." */
 	if max_length >= 5 && (data[0] == ' ' || data[0] == '.') {
-		var (
-			is_space bool = (data[0] == ' ')
-			offset   uint = uint(dict.buckets[hash(data[1:])])
-			end      bool = offset == 0
-		)
+		var is_space bool = (data[0] == ' ')
+		var offset uint = uint(dict.buckets[hash(data[1:])])
+		var end bool = offset == 0
 		for !end {
 			w := dict.dict_words[offset]
 			offset++
-
-			var (
-				l  uint = uint(w.len) & 0x1F
-				n  uint = uint(1) << dict.words.size_bits_by_length[l]
-				id uint = uint(w.idx)
-			)
-
+			var l uint = uint(w.len) & 0x1F
+			var n uint = uint(1) << dict.words.size_bits_by_length[l]
+			var id uint = uint(w.idx)
 			end = !(w.len&0x80 == 0)
-
 			w.len = byte(l)
 			if w.transform == 0 {
 				var s []byte
-
 				if !isMatch(dict.words, w, data[1:], max_length-1) {
 					continue
 				}
@@ -507,11 +451,9 @@ func findAllStaticDictionaryMatches(
 				} else {
 					tmp = 32
 				}
-
 				addMatch(id+uint(tmp)*n, l+1, l, matches)
 
 				has_found_match = true
-
 				if l+2 >= max_length {
 					continue
 				}
@@ -528,7 +470,6 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 77
 					}
-
 					addMatch(id+uint(tmp)*n, l+2, l, matches)
 				} else if s[0] == '(' {
 					var tmp int
@@ -537,18 +478,15 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 67
 					}
-
 					addMatch(id+uint(tmp)*n, l+2, l, matches)
 				} else if is_space {
 					if s[0] == ',' {
 						addMatch(id+103*n, l+2, l, matches)
-
 						if s[1] == ' ' {
 							addMatch(id+33*n, l+3, l, matches)
 						}
 					} else if s[0] == '.' {
 						addMatch(id+71*n, l+2, l, matches)
-
 						if s[1] == ' ' {
 							addMatch(id+52*n, l+3, l, matches)
 						}
@@ -567,7 +505,6 @@ func findAllStaticDictionaryMatches(
 				transform. */
 
 				var s []byte
-
 				if !isMatch(dict.words, w, data[1:], max_length-1) {
 					continue
 				}
@@ -579,11 +516,9 @@ func findAllStaticDictionaryMatches(
 				} else {
 					tmp = 30
 				}
-
 				addMatch(id+uint(tmp)*n, l+1, l, matches)
 
 				has_found_match = true
-
 				if l+2 >= max_length {
 					continue
 				}
@@ -598,7 +533,6 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 15
 					}
-
 					addMatch(id+uint(tmp)*n, l+2, l, matches)
 				} else if s[0] == ',' {
 					if !is_all_caps {
@@ -612,7 +546,6 @@ func findAllStaticDictionaryMatches(
 						} else {
 							tmp = 65
 						}
-
 						addMatch(id+uint(tmp)*n, l+3, l, matches)
 					}
 				} else if s[0] == '.' {
@@ -622,9 +555,7 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 96
 					}
-
 					addMatch(id+uint(tmp)*n, l+2, l, matches)
-
 					if s[1] == ' ' {
 						var tmp int
 						if is_all_caps {
@@ -632,7 +563,6 @@ func findAllStaticDictionaryMatches(
 						} else {
 							tmp = 91
 						}
-
 						addMatch(id+uint(tmp)*n, l+3, l, matches)
 					}
 				} else if s[0] == '=' {
@@ -643,7 +573,6 @@ func findAllStaticDictionaryMatches(
 						} else {
 							tmp = 118
 						}
-
 						addMatch(id+uint(tmp)*n, l+3, l, matches)
 					} else if s[1] == '\'' {
 						var tmp int
@@ -652,7 +581,6 @@ func findAllStaticDictionaryMatches(
 						} else {
 							tmp = 120
 						}
-
 						addMatch(id+uint(tmp)*n, l+3, l, matches)
 					}
 				}
@@ -662,29 +590,20 @@ func findAllStaticDictionaryMatches(
 
 	if max_length >= 6 {
 		/* Transforms with prefixes "e ", "s ", ", " and "\xC2\xA0" */
-		if (data[1] == ' ' && (data[0] == 'e' || data[0] == 's' || data[0] == ',')) ||
-			(data[0] == 0xC2 && data[1] == 0xA0) {
-			var (
-				offset uint = uint(dict.buckets[hash(data[2:])])
-				end    bool = offset == 0
-			)
+		if (data[1] == ' ' && (data[0] == 'e' || data[0] == 's' || data[0] == ',')) || (data[0] == 0xC2 && data[1] == 0xA0) {
+			var offset uint = uint(dict.buckets[hash(data[2:])])
+			var end bool = offset == 0
 			for !end {
 				w := dict.dict_words[offset]
 				offset++
-
-				var (
-					l  uint = uint(w.len) & 0x1F
-					n  uint = uint(1) << dict.words.size_bits_by_length[l]
-					id uint = uint(w.idx)
-				)
-
+				var l uint = uint(w.len) & 0x1F
+				var n uint = uint(1) << dict.words.size_bits_by_length[l]
+				var id uint = uint(w.idx)
 				end = !(w.len&0x80 == 0)
-
 				w.len = byte(l)
 				if w.transform == 0 && isMatch(dict.words, w, data[2:], max_length-2) {
 					if data[0] == 0xC2 {
 						addMatch(id+102*n, l+2, l, matches)
-
 						has_found_match = true
 					} else if l+2 < max_length && data[l+2] == ' ' {
 						var t uint = 13
@@ -693,9 +612,7 @@ func findAllStaticDictionaryMatches(
 						} else if data[0] == 's' {
 							t = 7
 						}
-
 						addMatch(id+t*n, l+3, l, matches)
-
 						has_found_match = true
 					}
 				}
@@ -705,24 +622,16 @@ func findAllStaticDictionaryMatches(
 
 	if max_length >= 9 {
 		/* Transforms with prefixes " the " and ".com/" */
-		if (data[0] == ' ' && data[1] == 't' && data[2] == 'h' && data[3] == 'e' && data[4] == ' ') ||
-			(data[0] == '.' && data[1] == 'c' && data[2] == 'o' && data[3] == 'm' && data[4] == '/') {
-			var (
-				offset uint = uint(dict.buckets[hash(data[5:])])
-				end    bool = offset == 0
-			)
+		if (data[0] == ' ' && data[1] == 't' && data[2] == 'h' && data[3] == 'e' && data[4] == ' ') || (data[0] == '.' && data[1] == 'c' && data[2] == 'o' && data[3] == 'm' && data[4] == '/') {
+			var offset uint = uint(dict.buckets[hash(data[5:])])
+			var end bool = offset == 0
 			for !end {
 				w := dict.dict_words[offset]
 				offset++
-
-				var (
-					l  uint = uint(w.len) & 0x1F
-					n  uint = uint(1) << dict.words.size_bits_by_length[l]
-					id uint = uint(w.idx)
-				)
-
+				var l uint = uint(w.len) & 0x1F
+				var n uint = uint(1) << dict.words.size_bits_by_length[l]
+				var id uint = uint(w.idx)
 				end = !(w.len&0x80 == 0)
-
 				w.len = byte(l)
 				if w.transform == 0 && isMatch(dict.words, w, data[5:], max_length-5) {
 					var tmp int
@@ -731,17 +640,13 @@ func findAllStaticDictionaryMatches(
 					} else {
 						tmp = 72
 					}
-
 					addMatch(id+uint(tmp)*n, l+5, l, matches)
-
 					has_found_match = true
-
 					if l+5 < max_length {
 						var s []byte = data[l+5:]
 						if data[0] == ' ' {
 							if l+8 < max_length && s[0] == ' ' && s[1] == 'o' && s[2] == 'f' && s[3] == ' ' {
 								addMatch(id+62*n, l+9, l, matches)
-
 								if l+12 < max_length && s[4] == 't' && s[5] == 'h' && s[6] == 'e' && s[7] == ' ' {
 									addMatch(id+73*n, l+13, l, matches)
 								}

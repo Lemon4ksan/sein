@@ -18,6 +18,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/lemon4ksan/foundation/generic"
+
 	"golang.org/x/crypto/ssh"
 )
 
@@ -96,10 +98,7 @@ func (s *Server) SetSubsystem(name string, handler SubsystemHandler) {
 
 // ListenAndServe starts listening on s.Addr and serves incoming SSH connections.
 func (s *Server) ListenAndServe() error {
-	addr := s.Addr
-	if addr == "" {
-		addr = ":22"
-	}
+	addr := generic.Coalesce(s.Addr, ":22")
 
 	var lc net.ListenConfig
 	l, err := lc.Listen(context.Background(), "tcp", addr)

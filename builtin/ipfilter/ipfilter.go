@@ -10,19 +10,22 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
+
+	"github.com/lemon4ksan/foundation/generic"
 
 	"github.com/lemon4ksan/sein"
 )
 
 type ipMatcher struct {
-	exactIPs map[string]struct{}
+	exactIPs generic.Set[string]
 	cidrs    []*net.IPNet
 }
 
 func newIPMatcher(rules []string) (*ipMatcher, error) {
 	matcher := &ipMatcher{
-		exactIPs: make(map[string]struct{}),
+		exactIPs: generic.NewSet[string](),
 		cidrs:    make([]*net.IPNet, 0, len(rules)),
 	}
 
@@ -45,7 +48,7 @@ func newIPMatcher(rules []string) (*ipMatcher, error) {
 				return nil, fmt.Errorf("ipfilter: invalid IP address %q", rule)
 			}
 
-			matcher.exactIPs[ip.String()] = struct{}{}
+			matcher.exactIPs.Add(ip.String())
 		}
 	}
 
@@ -57,17 +60,13 @@ func (m *ipMatcher) Matches(ip net.IP) bool {
 		return false
 	}
 
-	if _, ok := m.exactIPs[ip.String()]; ok {
+	if m.exactIPs.Has(ip.String()) {
 		return true
 	}
 
-	for _, cidr := range m.cidrs {
-		if cidr.Contains(ip) {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(m.cidrs, func(cidr *net.IPNet) bool {
+		return cidr.Contains(ip)
+	})
 }
 
 // Config configures the IP Filter middleware.

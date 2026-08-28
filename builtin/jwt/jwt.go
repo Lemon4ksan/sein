@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/foundation/codec/json"
+	"github.com/lemon4ksan/foundation/generic"
 
 	"github.com/lemon4ksan/sein"
 )
@@ -487,19 +488,13 @@ func New(opts ...Option) sein.Middleware {
 
 			// Extract token string
 			var tokenStr string
-			if strings.HasPrefix(cfg.TokenLookup, "header:") {
-				headerKey := strings.TrimPrefix(cfg.TokenLookup, "header:")
+			if headerKey, ok := strings.CutPrefix(cfg.TokenLookup, "header:"); ok {
 				authHdr := req.Header(headerKey)
 				if authHdr != "" {
 					prefix := cfg.AuthScheme + " "
-					if strings.HasPrefix(authHdr, prefix) {
-						tokenStr = strings.TrimPrefix(authHdr, prefix)
-					} else {
-						tokenStr = authHdr
-					}
+					tokenStr = generic.Ternary(strings.HasPrefix(authHdr, prefix), strings.TrimPrefix(authHdr, prefix), authHdr)
 				}
-			} else if strings.HasPrefix(cfg.TokenLookup, "cookie:") {
-				cookieName := strings.TrimPrefix(cfg.TokenLookup, "cookie:")
+			} else if cookieName, ok := strings.CutPrefix(cfg.TokenLookup, "cookie:"); ok {
 				tokenStr, _ = req.Cookie(cookieName)
 			}
 

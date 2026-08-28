@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/lemon4ksan/foundation/generic"
 )
 
 // VersionMatrix manages multi-version routing trees (/v1, /v2, /v3) with declarative lifecycle filters.
@@ -81,12 +83,9 @@ func (s *Server) VersionMatrix(prefixFormatter func(version string) string, vers
 
 // Since filters active versions to those greater than or equal to minVersion (v >= minVersion).
 func (vg *VersionGroup) Since(minVersion string) *VersionGroup {
-	var filtered []string
-	for _, v := range vg.activeVers {
-		if compareVersions(v, minVersion) >= 0 {
-			filtered = append(filtered, v)
-		}
-	}
+	filtered := generic.Filter(vg.activeVers, func(v string) bool {
+		return compareVersions(v, minVersion) >= 0
+	})
 
 	return &VersionGroup{
 		matrix:       vg.matrix,
@@ -99,12 +98,9 @@ func (vg *VersionGroup) Since(minVersion string) *VersionGroup {
 
 // Until filters active versions to those less than or equal to maxVersion (v <= maxVersion).
 func (vg *VersionGroup) Until(maxVersion string) *VersionGroup {
-	var filtered []string
-	for _, v := range vg.activeVers {
-		if compareVersions(v, maxVersion) <= 0 {
-			filtered = append(filtered, v)
-		}
-	}
+	filtered := generic.Filter(vg.activeVers, func(v string) bool {
+		return compareVersions(v, maxVersion) <= 0
+	})
 
 	return &VersionGroup{
 		matrix:       vg.matrix,
@@ -117,12 +113,9 @@ func (vg *VersionGroup) Until(maxVersion string) *VersionGroup {
 
 // Between filters active versions to those within the range [minVersion, maxVersion].
 func (vg *VersionGroup) Between(minVersion, maxVersion string) *VersionGroup {
-	var filtered []string
-	for _, v := range vg.activeVers {
-		if compareVersions(v, minVersion) >= 0 && compareVersions(v, maxVersion) <= 0 {
-			filtered = append(filtered, v)
-		}
-	}
+	filtered := generic.Filter(vg.activeVers, func(v string) bool {
+		return compareVersions(v, minVersion) >= 0 && compareVersions(v, maxVersion) <= 0
+	})
 
 	return &VersionGroup{
 		matrix:       vg.matrix,
@@ -135,15 +128,12 @@ func (vg *VersionGroup) Between(minVersion, maxVersion string) *VersionGroup {
 
 // Only restricts active versions strictly to the given versions list.
 func (vg *VersionGroup) Only(versions ...string) *VersionGroup {
-	var filtered []string
-	for _, v := range vg.activeVers {
-		for _, target := range versions {
-			if normalizeVersion(v) == normalizeVersion(target) {
-				filtered = append(filtered, v)
-				break
-			}
-		}
-	}
+	filtered := generic.Filter(vg.activeVers, func(v string) bool {
+		norm := normalizeVersion(v)
+		return slices.ContainsFunc(versions, func(target string) bool {
+			return norm == normalizeVersion(target)
+		})
+	})
 
 	return &VersionGroup{
 		matrix:       vg.matrix,
@@ -156,19 +146,12 @@ func (vg *VersionGroup) Only(versions ...string) *VersionGroup {
 
 // Except removes the given versions from the active versions list.
 func (vg *VersionGroup) Except(versions ...string) *VersionGroup {
-	var filtered []string
-	for _, v := range vg.activeVers {
-		excluded := false
-		for _, target := range versions {
-			if normalizeVersion(v) == normalizeVersion(target) {
-				excluded = true
-				break
-			}
-		}
-		if !excluded {
-			filtered = append(filtered, v)
-		}
-	}
+	filtered := generic.Filter(vg.activeVers, func(v string) bool {
+		norm := normalizeVersion(v)
+		return !slices.ContainsFunc(versions, func(target string) bool {
+			return norm == normalizeVersion(target)
+		})
+	})
 
 	return &VersionGroup{
 		matrix:       vg.matrix,

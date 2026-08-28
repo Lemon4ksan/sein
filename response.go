@@ -207,9 +207,7 @@ func (r Response[T]) WithStatus(code int) Response[T] {
 
 // WithETag sets the ETag header with quotes automatically formatted if omitted.
 func (r Response[T]) WithETag(etag string) Response[T] {
-	if !strings.HasPrefix(etag, "\"") && !strings.HasPrefix(etag, "W/\"") {
-		etag = "\"" + etag + "\""
-	}
+	etag = generic.Ternary(!strings.HasPrefix(etag, "\"") && !strings.HasPrefix(etag, "W/\""), "\""+etag+"\"", etag)
 
 	return r.WithHeader(header.ETag, etag)
 }
@@ -271,10 +269,7 @@ func NotModified() Response[any] {
 //
 //	return sein.Redirect("/login"), nil
 func Redirect(targetURL string, status ...int) Response[any] {
-	code := http.StatusFound
-	if len(status) > 0 {
-		code = status[0]
-	}
+	code := generic.Ternary(len(status) > 0, status[0], http.StatusFound)
 
 	r := Response[any]{Status: code}
 

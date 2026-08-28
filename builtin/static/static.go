@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/timekit"
 
@@ -133,11 +134,7 @@ func createStaticServer(cfg Config) sein.RawHandler {
 
 		// Determine Content-Type
 		ext := filepath.Ext(resolvedPath)
-
-		contentType := mime.TypeByExtension(ext)
-		if contentType == "" {
-			contentType = "application/octet-stream"
-		}
+		contentType := generic.Coalesce(mime.TypeByExtension(ext), "application/octet-stream")
 
 		headers := make(http.Header)
 		headers.Set(header.ContentType, contentType)

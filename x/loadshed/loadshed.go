@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lemon4ksan/foundation/generic"
+
 	"github.com/lemon4ksan/sein"
 )
 
@@ -91,12 +93,8 @@ func New(opts ...Option) sein.Middleware {
 			// Update EWMA (alpha = 0.1)
 			durMicros := uint64(duration.Microseconds())
 			oldAvg := avgMicros.Load()
-			if oldAvg == 0 {
-				avgMicros.Store(durMicros)
-			} else {
-				newAvg := uint64(float64(oldAvg)*0.9 + float64(durMicros)*0.1)
-				avgMicros.Store(newAvg)
-			}
+			newAvg := generic.Ternary(oldAvg == 0, durMicros, uint64(float64(oldAvg)*0.9+float64(durMicros)*0.1))
+			avgMicros.Store(newAvg)
 
 			return res, err
 		}

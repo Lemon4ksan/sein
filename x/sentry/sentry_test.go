@@ -132,14 +132,23 @@ func TestSentry_HTTPTransport_And_Flush(t *testing.T) {
 	app.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 
-	// Wait briefly for worker ingestion
-	time.Sleep(100 * time.Millisecond)
+	var gotEvents []*sentry.Event
+	for range 100 {
+		receivedMu.Lock()
+		if len(received) > 0 {
+			gotEvents = append([]*sentry.Event(nil), received...)
+		}
+		receivedMu.Unlock()
 
-	receivedMu.Lock()
-	defer receivedMu.Unlock()
-	assert.NotEmpty(t, received)
-	if len(received) > 0 {
-		assert.Equal(t, "error", received[0].Level)
-		assert.Contains(t, received[0].Message, "failure-sample")
+		if len(gotEvents) > 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	assert.NotEmpty(t, gotEvents)
+	if len(gotEvents) > 0 {
+		assert.Equal(t, "error", gotEvents[0].Level)
+		assert.Contains(t, gotEvents[0].Message, "failure-sample")
 	}
 }

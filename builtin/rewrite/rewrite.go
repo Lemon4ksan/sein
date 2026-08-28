@@ -7,8 +7,11 @@
 package rewrite
 
 import (
+	"maps"
 	"regexp"
 	"strings"
+
+	"github.com/lemon4ksan/foundation/generic"
 
 	"github.com/lemon4ksan/sein"
 )
@@ -37,9 +40,7 @@ func WithRules(rules map[string]string) Option {
 			c.Rules = make(map[string]string, len(rules))
 		}
 
-		for k, v := range rules {
-			c.Rules[k] = v
-		}
+		maps.Copy(c.Rules, rules)
 	}
 }
 
@@ -89,19 +90,11 @@ func New(opts ...Option) sein.Middleware {
 
 			// 2. Wildcard match (e.g. "/users/*" -> "/v2/users/$1")
 			for from, to := range cfg.Rules {
-				if strings.HasSuffix(from, "/*") {
-					prefix := strings.TrimSuffix(from, "/*")
+				if prefix, ok := strings.CutSuffix(from, "/*"); ok {
 					if strings.HasPrefix(path, prefix+"/") || path == prefix {
 						rest := strings.TrimPrefix(path, prefix)
-						if strings.HasSuffix(to, "/$1") {
-							newPath := strings.TrimSuffix(to, "/$1") + rest
-							req.SetPath(newPath)
-							return next(req)
-						}
-
-						newPath := to + rest
+						newPath := generic.Ternary(strings.HasSuffix(to, "/$1"), strings.TrimSuffix(to, "/$1")+rest, to+rest)
 						req.SetPath(newPath)
-
 						return next(req)
 					}
 				}

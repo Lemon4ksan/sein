@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/lemon4ksan/foundation/generic"
+
 	"github.com/lemon4ksan/sein"
 )
 
@@ -105,12 +107,7 @@ func compileMethod(receiver reflect.Value, method reflect.Method, mTyp reflect.T
 				return nil, sein.BadRequest("BAD_REQUEST", err.Error())
 			}
 
-			var inVal reflect.Value
-			if isPtr {
-				inVal = destVal
-			} else {
-				inVal = destVal.Elem()
-			}
+			inVal := generic.Ternary(isPtr, destVal, destVal.Elem())
 
 			results := receiver.Method(method.Index).Call([]reflect.Value{inVal})
 			if errVal := results[1].Interface(); errVal != nil {
@@ -135,12 +132,7 @@ func compileMethod(receiver reflect.Value, method reflect.Method, mTyp reflect.T
 				return nil, sein.BadRequest("BAD_REQUEST", err.Error())
 			}
 
-			var inVal reflect.Value
-			if isPtr {
-				inVal = destVal
-			} else {
-				inVal = destVal.Elem()
-			}
+			inVal := generic.Ternary(isPtr, destVal, destVal.Elem())
 
 			results := receiver.Method(method.Index).Call([]reflect.Value{
 				reflect.ValueOf(req.Context()),

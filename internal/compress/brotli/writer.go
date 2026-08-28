@@ -4,7 +4,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/andybalholm/brotli/matchfinder"
+	"github.com/lemon4ksan/sein/internal/compress/brotli/matchfinder"
 )
 
 const (
@@ -50,7 +50,6 @@ func NewWriterOptions(dst io.Writer, options WriterOptions) *Writer {
 	w := new(Writer)
 	w.options = options
 	w.Reset(dst)
-
 	return w
 }
 
@@ -59,12 +58,10 @@ func NewWriterOptions(dst io.Writer, options WriterOptions) *Writer {
 // instead. This permits reusing a Writer rather than allocating a new one.
 func (w *Writer) Reset(dst io.Writer) {
 	encoderInitState(w)
-
 	w.params.quality = w.options.Quality
 	if w.options.LGWin > 0 {
 		w.params.lgwin = uint(w.options.LGWin)
 	}
-
 	w.dst = dst
 	w.err = nil
 }
@@ -73,7 +70,6 @@ func (w *Writer) writeChunk(p []byte, op int) (n int, err error) {
 	if w.dst == nil {
 		return 0, errWriterClosed
 	}
-
 	if w.err != nil {
 		return 0, w.err
 	}
@@ -84,7 +80,6 @@ func (w *Writer) writeChunk(p []byte, op int) (n int, err error) {
 		success := encoderCompressStream(w, op, &availableIn, &nextIn)
 		bytesConsumed := len(p) - int(availableIn)
 		p = p[bytesConsumed:]
-
 		n += bytesConsumed
 		if !success {
 			return n, errEncode
@@ -134,7 +129,6 @@ func NewWriterV2(dst io.Writer, level int) *matchfinder.Writer {
 	} else if level > 9 {
 		level = 9
 	}
-
 	var mf matchfinder.MatchFinder
 	switch level {
 	case 0, 1:
@@ -164,6 +158,5 @@ func NewWriterV2(dst io.Writer, level int) *matchfinder.Writer {
 	if level < 1 {
 		w.Encoder = &FastEncoder{}
 	}
-
 	return w
 }

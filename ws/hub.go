@@ -6,20 +6,22 @@ package ws
 
 import (
 	"sync"
+
+	"github.com/lemon4ksan/foundation/generic"
 )
 
 // Hub is a thread-safe declarative WebSocket topic/room subscription manager with Pub/Sub support.
 type Hub struct {
 	mu     sync.RWMutex
-	topics map[string]map[*Conn]struct{}
-	conns  map[*Conn]map[string]struct{}
+	topics map[string]generic.Set[*Conn]
+	conns  map[*Conn]generic.Set[string]
 }
 
 // NewHub instantiates an empty, initialized Pub/Sub [Hub].
 func NewHub() *Hub {
 	return &Hub{
-		topics: make(map[string]map[*Conn]struct{}),
-		conns:  make(map[*Conn]map[string]struct{}),
+		topics: make(map[string]generic.Set[*Conn]),
+		conns:  make(map[*Conn]generic.Set[string]),
 	}
 }
 
@@ -29,14 +31,14 @@ func (h *Hub) Subscribe(topic string, conn *Conn) {
 	defer h.mu.Unlock()
 
 	if h.topics[topic] == nil {
-		h.topics[topic] = make(map[*Conn]struct{})
+		h.topics[topic] = generic.NewSet[*Conn]()
 	}
-	h.topics[topic][conn] = struct{}{}
+	h.topics[topic].Add(conn)
 
 	if h.conns[conn] == nil {
-		h.conns[conn] = make(map[string]struct{})
+		h.conns[conn] = generic.NewSet[string]()
 	}
-	h.conns[conn][topic] = struct{}{}
+	h.conns[conn].Add(topic)
 }
 
 // Unsubscribe removes a connection from the specified topic/room.
@@ -92,10 +94,7 @@ func (h *Hub) PublishPrecompiled(topic string, frame *PrecompiledFrame) error {
 		return nil
 	}
 
-	conns := make([]*Conn, 0, len(connsMap))
-	for c := range connsMap {
-		conns = append(conns, c)
-	}
+	conns := generic.Keys(connsMap)
 	h.mu.RUnlock()
 
 	var firstErr error
@@ -133,10 +132,7 @@ func (h *Hub) Broadcast(messageType int, payload []byte) error {
 // BroadcastPrecompiled broadcasts a pre-assembled wire frame to ALL connected clients with zero allocations.
 func (h *Hub) BroadcastPrecompiled(frame *PrecompiledFrame) error {
 	h.mu.RLock()
-	conns := make([]*Conn, 0, len(h.conns))
-	for c := range h.conns {
-		conns = append(conns, c)
-	}
+	conns := generic.Keys(h.conns)
 	h.mu.RUnlock()
 
 	var firstErr error

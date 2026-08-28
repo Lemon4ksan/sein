@@ -272,9 +272,8 @@ func decoderStateCleanupAfterMetablock(s *Reader) {
 	cleanupHTrees(s)
 }
 
-func decoderHuffmanTreeGroupInit(group *huffmanTreeGroup, alphabet_size, max_symbol, ntrees uint32) {
-	max_table_size := uint(kMaxHuffmanTableSize[(alphabet_size+31)>>5])
-
+func decoderHuffmanTreeGroupInit(group *huffmanTreeGroup, alphabet_size uint32, max_symbol uint32, ntrees uint32) {
+	var max_table_size uint = uint(kMaxHuffmanTableSize[(alphabet_size+31)>>5])
 	group.alphabet_size = uint16(alphabet_size)
 	group.max_symbol = uint16(max_symbol)
 	group.num_htrees = uint16(ntrees)

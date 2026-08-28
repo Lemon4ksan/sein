@@ -19,6 +19,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/sein/tunnel/ssh/ca"
 )
 
@@ -70,10 +71,7 @@ func NewServer(addr string, opts ...Option) (*Server, error) {
 
 // ListenAndServe listens on srv.Addr (defaults to "127.0.0.1:1080") and serves incoming proxy requests.
 func (srv *Server) ListenAndServe(ctx context.Context) error {
-	addr := srv.Addr
-	if addr == "" {
-		addr = "127.0.0.1:1080"
-	}
+	addr := generic.Coalesce(srv.Addr, "127.0.0.1:1080")
 
 	var lc net.ListenConfig
 

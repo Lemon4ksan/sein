@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lemon4ksan/foundation/generic"
 )
 
 // Schedule represents a parsed recurrence schedule that can calculate the next execution time.
@@ -37,10 +39,7 @@ type CronSchedule struct {
 
 // Parse parses a cron expression (standard 5 fields or @descriptors) into a Schedule.
 func Parse(spec string) (Schedule, error) {
-	spec = strings.TrimSpace(spec)
-	if spec == "" {
-		return nil, fmt.Errorf("empty cron spec")
-	}
+	spec = generic.Coalesce(strings.TrimSpace(spec), "empty cron spec")
 
 	// Descriptor shortcuts
 	if strings.HasPrefix(spec, "@") {
@@ -115,7 +114,7 @@ func Parse(spec string) (Schedule, error) {
 func parseField(field string, min, max int) (uint64, error) {
 	var bits uint64
 
-	for _, expr := range strings.Split(field, ",") {
+	for expr := range strings.SplitSeq(field, ",") {
 		expr = strings.TrimSpace(expr)
 		if expr == "" {
 			continue

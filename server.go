@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/timekit"
 
@@ -277,12 +278,7 @@ func (s *Server) SetTrustedProxies(proxies []string) error {
 				return fmt.Errorf("sein: invalid trusted proxy IP %q", p)
 			}
 
-			var mask net.IPMask
-			if ip.To4() != nil {
-				mask = net.CIDRMask(32, 32)
-			} else {
-				mask = net.CIDRMask(128, 128)
-			}
+			mask := generic.Ternary(ip.To4() != nil, net.CIDRMask(32, 32), net.CIDRMask(128, 128))
 
 			parsed = append(parsed, &net.IPNet{IP: ip, Mask: mask})
 		}
@@ -381,10 +377,7 @@ func (s *Server) resolveRouteSlow(
 	// 1. Check Trailing Slash Auto-Correction (RFC 9110 §15.4.2)
 	if s.RedirectTrailingSlash {
 		if altPath, ok := s.router.FindTrailingSlash(method, path); ok {
-			code := http.StatusMovedPermanently
-			if method != http.MethodGet && method != http.MethodHead {
-				code = http.StatusTemporaryRedirect
-			}
+			code := generic.Ternary(method != http.MethodGet && method != http.MethodHead, http.StatusTemporaryRedirect, http.StatusMovedPermanently)
 
 			return nil, "", altPath, code, code
 		}

@@ -16,12 +16,12 @@ import "encoding/binary"
 
 const kCompressFragmentTwoPassBlockSize uint = 1 << 17
 
-func hash1(p []byte, shift, length uint) uint32 {
+func hash1(p []byte, shift uint, length uint) uint32 {
 	var h uint64 = (binary.LittleEndian.Uint64(p) << ((8 - length) * 8)) * uint64(kHashMul32)
 	return uint32(h >> shift)
 }
 
-func hashBytesAtOffset(v uint64, offset, shift, length uint) uint32 {
+func hashBytesAtOffset(v uint64, offset uint, shift uint, length uint) uint32 {
 	assert(offset <= 8-length)
 	{
 		var h uint64 = ((v >> (8 * offset)) << ((8 - length) * 8)) * uint64(kHashMul32)
@@ -29,15 +29,13 @@ func hashBytesAtOffset(v uint64, offset, shift, length uint) uint32 {
 	}
 }
 
-func isMatch1(p1, p2 []byte, length uint) bool {
+func isMatch1(p1 []byte, p2 []byte, length uint) bool {
 	if binary.LittleEndian.Uint32(p1) != binary.LittleEndian.Uint32(p2) {
 		return false
 	}
-
 	if length == 4 {
 		return true
 	}
-
 	return p1[4] == p2[4] && p1[5] == p2[5]
 }
 
@@ -47,14 +45,11 @@ Builds a command and distance prefix code (each 64 symbols) into "depth" and
 	"bits" based on "histogram" and stores it into the bit stream.
 */
 func buildAndStoreCommandPrefixCode(histogram []uint32, depth []byte, bits []uint16, storage_ix *uint, storage []byte) {
-	var (
-		tree      [129]huffmanTree
-		cmd_depth = [numCommandSymbols]byte{0}
-	)
+	var tree [129]huffmanTree
+	var cmd_depth = [numCommandSymbols]byte{0}
 	/* Tree size for building a tree over 64 symbols is 2 * 64 + 1. */
 
 	var cmd_bits [64]uint16
-
 	createHuffmanTree(histogram, 64, 15, tree[:], depth)
 	createHuffmanTree(histogram[64:], 64, 14, tree[:], depth[64:])
 
@@ -65,11 +60,11 @@ func buildAndStoreCommandPrefixCode(histogram []uint32, depth []byte, bits []uin
 	   functions. */
 	copy(cmd_depth[:], depth[24:][:24])
 
-	copy(cmd_depth[24:], depth[:8])
-	copy(cmd_depth[32:], depth[48:][:8])
-	copy(cmd_depth[40:], depth[8:][:8])
-	copy(cmd_depth[48:], depth[56:][:8])
-	copy(cmd_depth[56:], depth[16:][:8])
+	copy(cmd_depth[24:][:], depth[:8])
+	copy(cmd_depth[32:][:], depth[48:][:8])
+	copy(cmd_depth[40:][:], depth[8:][:8])
+	copy(cmd_depth[48:][:], depth[56:][:8])
+	copy(cmd_depth[56:][:], depth[16:][:8])
 	convertBitDepthsToSymbols(cmd_depth[:], 64, cmd_bits[:])
 	copy(bits, cmd_bits[24:][:8])
 	copy(bits[8:], cmd_bits[40:][:8])
@@ -84,13 +79,11 @@ func buildAndStoreCommandPrefixCode(histogram []uint32, depth []byte, bits []uin
 		for i := 0; i < int(64); i++ {
 			cmd_depth[i] = 0
 		} /* only 64 first values were used */
-
 		copy(cmd_depth[:], depth[24:][:8])
-		copy(cmd_depth[64:], depth[32:][:8])
-		copy(cmd_depth[128:], depth[40:][:8])
-		copy(cmd_depth[192:], depth[48:][:8])
-		copy(cmd_depth[384:], depth[56:][:8])
-
+		copy(cmd_depth[64:][:], depth[32:][:8])
+		copy(cmd_depth[128:][:], depth[40:][:8])
+		copy(cmd_depth[192:][:], depth[48:][:8])
+		copy(cmd_depth[384:][:], depth[56:][:8])
 		for i = 0; i < 8; i++ {
 			cmd_depth[128+8*i] = depth[i]
 			cmd_depth[256+8*i] = depth[8+i]
@@ -107,35 +100,26 @@ func emitInsertLen(insertlen uint32, commands *[]uint32) {
 	if insertlen < 6 {
 		(*commands)[0] = insertlen
 	} else if insertlen < 130 {
-		var (
-			tail    uint32 = insertlen - 2
-			nbits   uint32 = log2FloorNonZero(uint(tail)) - 1
-			prefix  uint32 = tail >> nbits
-			inscode uint32 = (nbits << 1) + prefix + 2
-			extra   uint32 = tail - (prefix << nbits)
-		)
-
+		var tail uint32 = insertlen - 2
+		var nbits uint32 = log2FloorNonZero(uint(tail)) - 1
+		var prefix uint32 = tail >> nbits
+		var inscode uint32 = (nbits << 1) + prefix + 2
+		var extra uint32 = tail - (prefix << nbits)
 		(*commands)[0] = inscode | extra<<8
 	} else if insertlen < 2114 {
-		var (
-			tail  uint32 = insertlen - 66
-			nbits uint32 = log2FloorNonZero(uint(tail))
-			code  uint32 = nbits + 10
-			extra uint32 = tail - (1 << nbits)
-		)
-
+		var tail uint32 = insertlen - 66
+		var nbits uint32 = log2FloorNonZero(uint(tail))
+		var code uint32 = nbits + 10
+		var extra uint32 = tail - (1 << nbits)
 		(*commands)[0] = code | extra<<8
 	} else if insertlen < 6210 {
 		var extra uint32 = insertlen - 2114
-
 		(*commands)[0] = 21 | extra<<8
 	} else if insertlen < 22594 {
 		var extra uint32 = insertlen - 6210
-
 		(*commands)[0] = 22 | extra<<8
 	} else {
 		var extra uint32 = insertlen - 22594
-
 		(*commands)[0] = 23 | extra<<8
 	}
 
@@ -146,27 +130,20 @@ func emitCopyLen(copylen uint, commands *[]uint32) {
 	if copylen < 10 {
 		(*commands)[0] = uint32(copylen + 38)
 	} else if copylen < 134 {
-		var (
-			tail   uint = copylen - 6
-			nbits  uint = uint(log2FloorNonZero(tail) - 1)
-			prefix uint = tail >> nbits
-			code   uint = (nbits << 1) + prefix + 44
-			extra  uint = tail - (prefix << nbits)
-		)
-
+		var tail uint = copylen - 6
+		var nbits uint = uint(log2FloorNonZero(tail) - 1)
+		var prefix uint = tail >> nbits
+		var code uint = (nbits << 1) + prefix + 44
+		var extra uint = tail - (prefix << nbits)
 		(*commands)[0] = uint32(code | extra<<8)
 	} else if copylen < 2118 {
-		var (
-			tail  uint = copylen - 70
-			nbits uint = uint(log2FloorNonZero(tail))
-			code  uint = nbits + 52
-			extra uint = tail - (uint(1) << nbits)
-		)
-
+		var tail uint = copylen - 70
+		var nbits uint = uint(log2FloorNonZero(tail))
+		var code uint = nbits + 52
+		var extra uint = tail - (uint(1) << nbits)
 		(*commands)[0] = uint32(code | extra<<8)
 	} else {
 		var extra uint = copylen - 2118
-
 		(*commands)[0] = uint32(63 | extra<<8)
 	}
 
@@ -178,42 +155,32 @@ func emitCopyLenLastDistance(copylen uint, commands *[]uint32) {
 		(*commands)[0] = uint32(copylen + 20)
 		*commands = (*commands)[1:]
 	} else if copylen < 72 {
-		var (
-			tail   uint = copylen - 8
-			nbits  uint = uint(log2FloorNonZero(tail) - 1)
-			prefix uint = tail >> nbits
-			code   uint = (nbits << 1) + prefix + 28
-			extra  uint = tail - (prefix << nbits)
-		)
-
+		var tail uint = copylen - 8
+		var nbits uint = uint(log2FloorNonZero(tail) - 1)
+		var prefix uint = tail >> nbits
+		var code uint = (nbits << 1) + prefix + 28
+		var extra uint = tail - (prefix << nbits)
 		(*commands)[0] = uint32(code | extra<<8)
 		*commands = (*commands)[1:]
 	} else if copylen < 136 {
-		var (
-			tail  uint = copylen - 8
-			code  uint = (tail >> 5) + 54
-			extra uint = tail & 31
-		)
-
+		var tail uint = copylen - 8
+		var code uint = (tail >> 5) + 54
+		var extra uint = tail & 31
 		(*commands)[0] = uint32(code | extra<<8)
 		*commands = (*commands)[1:]
 		(*commands)[0] = 64
 		*commands = (*commands)[1:]
 	} else if copylen < 2120 {
-		var (
-			tail  uint = copylen - 72
-			nbits uint = uint(log2FloorNonZero(tail))
-			code  uint = nbits + 52
-			extra uint = tail - (uint(1) << nbits)
-		)
-
+		var tail uint = copylen - 72
+		var nbits uint = uint(log2FloorNonZero(tail))
+		var code uint = nbits + 52
+		var extra uint = tail - (uint(1) << nbits)
 		(*commands)[0] = uint32(code | extra<<8)
 		*commands = (*commands)[1:]
 		(*commands)[0] = 64
 		*commands = (*commands)[1:]
 	} else {
 		var extra uint = copylen - 2120
-
 		(*commands)[0] = uint32(63 | extra<<8)
 		*commands = (*commands)[1:]
 		(*commands)[0] = 64
@@ -222,15 +189,12 @@ func emitCopyLenLastDistance(copylen uint, commands *[]uint32) {
 }
 
 func emitDistance(distance uint32, commands *[]uint32) {
-	var (
-		d        uint32 = distance + 3
-		nbits    uint32 = log2FloorNonZero(uint(d)) - 1
-		prefix   uint32 = (d >> nbits) & 1
-		offset   uint32 = (2 + prefix) << nbits
-		distcode uint32 = 2*(nbits-1) + prefix + 80
-		extra    uint32 = d - offset
-	)
-
+	var d uint32 = distance + 3
+	var nbits uint32 = log2FloorNonZero(uint(d)) - 1
+	var prefix uint32 = (d >> nbits) & 1
+	var offset uint32 = (2 + prefix) << nbits
+	var distcode uint32 = 2*(nbits-1) + prefix + 80
+	var extra uint32 = d - offset
 	(*commands)[0] = distcode | extra<<8
 	*commands = (*commands)[1:]
 }
@@ -276,23 +240,13 @@ func storeMetaBlockHeaderBW(len uint, is_uncompressed bool, bw *bitWriter) {
 	bw.writeSingleBit(is_uncompressed)
 }
 
-func createCommands(
-	input []byte,
-	block_size, input_size uint,
-	base_ip_ptr []byte,
-	table []int,
-	table_bits, min_match uint,
-	literals *[]byte,
-	commands *[]uint32,
-) {
-	var (
-		ip            int  = 0
-		shift         uint = 64 - table_bits
-		ip_end        int  = int(block_size)
-		base_ip       int  = -cap(base_ip_ptr) + cap(input)
-		next_emit     int  = 0
-		last_distance int  = -1
-	)
+func createCommands(input []byte, block_size uint, input_size uint, base_ip_ptr []byte, table []int, table_bits uint, min_match uint, literals *[]byte, commands *[]uint32) {
+	var ip int = 0
+	var shift uint = 64 - table_bits
+	var ip_end int = int(block_size)
+	var base_ip int = -cap(base_ip_ptr) + cap(input)
+	var next_emit int = 0
+	var last_distance int = -1
 	/* "ip" is the input pointer. */
 
 	const kInputMarginBytes uint = windowGap
@@ -301,23 +255,18 @@ func createCommands(
 	   previous copy. Bytes between "next_emit" and the start of the next copy or
 	   the end of the input will be emitted as literal bytes. */
 	if block_size >= kInputMarginBytes {
-		var (
-			len_limit uint = brotli_min_size_t(block_size-min_match, input_size-kInputMarginBytes)
-			ip_limit  int  = int(len_limit)
-		)
+		var len_limit uint = brotli_min_size_t(block_size-min_match, input_size-kInputMarginBytes)
+		var ip_limit int = int(len_limit)
 		/* For the last block, we need to keep a 16 bytes margin so that we can be
 		   sure that all distances are at most window size - 16.
 		   For all other blocks, we only need to keep a margin of 5 bytes so that
 		   we don't go over the block size with a copy. */
 
 		var next_hash uint32
-
 		ip++
 		for next_hash = hash1(input[ip:], shift, min_match); ; {
-			var (
-				skip    uint32 = 32
-				next_ip int    = ip
-			)
+			var skip uint32 = 32
+			var next_ip int = ip
 			/* Step 1: Scan forward in the input looking for a 6-byte-long match.
 			   If we get close to exhausting the input then goto emit_remainder.
 
@@ -340,22 +289,17 @@ func createCommands(
 
 		trawl:
 			for {
-				var (
-					hash                       uint32 = next_hash
-					bytes_between_hash_lookups uint32 = skip >> 5
-				)
-
+				var hash uint32 = next_hash
+				var bytes_between_hash_lookups uint32 = skip >> 5
 				skip++
 				ip = next_ip
 				assert(hash == hash1(input[ip:], shift, min_match))
-
 				next_ip = int(uint32(ip) + bytes_between_hash_lookups)
 				if next_ip > ip_limit {
 					goto emit_remainder
 				}
 
 				next_hash = hash1(input[next_ip:], shift, min_match)
-
 				candidate = ip - last_distance
 				if isMatch1(input[ip:], base_ip_ptr[candidate-base_ip:], min_match) {
 					if candidate < ip {
@@ -387,25 +331,16 @@ func createCommands(
 			{
 				var base int = ip
 				/* > 0 */
-				var (
-					matched uint = min_match + findMatchLengthWithLimit(
-						base_ip_ptr[uint(candidate-base_ip)+min_match:],
-						input[uint(ip)+min_match:],
-						uint(ip_end-ip)-min_match,
-					)
-					distance int = int(base - candidate)
-				)
+				var matched uint = min_match + findMatchLengthWithLimit(base_ip_ptr[uint(candidate-base_ip)+min_match:], input[uint(ip)+min_match:], uint(ip_end-ip)-min_match)
+				var distance int = int(base - candidate)
 				/* We have a 6-byte match at ip, and we need to emit bytes in
 				   [next_emit, ip). */
 
 				var insert int = int(base - next_emit)
-
 				ip += int(matched)
-
 				emitInsertLen(uint32(insert), commands)
 				copy(*literals, input[next_emit:][:uint(insert)])
 				*literals = (*literals)[insert:]
-
 				if distance == last_distance {
 					(*commands)[0] = 64
 					*commands = (*commands)[1:]
@@ -420,12 +355,9 @@ func createCommands(
 				if ip >= ip_limit {
 					goto emit_remainder
 				}
-
 				{
-					var (
-						input_bytes uint64
-						cur_hash    uint32
-					)
+					var input_bytes uint64
+					var cur_hash uint32
 					/* We could immediately start working at ip now, but to improve
 					   compression we first update "table" with the hashes of some
 					   positions within the last copy. */
@@ -467,10 +399,8 @@ func createCommands(
 				   literal bytes prior to ip. */
 
 				var matched uint = min_match + findMatchLengthWithLimit(base_ip_ptr[uint(candidate-base_ip)+min_match:], input[uint(ip)+min_match:], uint(ip_end-ip)-min_match)
-
 				ip += int(matched)
 				last_distance = int(base - candidate) /* > 0 */
-
 				emitCopyLen(matched, commands)
 				emitDistance(uint32(last_distance), commands)
 
@@ -478,12 +408,9 @@ func createCommands(
 				if ip >= ip_limit {
 					goto emit_remainder
 				}
-
 				{
-					var (
-						input_bytes uint64
-						cur_hash    uint32
-					)
+					var input_bytes uint64
+					var cur_hash uint32
 					/* We could immediately start working at ip now, but to improve
 					   compression we first update "table" with the hashes of some
 					   positions within the last copy. */
@@ -666,7 +593,6 @@ var storeCommands_kNumExtraBits = [128]uint32{
 	24,
 	24,
 }
-
 var storeCommands_kInsertOffset = [24]uint32{
 	0,
 	1,
@@ -694,23 +620,14 @@ var storeCommands_kInsertOffset = [24]uint32{
 	22594,
 }
 
-func storeCommands(
-	literals []byte,
-	num_literals uint,
-	commands []uint32,
-	num_commands uint,
-	storage_ix *uint,
-	storage []byte,
-) {
-	var (
-		lit_depths [256]byte
-		lit_bits   [256]uint16
-		lit_histo  = [256]uint32{0}
-		cmd_depths = [128]byte{0}
-		cmd_bits   = [128]uint16{0}
-		cmd_histo  = [128]uint32{0}
-		i          uint
-	)
+func storeCommands(literals []byte, num_literals uint, commands []uint32, num_commands uint, storage_ix *uint, storage []byte) {
+	var lit_depths [256]byte
+	var lit_bits [256]uint16
+	var lit_histo = [256]uint32{0}
+	var cmd_depths = [128]byte{0}
+	var cmd_bits = [128]uint16{0}
+	var cmd_histo = [128]uint32{0}
+	var i uint
 	for i = 0; i < num_literals; i++ {
 		lit_histo[literals[i]]++
 	}
@@ -731,25 +648,18 @@ func storeCommands(
 	buildAndStoreCommandPrefixCode(cmd_histo[:], cmd_depths[:], cmd_bits[:], storage_ix, storage)
 
 	for i = 0; i < num_commands; i++ {
-		var (
-			cmd   uint32 = commands[i]
-			code  uint32 = cmd & 0xFF
-			extra uint32 = cmd >> 8
-		)
-
+		var cmd uint32 = commands[i]
+		var code uint32 = cmd & 0xFF
+		var extra uint32 = cmd >> 8
 		assert(code < 128)
 		writeBits(uint(cmd_depths[code]), uint64(cmd_bits[code]), storage_ix, storage)
 		writeBits(uint(storeCommands_kNumExtraBits[code]), uint64(extra), storage_ix, storage)
-
 		if code < 24 {
-			var (
-				insert uint32 = storeCommands_kInsertOffset[code] + extra
-				j      uint32
-			)
+			var insert uint32 = storeCommands_kInsertOffset[code] + extra
+			var j uint32
 			for j = 0; j < insert; j++ {
 				var lit byte = literals[0]
 				writeBits(uint(lit_depths[lit]), uint64(lit_bits[lit]), storage_ix, storage)
-
 				literals = literals[1:]
 			}
 		}
@@ -761,16 +671,14 @@ const minRatio = 0.98
 
 const sampleRate = 43
 
-func shouldCompress(input []byte, input_size, num_literals uint) bool {
+func shouldCompress(input []byte, input_size uint, num_literals uint) bool {
 	var corpus_size float64 = float64(input_size)
 	if float64(num_literals) < minRatio*corpus_size {
 		return true
 	} else {
-		var (
-			literal_histo              = [256]uint32{0}
-			max_total_bit_cost float64 = corpus_size * 8 * minRatio / sampleRate
-			i                  uint
-		)
+		var literal_histo = [256]uint32{0}
+		var max_total_bit_cost float64 = corpus_size * 8 * minRatio / sampleRate
+		var i uint
 		for i = 0; i < input_size; i += sampleRate {
 			literal_histo[input[i]]++
 		}
@@ -780,11 +688,8 @@ func shouldCompress(input []byte, input_size, num_literals uint) bool {
 }
 
 func rewindBitPosition(new_storage_ix uint, storage_ix *uint, storage []byte) {
-	var (
-		bitpos uint = new_storage_ix & 7
-		mask   uint = (1 << bitpos) - 1
-	)
-
+	var bitpos uint = new_storage_ix & 7
+	var mask uint = (1 << bitpos) - 1
 	storage[new_storage_ix>>3] &= byte(mask)
 	*storage_ix = new_storage_ix
 }
@@ -797,35 +702,20 @@ func emitUncompressedMetaBlock(input []byte, input_size uint, storage_ix *uint, 
 	storage[*storage_ix>>3] = 0
 }
 
-func compressFragmentTwoPassImpl(
-	input []byte,
-	input_size uint,
-	is_last bool,
-	command_buf []uint32,
-	literal_buf []byte,
-	table []int,
-	table_bits, min_match uint,
-	storage_ix *uint,
-	storage []byte,
-) {
+func compressFragmentTwoPassImpl(input []byte, input_size uint, is_last bool, command_buf []uint32, literal_buf []byte, table []int, table_bits uint, min_match uint, storage_ix *uint, storage []byte) {
 	/* Save the start of the first block for position and distance computations.
 	 */
 	var base_ip []byte = input
 
 	for input_size > 0 {
-		var (
-			block_size   uint     = brotli_min_size_t(input_size, kCompressFragmentTwoPassBlockSize)
-			commands     []uint32 = command_buf
-			literals     []byte   = literal_buf
-			num_literals uint
-		)
-
+		var block_size uint = brotli_min_size_t(input_size, kCompressFragmentTwoPassBlockSize)
+		var commands []uint32 = command_buf
+		var literals []byte = literal_buf
+		var num_literals uint
 		createCommands(input, block_size, input_size, base_ip, table, table_bits, min_match, &literals, &commands)
-
 		num_literals = uint(-cap(literals) + cap(literal_buf))
 		if shouldCompress(input, block_size, num_literals) {
 			var num_commands uint = uint(-cap(commands) + cap(command_buf))
-
 			storeMetaBlockHeader(block_size, false, storage_ix, storage)
 
 			/* No block splits, no contexts. */
@@ -860,40 +750,16 @@ Compresses "input" string to the "*storage" buffer as one or more complete
 	OUTPUT: maximal copy distance <= |input_size|
 	OUTPUT: maximal copy distance <= BROTLI_MAX_BACKWARD_LIMIT(18)
 */
-func compressFragmentTwoPass(
-	input []byte,
-	input_size uint,
-	is_last bool,
-	command_buf []uint32,
-	literal_buf []byte,
-	table []int,
-	table_size uint,
-	storage_ix *uint,
-	storage []byte,
-) {
-	var (
-		initial_storage_ix uint = *storage_ix
-		table_bits         uint = uint(log2FloorNonZero(table_size))
-		min_match          uint
-	)
+func compressFragmentTwoPass(input []byte, input_size uint, is_last bool, command_buf []uint32, literal_buf []byte, table []int, table_size uint, storage_ix *uint, storage []byte) {
+	var initial_storage_ix uint = *storage_ix
+	var table_bits uint = uint(log2FloorNonZero(table_size))
+	var min_match uint
 	if table_bits <= 15 {
 		min_match = 4
 	} else {
 		min_match = 6
 	}
-
-	compressFragmentTwoPassImpl(
-		input,
-		input_size,
-		is_last,
-		command_buf,
-		literal_buf,
-		table,
-		table_bits,
-		min_match,
-		storage_ix,
-		storage,
-	)
+	compressFragmentTwoPassImpl(input, input_size, is_last, command_buf, literal_buf, table, table_bits, min_match, storage_ix, storage)
 
 	/* If output is larger than single uncompressed block, rewrite it. */
 	if *storage_ix-initial_storage_ix > 31+(input_size<<3) {
