@@ -29,6 +29,9 @@ type TransformFunc func(s string) string
 // ValidatorFunc validates a string against declarative constraints in the pipeline.
 type ValidatorFunc func(s string) error
 
+// PostValidatorFunc validates and sanitizes a struct in-place via pointer offset.
+type PostValidatorFunc func(structPtr unsafe.Pointer) error
+
 // RequestView is the decoupled read-only interface required by the binder engine.
 type RequestView interface {
 	Param(name string) string

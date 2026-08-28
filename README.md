@@ -44,10 +44,10 @@ import (
 
 // 1. Declare DTO contract with sanitization & validation
 type UpdateUserDTO struct {
-	UserID   uuid.UUID `path:"id,uuid"`
-	Username string    `json:"username,trim,required,min=3,max=30"`
-	Email    string    `json:"email,lower,email,required"`
-	Role     string    `query:"role,default=user,enum=user|admin|moderator"`
+	UserID   uuid.UUID `path:"id" validate:"uuid"`
+	Username string    `json:"username" validate:"required,min=3,max=30" sanitize:"trim"`
+	Email    string    `json:"email" validate:"required,email" sanitize:"lower"`
+	Role     string    `query:"role,default=user" validate:"enum=user|admin|moderator"`
 	Auth     string    `auth:"bearer,required"`
 }
 
@@ -159,20 +159,20 @@ Declare all request inputs (path, query, headers, cookies, JSON payload) in a un
 ```go
 type UpdateProfileDTO struct {
 	// Protocol Data Sources
-	UserID      uuid.UUID           `path:"user_id,uuid"`                  // URL Path: /users/:user_id
-	Search      string              `query:"q,default=all,trim,lower"`     // Query string: ?q=...
-	Page        int                 `query:"page,default=1,positive"`      // Query with integer parsing
-	Limit       int                 `query:"limit,default=20,multiple_of=5,le=100"` // Step bounds
+	UserID      uuid.UUID           `path:"user_id" validate:"uuid"`       // URL Path: /users/:user_id
+	Search      string              `query:"q,default=all" sanitize:"trim,lower"` // Query string: ?q=...
+	Page        int                 `query:"page,default=1" validate:"positive"` // Query with integer parsing
+	Limit       int                 `query:"limit,default=20" validate:"multiple_of=5,le=100"` // Step bounds
 	Tags        []string            `query:"tags,sep=|"`                   // Slice with custom separator
-	TraceID     string              `header:"X-Trace-ID,required"`         // HTTP Header
-	SessionID   string              `cookie:"session_id,required"`         // HTTP Cookie
+	TraceID     string              `header:"X-Trace-ID" validate:"required"` // HTTP Header
+	SessionID   string              `cookie:"session_id" validate:"required"` // HTTP Cookie
 	AuthToken   string              `auth:"bearer,required"`               // Authorization: Bearer <token>
 	ClientIP    net.IP              `net:"ip"`                             // Resolved Client IP
 	Avatar      *sein.File          `file:"avatar,required"`               // Uploaded File
 	Gallery     []*sein.File        `files:"gallery"`                      // Multiple Uploaded Files
-	Password    sein.Secret[string] `json:"password,min=8"`                // Masked in logs & stack traces
+	Password    sein.Secret[string] `json:"password" validate:"min=8"`     // Masked in logs & stack traces
 	UserSession *Session            `ctx:""`                               // Typed context session
-	Bio         string              `json:"bio,squish,max=500"`            // Collapsed whitespace
+	Bio         string              `json:"bio" validate:"max=500" sanitize:"squish"` // Collapsed whitespace
 }
 ```
 
@@ -181,27 +181,28 @@ type UpdateProfileDTO struct {
 
 | Category | Directive | Description | Example |
 | :--- | :--- | :--- | :--- |
-| **Sources** | `path:"key"` | URL path parameter (`/users/:id`) | `path:"id,uuid"` |
+| **Sources** | `path:"key"` | URL path parameter (`/users/:id`) | `path:"id"` |
 | | `query:"key"` | URL query parameter (`?page=1`) | `query:"page,default=1"` |
-| | `header:"key"` | HTTP request header | `header:"X-API-Key,required"` |
-| | `cookie:"key"` | HTTP cookie value | `cookie:"session_id,required"` |
+| | `header:"key"` | HTTP request header | `header:"X-API-Key"` |
+| | `cookie:"key"` | HTTP cookie value | `cookie:"session_id"` |
 | | `auth:"bearer"` | Extracts `Authorization: Bearer <token>` | `auth:"bearer,required"` |
-| | `form:"key"` | Form field value (multipart or urlencoded) | `form:"title,trim"` |
+| | `form:"key"` | Form field value (multipart or urlencoded) | `form:"title"` |
 | | `file:"key"` | Single uploaded multipart file (`*sein.File`) | `file:"avatar,required"` |
 | | `files:"key"` | Multiple uploaded multipart files (`[]*sein.File`) | `files:"attachments"` |
-| | `json:"key"` | JSON request body payload field | `json:"name,min=2"` |
+| | `json:"key"` | JSON request body payload field | `json:"name"` |
 | | `net:"ip"` | Resolved remote client IP address | `net:"ip"` |
 | | `ctx:""` | Typed inline context injection | `ctx:""` |
-| **Sanitizers** | `trim` | Strips leading and trailing whitespace | `query:"q,trim"` |
-| | `lower` | Converts ASCII characters to lowercase | `json:"email,lower"` |
-| | `upper` | Converts ASCII characters to uppercase | `header:"code,upper"` |
-| | `squish` | Collapses multiple consecutive whitespaces | `json:"bio,squish"` |
-| **Validation** | `required` | Field must be present and non-zero | `header:"X-Trace-ID,required"` |
-| | `min=N` / `max=N` | String length bounds or numeric ranges | `json:"password,min=8,max=64"` |
-| | `enum=a\|b\|c` | Allowed value set validation | `query:"sort,enum=asc\|desc"` |
-| | `email` | Validates standard email address format | `json:"email,email"` |
-| | `uuid` | Validates UUID format (RFC 4122 / RFC 9562) | `path:"id,uuid"` |
-| | `pattern=regex` | Matches precompiled regular expression | `json:"code,pattern=^[A-Z0-9]+$"` |
+| **Sanitizers (`sanitize:"..."`)** | `trim` | Strips leading and trailing whitespace | `sanitize:"trim"` |
+| | `lower` | Converts ASCII characters to lowercase | `sanitize:"lower"` |
+| | `upper` | Converts ASCII characters to uppercase | `sanitize:"upper"` |
+| | `squish` | Collapses multiple consecutive whitespaces | `sanitize:"squish"` |
+| | `digits_only` | Extracts digits only from string | `sanitize:"digits_only"` |
+| **Validation (`validate:"..."`)** | `required` | Field must be present and non-zero | `validate:"required"` |
+| | `min=N` / `max=N` | String length bounds or numeric ranges | `validate:"min=8,max=64"` |
+| | `enum=a\|b\|c` | Allowed value set validation | `validate:"enum=asc\|desc"` |
+| | `email` | Validates standard email address format | `validate:"email"` |
+| | `uuid` | Validates UUID format (RFC 4122 / RFC 9562) | `validate:"uuid"` |
+| | `pattern=regex` | Matches precompiled regular expression | `validate:"pattern=^[A-Z0-9]+$"` |
 
 </details>
 

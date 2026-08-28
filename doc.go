@@ -17,56 +17,57 @@
 //
 //	type UpdateProfileDTO struct {
 //	    // 1. Data Sources (Where values originate from)
-//	    UserID      uuid.UUID           `path:"user_id,uuid"`                  // URL Path variable: /users/:user_id
-//	    Search      string              `query:"q,default=all,trim,lower"`     // Query string: ?q=...
-//	    Page        int                 `query:"page,default=1,positive"`      // Query with integer parsing
-//	    Limit       int                 `query:"limit,default=20,multiple_of=5,le=100"` // Step increment
+//	    UserID      uuid.UUID           `path:"user_id" validate:"uuid"`       // URL Path variable: /users/:user_id
+//	    Search      string              `query:"q,default=all" sanitize:"trim,lower"` // Query string: ?q=...
+//	    Page        int                 `query:"page,default=1" validate:"positive"` // Query with integer parsing
+//	    Limit       int                 `query:"limit,default=20" validate:"multiple_of=5,le=100"` // Step increment
 //	    Tags        []string            `query:"tags,sep=|"`                   // Slice with custom delimiter
-//	    TraceID     string              `header:"X-Trace-ID,required"`         // HTTP Header
-//	    SessionID   string              `cookie:"session_id,required"`         // Cookie value
+//	    TraceID     string              `header:"X-Trace-ID" validate:"required"` // HTTP Header
+//	    SessionID   string              `cookie:"session_id" validate:"required"` // Cookie value
 //	    AuthToken   string              `auth:"bearer,required"`               // Authorization: Bearer <token>
 //	    ClientIP    net.IP              `net:"ip"`                             // Client IP (net.IP or netip.Addr)
 //	    Scheme      string              `net:"scheme"`                         // http or https
 //	    Avatar      *sein.File          `file:"avatar,required"`               // Multipart form file
 //	    Gallery     []*sein.File        `files:"gallery"`                      // Multipart file collection
-//	    Category    string              `form:"category,trim"`                 // Multipart / urlencoded form field
-//	    RawHMAC     []byte              `query:"hmac,hex"`                     // Hex-decoded binary slice
-//	    PayloadB64  []byte              `json:"payload,base64"`                // Base64-decoded binary slice
-//	    Password    sein.Secret[string] `json:"password,min=8"`                // Sensitive data masked in logs
+//	    Category    string              `form:"category" sanitize:"trim"`      // Multipart / urlencoded form field
+//	    RawHMAC     []byte              `query:"hmac" validate:"hex"`          // Hex-decoded binary slice
+//	    PayloadB64  []byte              `json:"payload" validate:"base64"`     // Base64-decoded binary slice
+//	    Password    sein.Secret[string] `json:"password" validate:"min=8"`     // Sensitive data masked in logs
 //	    UserSession *Session            `ctx:""`                               // Typed L1 context session
-//	    Bio         string              `json:"bio,squish,max=500"`            // JSON body with whitespace collapsed
+//	    Bio         string              `json:"bio" validate:"max=500" sanitize:"squish"` // JSON body with whitespace collapsed
 //	}
 //
 // # Tag Directives Reference
 //
-// 1. Sources:
+// 1. Sources (Declare where values originate):
 //   - `path:"key"` or `param:"key"`: URL path parameter (e.g. /users/:id)
 //   - `query:"key"`: URL query parameter
 //   - `header:"key"`: HTTP request header
 //   - `cookie:"key"`: HTTP cookie
 //   - `auth:"bearer"`: Authorization Bearer token
 //   - `net:"ip"` / `net:"proto"` / `net:"scheme"` / `net:"host"` / `net:"method"` / `net:"path"`: Telemetry
-//   - `form:"key"`: Form field
+//   - `form:"key"`: Form field (multipart or urlencoded)
 //   - `file:"key"`: Single multipart uploaded file (*sein.File)
 //   - `files:"key"`: Multiple multipart uploaded files ([]*sein.File)
 //   - `body:"raw"` / `body:"string"`: Raw request body ([]byte or string)
 //   - `ctx:""` / `context:""`: L1 typed request context injection
-//   - `json:"key"`: JSON body payload field
+//   - `json:"key"`: JSON body payload field (standard encoding/json compatible)
 //
-// 2. Modifiers & Options:
-//   - `required`: Field must be present and non-empty
+// 2. Modifiers & Parameter Options:
 //   - `default=value`: Fallback value when parameter is missing or empty
 //   - `format="layout"`: Custom timestamp layout for time.Time fields
 //   - `sep="delimiter"`: Custom slice element separator (default is ",")
+//   - `sign` / `signed`: Cryptographically signed cookie verification
 //
-// 3. String Sanitizers (Executed sequentially before validation):
+// 3. String Sanitizers (`sanitize:"..."`):
 //   - `trim`: Strips leading and trailing whitespace
 //   - `lower`: Converts ASCII characters to lowercase
 //   - `upper`: Converts ASCII characters to uppercase
 //   - `single_space` / `squish`: Replaces consecutive whitespace runs with a single space
 //   - `digits_only`: Strips all non-digit characters
 //
-// 4. Declarative Validation Rules:
+// 4. Declarative Validation Rules (`validate:"..."`):
+//   - `required`: Field must be present and non-empty
 //   - `min=N` / `max=N`: Minimum / maximum string length or numeric value
 //   - `len=N`: Exact string length
 //   - `gt=N` / `ge=N` / `lt=N` / `le=N`: Strict numeric inequalities

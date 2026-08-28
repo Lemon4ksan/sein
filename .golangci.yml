@@ -40,7 +40,6 @@ linters:
         - "-ST1020"
         - "-ST1021"
         - "-ST1022"
-        - "-SA5008"
   exclusions:
     paths:
       - "scripts/.*"
@@ -49,10 +48,6 @@ linters:
       - "internal/compress/.*"
       - "internal/quic/.*"
     rules:
-      - linters: [staticcheck]
-        text: "SA5008:"
-      - linters: [govet]
-        text: "structtag:"
       - path: _test\.go
         linters:
           - gosec

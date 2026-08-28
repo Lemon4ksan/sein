@@ -73,6 +73,12 @@ func Ingest[T any](req RequestView, dest *T) error {
 		}
 	}
 
+	for i := range desc.PostValidators {
+		if err := desc.PostValidators[i](ptr); err != nil {
+			return err
+		}
+	}
+
 	return RunValidation(dest)
 }
 
@@ -118,6 +124,12 @@ func IngestType(req RequestView, typ reflect.Type, dest any) error {
 
 	if desc.HasBodyFields && len(req.Body()) > 0 {
 		if err := req.BindJSON(dest); err != nil {
+			return err
+		}
+	}
+
+	for i := range desc.PostValidators {
+		if err := desc.PostValidators[i](ptr); err != nil {
 			return err
 		}
 	}

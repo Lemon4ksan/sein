@@ -404,3 +404,63 @@ func TestBinder_NumericAndSources(t *testing.T) {
 	// Should not panic on valid route
 	binder.ValidateRouteBinding(reflect.TypeFor[RouteTestDTO](), "/users/:user_id/posts/:post_id")
 }
+
+func TestBinderDedicatedValidateAndSanitizeTags(t *testing.T) {
+	type DedicatedTagDTO struct {
+		Name     string `query:"name" validate:"required,min=3,max=20" sanitize:"trim,lower"`
+		Age      int    `query:"age" validate:"min=18,max=120"`
+		Role     string `query:"role" validate:"enum=admin|user"`
+		JSONName string `json:"json_name" validate:"required,min=2" sanitize:"trim"`
+		JSONAge  int    `json:"json_age" validate:"min=21"`
+	}
+
+	// 1. Success case with query and simulated JSON body
+	req := &mockRequestView{
+		queries: map[string]string{
+			"name": "  ALICE  ",
+			"age":  "25",
+			"role": "admin",
+		},
+	}
+
+	var dto DedicatedTagDTO
+	// Pre-populate JSON fields as if BindJSON ran
+	dto.JSONName = "  Bob  "
+	dto.JSONAge = 30
+
+	err := binder.Ingest(req, &dto)
+	require.NoError(t, err)
+	assert.Equal(t, "alice", dto.Name)
+	assert.Equal(t, 25, dto.Age)
+	assert.Equal(t, "admin", dto.Role)
+	assert.Equal(t, "Bob", dto.JSONName)
+	assert.Equal(t, 30, dto.JSONAge)
+
+	// 2. Validation failure on query validate:"min=3"
+	reqFail := &mockRequestView{
+		queries: map[string]string{
+			"name": "a",
+			"age":  "25",
+			"role": "admin",
+		},
+	}
+	var dtoFail DedicatedTagDTO
+	dtoFail.JSONName = "Bob"
+	dtoFail.JSONAge = 25
+	err = binder.Ingest(reqFail, &dtoFail)
+	assert.Error(t, err)
+
+	// 3. Validation failure on JSON post-validator validate:"min=21"
+	reqJSONFail := &mockRequestView{
+		queries: map[string]string{
+			"name": "Alice",
+			"age":  "25",
+			"role": "admin",
+		},
+	}
+	var dtoJSONFail DedicatedTagDTO
+	dtoJSONFail.JSONName = "Bob"
+	dtoJSONFail.JSONAge = 19 // Below 21
+	err = binder.Ingest(reqJSONFail, &dtoJSONFail)
+	assert.Error(t, err)
+}

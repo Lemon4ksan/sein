@@ -58,7 +58,7 @@ There is **zero framework lock-in** inside your business logic. A handler does n
 ### I. Pure Function Handlers & Declarative Ingestion
 Handlers accept strongly-typed structs and return typed results and standard Go `error`. `sein` handles everything else:
 * **Multi-Source Ingestion**: Single DTO fields automatically populate from `ctx`, `header`, `query`, `path`, `cookie`, `form`, and `json`.
-* **Tag-Based Sanitization & Validation**: `trim`, `lower`, `upper`, `single_space`, `digits_only`, `format:"uuid"`, `enum:"USD,EUR,KEY"`, `min:"1"`, `max:"1000"`.
+* **Tag-Based Sanitization & Validation (`validate:"..."`, `sanitize:"..."`)**: `sanitize:"trim,lower,upper,single_space,digits_only"`, `validate:"uuid,email,url,enum=USD|EUR|JPY,min=1,max=1000"`.
 * **Zero Reflection in Runtime**: Struct descriptors are analyzed and compiled into direct pointer arithmetic (`uintptr` memory offsets) at server boot time.
 
 ### II. Zero-GC Request Bump Arena (`req.Arena()`)

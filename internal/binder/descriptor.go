@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/lemon4ksan/foundation/generic"
@@ -84,11 +85,24 @@ type FieldBinding struct {
 	EnumVals      []string
 }
 
+// HasValidationRules reports whether the field has declarative validation constraints.
+func (b *FieldBinding) HasValidationRules() bool {
+	return b.Required || b.HasMin || b.HasMax || b.HasLen || b.HasGT || b.HasGE ||
+		b.HasLT || b.HasLE || b.HasMultipleOf || b.Pattern != "" || b.IsEmail ||
+		b.IsUUID || b.IsURL || b.IsBase64 || b.IsHex || len(b.EnumVals) > 0
+}
+
+// HasSanitizationRules reports whether the field has string sanitization transforms.
+func (b *FieldBinding) HasSanitizationRules() bool {
+	return b.Trim || b.Lower || b.Upper || b.SingleSpace || b.DigitsOnly
+}
+
 // StructDescriptor caches the precompiled pipeline steps and layout of a struct type.
 type StructDescriptor struct {
-	HasBodyFields bool
-	PathKeys      generic.Set[string]
-	Steps         []FieldStep
+	HasBodyFields  bool
+	PathKeys       generic.Set[string]
+	Steps          []FieldStep
+	PostValidators []PostValidatorFunc
 }
 
 var (
@@ -117,69 +131,139 @@ var (
 	}
 )
 
-func populateFieldBinding(tag refkit.Tag, b *FieldBinding) {
-	b.Key = tag.Name
-	b.Required = tag.Has("required")
-	b.DefaultValue = tag.Get("default")
-	b.Format = tag.Get("format")
-	b.Separator = generic.Coalesce(tag.Get("sep"), ",")
-	b.Pattern = tag.Get("pattern")
-	b.Signed = tag.Has("sign") || tag.Has("signed")
-	b.Trim = tag.Has("trim")
-	b.Lower = tag.Has("lower")
-	b.Upper = tag.Has("upper")
-	b.SingleSpace = tag.Has("single_space") || tag.Has("squish")
-	b.DigitsOnly = tag.Has("digits_only")
-	b.IsEmail = tag.Has("email")
-	b.IsUUID = tag.Has("uuid")
-	b.IsURL = tag.Has("url")
-	b.IsBase64 = tag.Has("base64")
-	b.IsHex = tag.Has("hex")
+func populateValidationRules(tag refkit.Tag, b *FieldBinding) {
+	if tag.Name == "required" || tag.Has("required") {
+		b.Required = true
+	}
+	if tag.Name == "email" || tag.Has("email") {
+		b.IsEmail = true
+	}
+	if tag.Name == "uuid" || tag.Has("uuid") {
+		b.IsUUID = true
+	}
+	if tag.Name == "url" || tag.Has("url") {
+		b.IsURL = true
+	}
+	if tag.Name == "base64" || tag.Has("base64") {
+		b.IsBase64 = true
+	}
+	if tag.Name == "hex" || tag.Has("hex") {
+		b.IsHex = true
+	}
+	if tag.Name == "sign" || tag.Name == "signed" || tag.Has("sign") || tag.Has("signed") {
+		b.Signed = true
+	}
 
-	b.MinVal, b.HasMin = tag.GetFloat("min")
-	b.MaxVal, b.HasMax = tag.GetFloat("max")
-	b.LenVal, b.HasLen = tag.GetInt("len")
-	b.EnumVals = tag.SplitOption("enum", "|")
+	if v, ok := tag.GetFloat("min"); ok {
+		b.HasMin = true
+		b.MinVal = v
+	} else if strings.HasPrefix(tag.Name, "min=") {
+		if val, err := strconv.ParseFloat(strings.TrimPrefix(tag.Name, "min="), 64); err == nil {
+			b.HasMin = true
+			b.MinVal = val
+		}
+	}
+
+	if v, ok := tag.GetFloat("max"); ok {
+		b.HasMax = true
+		b.MaxVal = v
+	} else if strings.HasPrefix(tag.Name, "max=") {
+		if val, err := strconv.ParseFloat(strings.TrimPrefix(tag.Name, "max="), 64); err == nil {
+			b.HasMax = true
+			b.MaxVal = val
+		}
+	}
+
+	if v, ok := tag.GetInt("len"); ok {
+		b.HasLen = true
+		b.LenVal = v
+	} else if strings.HasPrefix(tag.Name, "len=") {
+		if val, err := strconv.Atoi(strings.TrimPrefix(tag.Name, "len=")); err == nil {
+			b.HasLen = true
+			b.LenVal = val
+		}
+	}
+
+	if enums := tag.SplitOption("enum", "|"); len(enums) > 0 {
+		b.EnumVals = enums
+	} else if strings.HasPrefix(tag.Name, "enum=") {
+		b.EnumVals = strings.Split(strings.TrimPrefix(tag.Name, "enum="), "|")
+	}
 
 	if v, ok := tag.GetFloat("gt"); ok {
 		b.HasGT = true
 		b.GTVal = v
 	}
-
 	if v, ok := tag.GetFloat("ge"); ok {
 		b.HasGE = true
 		b.GEVal = v
 	}
-
 	if v, ok := tag.GetFloat("lt"); ok {
 		b.HasLT = true
 		b.LTVal = v
 	}
-
 	if v, ok := tag.GetFloat("le"); ok {
 		b.HasLE = true
 		b.LEVal = v
 	}
-
-	if tag.Has("positive") {
+	if tag.Name == "positive" || tag.Has("positive") {
 		b.HasGT = true
 		b.GTVal = 0
 	}
-
-	if tag.Has("negative") {
+	if tag.Name == "negative" || tag.Has("negative") {
 		b.HasLT = true
 		b.LTVal = 0
 	}
-
-	if tag.Has("non_negative") {
+	if tag.Name == "non_negative" || tag.Has("non_negative") {
 		b.HasGE = true
 		b.GEVal = 0
 	}
-
 	if v, ok := tag.GetFloat("multiple_of"); ok {
 		b.HasMultipleOf = true
 		b.MultipleOfVal = v
 	}
+	if pat := tag.Get("pattern"); pat != "" {
+		b.Pattern = pat
+	} else if strings.HasPrefix(tag.Name, "pattern=") {
+		b.Pattern = strings.TrimPrefix(tag.Name, "pattern=")
+	}
+	if fmtVal := tag.Get("format"); fmtVal != "" {
+		b.Format = fmtVal
+	}
+}
+
+func populateSanitizationRules(tag refkit.Tag, b *FieldBinding) {
+	if tag.Name == "trim" || tag.Has("trim") {
+		b.Trim = true
+	}
+	if tag.Name == "lower" || tag.Has("lower") {
+		b.Lower = true
+	}
+	if tag.Name == "upper" || tag.Has("upper") {
+		b.Upper = true
+	}
+	if tag.Name == "single_space" || tag.Name == "squish" || tag.Has("single_space") || tag.Has("squish") {
+		b.SingleSpace = true
+	}
+	if tag.Name == "digits_only" || tag.Has("digits_only") {
+		b.DigitsOnly = true
+	}
+}
+
+func populateFieldBinding(tag refkit.Tag, b *FieldBinding) {
+	if b.Key == "" && tag.Name != "" {
+		b.Key = tag.Name
+	}
+	if def := tag.Get("default"); def != "" {
+		b.DefaultValue = def
+	}
+	if sep := tag.Get("sep"); sep != "" {
+		b.Separator = sep
+	} else if b.Separator == "" {
+		b.Separator = ","
+	}
+	populateValidationRules(tag, b)
+	populateSanitizationRules(tag, b)
 }
 
 // GetDescriptor retrieves or compiles a cached StructDescriptor for typ.
@@ -269,9 +353,36 @@ func GetDescriptor(typ reflect.Type) *StructDescriptor {
 			}
 		}
 
+		// Check dedicated validate, sanitize, and binding tags on all fields
+		if raw, ok := field.Tag.Lookup("validate"); ok {
+			tag := refkit.ParseTag(raw)
+			populateFieldBinding(tag, &b)
+		}
+		if raw, ok := field.Tag.Lookup("sanitize"); ok {
+			tag := refkit.ParseTag(raw)
+			populateFieldBinding(tag, &b)
+		}
+		if raw, ok := field.Tag.Lookup("binding"); ok {
+			tag := refkit.ParseTag(raw)
+			populateFieldBinding(tag, &b)
+		}
+
 		if matched {
 			step := CompileFieldStep(&b)
 			desc.Steps = append(desc.Steps, step)
+		} else {
+			if jsonTag, ok := field.Tag.Lookup("json"); ok {
+				desc.HasBodyFields = true
+				jsonName := strings.Split(jsonTag, ",")[0]
+				if jsonName != "" && jsonName != "-" {
+					b.Key = generic.Coalesce(b.Key, jsonName)
+				}
+			}
+			if b.HasValidationRules() || b.HasSanitizationRules() {
+				b.Key = generic.Coalesce(b.Key, field.Name)
+				postStep := CompilePostValidator(&b)
+				desc.PostValidators = append(desc.PostValidators, postStep)
+			}
 		}
 
 		if _, ok := field.Tag.Lookup("json"); ok {

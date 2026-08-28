@@ -44,10 +44,10 @@ import (
 
 // 1. Декларируем контракт DTO с санитизацией и валидацией
 type UpdateUserDTO struct {
-	UserID   uuid.UUID `path:"id,uuid"`
-	Username string    `json:"username,trim,required,min=3,max=30"`
-	Email    string    `json:"email,lower,email,required"`
-	Role     string    `query:"role,default=user,enum=user|admin|moderator"`
+	UserID   uuid.UUID `path:"id" validate:"uuid"`
+	Username string    `json:"username" validate:"required,min=3,max=30" sanitize:"trim"`
+	Email    string    `json:"email" validate:"required,email" sanitize:"lower"`
+	Role     string    `query:"role,default=user" validate:"enum=user|admin|moderator"`
 	Auth     string    `auth:"bearer,required"`
 }
 
@@ -159,20 +159,20 @@ users.MapErrors(sein.Errors{
 ```go
 type UpdateProfileDTO struct {
 	// Источники данных протоколов
-	UserID      uuid.UUID           `path:"user_id,uuid"`                  // Параметр URL: /users/:user_id
-	Search      string              `query:"q,default=all,trim,lower"`     // Query-параметр: ?q=...
-	Page        int                 `query:"page,default=1,positive"`      // Query с числовым парсингом
-	Limit       int                 `query:"limit,default=20,multiple_of=5,le=100"` // Ограничения
+	UserID      uuid.UUID           `path:"user_id" validate:"uuid"`       // Параметр URL: /users/:user_id
+	Search      string              `query:"q,default=all" sanitize:"trim,lower"` // Query-параметр: ?q=...
+	Page        int                 `query:"page,default=1" validate:"positive"` // Query с числовым парсингом
+	Limit       int                 `query:"limit,default=20" validate:"multiple_of=5,le=100"` // Ограничения
 	Tags        []string            `query:"tags,sep=|"`                   // Срез с кастомным разделителем
-	TraceID     string              `header:"X-Trace-ID,required"`         // HTTP-заголовок
-	SessionID   string              `cookie:"session_id,required"`         // Cookie
+	TraceID     string              `header:"X-Trace-ID" validate:"required"` // HTTP-заголовок
+	SessionID   string              `cookie:"session_id" validate:"required"` // Cookie
 	AuthToken   string              `auth:"bearer,required"`               // Authorization: Bearer <token>
 	ClientIP    net.IP              `net:"ip"`                             // Вычисленный IP клиента
 	Avatar      *sein.File          `file:"avatar,required"`               // Загруженный файл
 	Gallery     []*sein.File        `files:"gallery"`                      // Набор загруженных файлов
-	Password    sein.Secret[string] `json:"password,min=8"`                // Маскируется в логах и трейсах
+	Password    sein.Secret[string] `json:"password" validate:"min=8"`     // Маскируется в логах и трейсах
 	UserSession *Session            `ctx:""`                               // Типизированная сессия из контекста
-	Bio         string              `json:"bio,squish,max=500"`            // Схлопывание пробелов
+	Bio         string              `json:"bio" validate:"max=500" sanitize:"squish"` // Схлопывание пробелов
 }
 ```
 
@@ -181,27 +181,28 @@ type UpdateProfileDTO struct {
 
 | Категория | Директива | Описание | Пример |
 | :--- | :--- | :--- | :--- |
-| **Источники** | `path:"key"` | Параметр URL-пути (`/users/:id`) | `path:"id,uuid"` |
+| **Источники** | `path:"key"` | Параметр URL-пути (`/users/:id`) | `path:"id"` |
 | | `query:"key"` | URL query-параметр (`?page=1`) | `query:"page,default=1"` |
-| | `header:"key"` | HTTP-заголовок запроса | `header:"X-API-Key,required"` |
-| | `cookie:"key"` | Значение HTTP-cookie | `cookie:"session_id,required"` |
+| | `header:"key"` | HTTP-заголовок запроса | `header:"X-API-Key"` |
+| | `cookie:"key"` | Значение HTTP-cookie | `cookie:"session_id"` |
 | | `auth:"bearer"` | Извлечение `Authorization: Bearer <token>` | `auth:"bearer,required"` |
-| | `form:"key"` | Поле формы (multipart или urlencoded) | `form:"title,trim"` |
+| | `form:"key"` | Поле формы (multipart или urlencoded) | `form:"title"` |
 | | `file:"key"` | Одиночный файл формы (`*sein.File`) | `file:"avatar,required"` |
 | | `files:"key"` | Набор файлов формы (`[]*sein.File`) | `files:"attachments"` |
-| | `json:"key"` | Поле JSON-тела запроса | `json:"name,min=2"` |
+| | `json:"key"` | Поле JSON-тела запроса | `json:"name"` |
 | | `net:"ip"` | Вычисленный IP-клиента | `net:"ip"` |
 | | `ctx:""` | Внедрение значения из контекста | `ctx:""` |
-| **Санитизаторы** | `trim` | Удаление концевых пробелов | `query:"q,trim"` |
-| | `lower` | Приведение ASCII символов к нижнему регистру | `json:"email,lower"` |
-| | `upper` | Приведение ASCII символов к верхнему регистру | `header:"code,upper"` |
-| | `squish` | Схлопывание повторяющихся пробелов | `json:"bio,squish"` |
-| **Валидаторы** | `required` | Поле обязательно и не может быть пустым | `header:"X-Trace-ID,required"` |
-| | `min=N` / `max=N` | Границы длины строки или числового значения | `json:"password,min=8,max=64"` |
-| | `enum=a\|b\|c` | Проверка допустимого набора значений | `query:"sort,enum=asc\|desc"` |
-| | `email` | Валидация стандартного формата email | `json:"email,email"` |
-| | `uuid` | Валидация формата UUID (RFC 4122 / RFC 9562) | `path:"id,uuid"` |
-| | `pattern=regex` | Соответствие регулярному выражению | `json:"code,pattern=^[A-Z0-9]+$"` |
+| **Санитизаторы (`sanitize:"..."`)** | `trim` | Удаление концевых пробелов | `sanitize:"trim"` |
+| | `lower` | Приведение ASCII символов к нижнему регистру | `sanitize:"lower"` |
+| | `upper` | Приведение ASCII символов к верхнему регистру | `sanitize:"upper"` |
+| | `squish` | Схлопывание повторяющихся пробелов | `sanitize:"squish"` |
+| | `digits_only` | Извлечение только цифр | `sanitize:"digits_only"` |
+| **Валидаторы (`validate:"..."`)** | `required` | Поле обязательно и не может быть пустым | `validate:"required"` |
+| | `min=N` / `max=N` | Границы длины строки или числового значения | `validate:"min=8,max=64"` |
+| | `enum=a\|b\|c` | Проверка допустимого набора значений | `validate:"enum=asc\|desc"` |
+| | `email` | Валидация стандартного формата email | `validate:"email"` |
+| | `uuid` | Валидация формата UUID (RFC 4122 / RFC 9562) | `validate:"uuid"` |
+| | `pattern=regex` | Соответствие регулярному выражению | `validate:"pattern=^[A-Z0-9]+$"` |
 
 </details>
 

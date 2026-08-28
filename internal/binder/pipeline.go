@@ -7,6 +7,7 @@ package binder
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"unsafe"
 
@@ -165,4 +166,151 @@ func extractSliceValues(req RequestView, source ParamSource, key, raw, sep strin
 	}
 
 	return generic.Map(vals, strings.TrimSpace)
+}
+
+// CompilePostValidator compiles in-place validation and sanitization for struct fields (e.g. JSON body fields).
+func CompilePostValidator(b *FieldBinding) PostValidatorFunc {
+	transforms := CompileTransforms(b)
+	validators := CompileValidators(b)
+	offset := b.Offset
+	key := b.Key
+	required := b.Required
+	kind := b.Kind
+	if b.IsPtr {
+		kind = b.ElemKind
+	}
+
+	return func(structPtr unsafe.Pointer) error {
+		fieldPtr := unsafe.Add(structPtr, offset)
+
+		if b.IsPtr {
+			valPtr := *(*unsafe.Pointer)(fieldPtr)
+			if valPtr == nil {
+				if required {
+					return ValidationError{Message: key + " is required"}
+				}
+				return nil
+			}
+			fieldPtr = valPtr
+		}
+
+		switch kind {
+		case reflect.String:
+			strPtr := (*string)(fieldPtr)
+			val := *strPtr
+			if required && len(val) == 0 {
+				return ValidationError{Message: key + " is required"}
+			}
+			for _, t := range transforms {
+				val = t(val)
+			}
+			*strPtr = val
+			for _, v := range validators {
+				if err := v(val); err != nil {
+					return err
+				}
+			}
+
+		case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
+			var intVal int64
+			switch kind {
+			case reflect.Int:
+				intVal = int64(*(*int)(fieldPtr))
+			case reflect.Int64:
+				intVal = *(*int64)(fieldPtr)
+			case reflect.Int32:
+				intVal = int64(*(*int32)(fieldPtr))
+			case reflect.Int16:
+				intVal = int64(*(*int16)(fieldPtr))
+			case reflect.Int8:
+				intVal = int64(*(*int8)(fieldPtr))
+			}
+			if required && intVal == 0 {
+				return ValidationError{Message: key + " is required"}
+			}
+			str := strconv.FormatInt(intVal, 10)
+			for _, v := range validators {
+				if err := v(str); err != nil {
+					return err
+				}
+			}
+
+		case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8:
+			var uintVal uint64
+			switch kind {
+			case reflect.Uint:
+				uintVal = uint64(*(*uint)(fieldPtr))
+			case reflect.Uint64:
+				uintVal = *(*uint64)(fieldPtr)
+			case reflect.Uint32:
+				uintVal = uint64(*(*uint32)(fieldPtr))
+			case reflect.Uint16:
+				uintVal = uint64(*(*uint16)(fieldPtr))
+			case reflect.Uint8:
+				uintVal = uint64(*(*uint8)(fieldPtr))
+			}
+			if required && uintVal == 0 {
+				return ValidationError{Message: key + " is required"}
+			}
+			str := strconv.FormatUint(uintVal, 10)
+			for _, v := range validators {
+				if err := v(str); err != nil {
+					return err
+				}
+			}
+
+		case reflect.Float64, reflect.Float32:
+			var floatVal float64
+			if kind == reflect.Float64 {
+				floatVal = *(*float64)(fieldPtr)
+			} else {
+				floatVal = float64(*(*float32)(fieldPtr))
+			}
+			if required && floatVal == 0 {
+				return ValidationError{Message: key + " is required"}
+			}
+			str := strconv.FormatFloat(floatVal, 'f', -1, 64)
+			for _, v := range validators {
+				if err := v(str); err != nil {
+					return err
+				}
+			}
+
+		case reflect.Slice:
+			sliceVal := reflect.NewAt(b.FieldType, fieldPtr).Elem()
+			l := sliceVal.Len()
+			if required && l == 0 {
+				return ValidationError{Message: key + " is required"}
+			}
+			if b.HasMin && float64(l) < b.MinVal {
+				return ValidationError{Message: fmt.Sprintf("%s slice length must be at least %v", key, b.MinVal)}
+			}
+			if b.HasMax && float64(l) > b.MaxVal {
+				return ValidationError{Message: fmt.Sprintf("%s slice length must be at most %v", key, b.MaxVal)}
+			}
+			if b.HasLen && l != b.LenVal {
+				return ValidationError{Message: fmt.Sprintf("%s length must be exactly %d", key, b.LenVal)}
+			}
+
+		default:
+			if b.FieldType.String() == "sein.Secret[string]" || (b.Kind == reflect.Struct && b.FieldType.Name() == "Secret") {
+				strPtr := (*string)(fieldPtr)
+				val := *strPtr
+				if required && len(val) == 0 {
+					return ValidationError{Message: key + " is required"}
+				}
+				for _, t := range transforms {
+					val = t(val)
+				}
+				*strPtr = val
+				for _, v := range validators {
+					if err := v(val); err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		return nil
+	}
 }
