@@ -30,8 +30,6 @@ func TestRouter_RegistrationAndLookup(t *testing.T) {
 	dummyConn := &golangssh.ServerConn{}
 
 	t.Run("auto_generated_subdomain_on_empty_host", func(t *testing.T) {
-		t.Parallel()
-
 		router := reverse.NewRouter("sein.dev")
 		tun, err := router.Register(dummyConn, "", 8080)
 		require.NoError(t, err)
@@ -42,8 +40,6 @@ func TestRouter_RegistrationAndLookup(t *testing.T) {
 	})
 
 	t.Run("explicit_host_registration_and_lookup", func(t *testing.T) {
-		t.Parallel()
-
 		router := reverse.NewRouter("sein.dev")
 		tun, err := router.Register(dummyConn, "my-app.sein.dev", 9090)
 		require.NoError(t, err)
@@ -61,8 +57,6 @@ func TestRouter_RegistrationAndLookup(t *testing.T) {
 	})
 
 	t.Run("duplicate_host_registration_fails", func(t *testing.T) {
-		t.Parallel()
-
 		router := reverse.NewRouter("sein.dev")
 		_, err1 := router.Register(dummyConn, "duplicate.sein.dev", 3000)
 		require.NoError(t, err1)
@@ -72,8 +66,6 @@ func TestRouter_RegistrationAndLookup(t *testing.T) {
 	})
 
 	t.Run("unregister_clears_route", func(t *testing.T) {
-		t.Parallel()
-
 		router := reverse.NewRouter("sein.dev")
 		tun, err := router.Register(dummyConn, "temp.sein.dev", 4000)
 		require.NoError(t, err)
@@ -96,8 +88,6 @@ func TestGateway_ServeHTTP_Errors(t *testing.T) {
 	t.Parallel()
 
 	t.Run("unregistered_host_returns_404", func(t *testing.T) {
-		t.Parallel()
-
 		router := reverse.NewRouter("sein.dev")
 		gateway := reverse.NewGateway(router)
 
@@ -112,8 +102,6 @@ func TestGateway_ServeHTTP_Errors(t *testing.T) {
 	})
 
 	t.Run("registered_host_with_closed_ssh_conn_returns_502", func(t *testing.T) {
-		t.Parallel()
-
 		router := reverse.NewRouter("sein.dev")
 		gateway := reverse.NewGateway(router)
 
@@ -136,8 +124,6 @@ func TestPeekSNI(t *testing.T) {
 	t.Parallel()
 
 	t.Run("invalid_non_tls_header_fails", func(t *testing.T) {
-		t.Parallel()
-
 		c1, c2 := net.Pipe()
 		t.Cleanup(func() {
 			_ = c1.Close()
@@ -159,8 +145,6 @@ func TestPeekSNI(t *testing.T) {
 	})
 
 	t.Run("valid_tls_client_hello_sni_extraction", func(t *testing.T) {
-		t.Parallel()
-
 		rawClientHello := buildMockTLSClientHello("sni.example.com")
 		require.NotEmpty(t, rawClientHello)
 

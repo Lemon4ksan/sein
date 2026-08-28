@@ -2143,6 +2143,10 @@ func TestConnectionGSOBatchECN(t *testing.T) {
 				Return(shortHeaderPacket{}, errNothingToPack),
 		)
 		gomock.InOrder(calls...)
+		tc.packer.EXPECT().
+			AppendPacket(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(shortHeaderPacket{}, errNothingToPack).
+			AnyTimes()
 
 		done3 := make(chan struct{})
 
