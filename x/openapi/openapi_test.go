@@ -45,6 +45,18 @@ func TestOpenAPIGenerator(t *testing.T) {
 	require.True(t, ok)
 	assert.NotNil(t, item["get"])
 
+	// Check RFC 9457 Problem Details schema in Components
+	require.NotNil(t, doc.Components)
+	require.NotNil(t, doc.Components.Schemas["ProblemDetails"])
+	assert.Equal(t, "ProblemDetails", doc.Components.Schemas["ProblemDetails"].Title)
+
+	// Check 400 Problem Details response media
+	getOp := item["get"]
+	resp400, ok := getOp.Responses["400"]
+	require.True(t, ok)
+	require.NotNil(t, resp400.Content["application/problem+json"])
+	assert.Equal(t, "#/components/schemas/ProblemDetails", resp400.Content["application/problem+json"].Schema.Ref)
+
 	jsonBytes, err := doc.ToJSON()
 	require.NoError(t, err)
 	assert.NotEmpty(t, jsonBytes)

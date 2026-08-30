@@ -71,6 +71,13 @@ func buildErrorResponse(err error, mappers []ErrorMapper) errorResponse {
 }
 
 func (s *Server) writeH1Error(res *h1engine.Response, err error) {
+	if redir, ok := errors.AsType[RedirectError](err); ok {
+		res.StatusCode = redir.Status
+		res.Headers.Set(header.Location, redir.TargetURL)
+		res.Body = nil
+		return
+	}
+
 	resp := buildErrorResponse(err, s.errorMappers)
 
 	res.StatusCode = resp.Status
@@ -81,11 +88,18 @@ func (s *Server) writeH1Error(res *h1engine.Response, err error) {
 }
 
 func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
-	resp := buildErrorResponse(err, s.errorMappers)
-
 	if res.Headers == nil {
 		res.Headers = make(http.Header)
 	}
+
+	if redir, ok := errors.AsType[RedirectError](err); ok {
+		res.StatusCode = redir.Status
+		res.Headers.Set(header.Location, redir.TargetURL)
+		res.Body = nil
+		return
+	}
+
+	resp := buildErrorResponse(err, s.errorMappers)
 
 	res.StatusCode = resp.Status
 	res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
@@ -95,11 +109,18 @@ func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
 }
 
 func (s *Server) writeH3Error(res *h3engine.ServerResponse, err error) {
-	resp := buildErrorResponse(err, s.errorMappers)
-
 	if res.Headers == nil {
 		res.Headers = make(http.Header)
 	}
+
+	if redir, ok := errors.AsType[RedirectError](err); ok {
+		res.StatusCode = redir.Status
+		res.Headers.Set(header.Location, redir.TargetURL)
+		res.Body = nil
+		return
+	}
+
+	resp := buildErrorResponse(err, s.errorMappers)
 
 	res.StatusCode = resp.Status
 	res.Headers.Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)
@@ -109,6 +130,12 @@ func (s *Server) writeH3Error(res *h3engine.ServerResponse, err error) {
 }
 
 func (s *Server) writeError(w http.ResponseWriter, err error) {
+	if redir, ok := errors.AsType[RedirectError](err); ok {
+		w.Header().Set(header.Location, redir.TargetURL)
+		w.WriteHeader(redir.Status)
+		return
+	}
+
 	resp := buildErrorResponse(err, s.errorMappers)
 
 	w.Header().Set(header.ContentType, header.MIMEApplicationJSONCharsetUTF8)

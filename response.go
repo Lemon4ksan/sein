@@ -263,20 +263,34 @@ func NotModified() Response[any] {
 	}
 }
 
+// RedirectTo creates a type-safe 302 Found / 307 Temporary Redirect [Response] pointing to targetURL.
+// It allows handlers returning [Response][T] to return a typed redirect response with zero allocations.
+//
+// # Example
+//
+//	return sein.RedirectTo[*UserDTO]("/login"), nil
+func RedirectTo[T any](targetURL string, status ...int) Response[T] {
+	code := http.StatusFound
+	if len(status) > 0 {
+		code = status[0]
+	}
+
+	var zero T
+	r := Response[T]{
+		Status: code,
+		Body:   zero,
+	}
+
+	return r.WithHeader(header.Location, targetURL)
+}
+
 // Redirect creates a 302 Found / 307 Temporary Redirect [Response] pointing to targetURL (RFC 9110 §15.4.3).
 //
 // # Example
 //
 //	return sein.Redirect("/login"), nil
 func Redirect(targetURL string, status ...int) Response[any] {
-	code := http.StatusFound
-	if len(status) > 0 {
-		code = status[0]
-	}
-
-	r := Response[any]{Status: code}
-
-	return r.WithHeader(header.Location, targetURL)
+	return RedirectTo[any](targetURL, status...)
 }
 
 // StatusWith creates a response with custom HTTP status code, body, and headers.

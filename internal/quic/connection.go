@@ -1384,8 +1384,7 @@ func (c *Conn) handleUnpackError(
 		c.logger.Debugf("Dropping %s packet (%d bytes) that could not be unpacked. Error: %s", pt, p.Size(), err)
 		return false, nil
 	default:
-		var headerErr *headerParseError
-		if errors.As(err, &headerErr) {
+		if _, ok := errors.AsType[*headerParseError](err); ok {
 			c.logger.Debugf(
 				"Dropping %s packet (%d bytes) for which we couldn't unpack the header. Error: %s",
 				pt,
@@ -2020,8 +2019,7 @@ func (c *Conn) closeWithTransportError(code TransportErrorCode) {
 
 func (c *Conn) handleCloseError(closeErr *closeError) {
 	if closeErr.immediate {
-		var nerr net.Error
-		if errors.As(closeErr.err, &nerr) {
+		if _, ok := errors.AsType[net.Error](closeErr.err); ok {
 			c.logger.Errorf("Destroying connection: %s", closeErr.err)
 		} else {
 			c.logger.Errorf("Destroying connection with error: %s", closeErr.err)

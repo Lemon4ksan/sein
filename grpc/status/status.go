@@ -85,8 +85,7 @@ func (e *statusError) GRPCStatus() *Status {
 
 // Is reports whether target matches this error.
 func (e *statusError) Is(target error) bool {
-	var se *statusError
-	if errors.As(target, &se) {
+	if se, ok := errors.AsType[*statusError](target); ok {
 		return se.s.code == e.s.code && se.s.message == e.s.message
 	}
 

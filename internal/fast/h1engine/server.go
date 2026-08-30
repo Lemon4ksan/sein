@@ -86,8 +86,7 @@ func (s *Server) Serve(ln net.Listener) error {
 				return ErrServerClosed
 			}
 
-			var ne net.Error
-			if errors.As(err, &ne) {
+			if _, ok := errors.AsType[net.Error](err); ok {
 				if tempDelay == 0 {
 					tempDelay = 5 * time.Millisecond
 				} else {

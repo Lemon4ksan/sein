@@ -255,10 +255,79 @@ func AsHTTPError(err error) (HTTPError, bool) {
 		return HTTPError{}, false
 	}
 
-	var httpErr HTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[HTTPError](err); ok {
 		return httpErr, true
 	}
 
 	return HTTPError{}, false
+}
+
+// RedirectError represents an HTTP redirection returned as an error from a handler.
+// This allows typed handlers (e.g. func(ctx) (*UserDTO, error)) to trigger an immediate
+// redirect without altering their return type signature.
+type RedirectError struct {
+	TargetURL string
+	Status    int
+}
+
+// Error implements the error interface.
+func (e RedirectError) Error() string {
+	return fmt.Sprintf("sein: redirect to %s (status %d)", e.TargetURL, e.Status)
+}
+
+// HTTPStatus returns the HTTP redirection status code.
+func (e RedirectError) HTTPStatus() int {
+	return e.Status
+}
+
+// ErrorCode returns "REDIRECT".
+func (e RedirectError) ErrorCode() string {
+	return "REDIRECT"
+}
+
+// Location returns the target URL for redirection.
+func (e RedirectError) Location() string {
+	return e.TargetURL
+}
+
+// StatusCode returns the HTTP status code (implements ResponseHolder).
+func (e RedirectError) StatusCode() int {
+	return e.Status
+}
+
+// ResponseBody returns nil.
+func (e RedirectError) ResponseBody() any {
+	return nil
+}
+
+// ResponseHeaders returns the Location header map.
+func (e RedirectError) ResponseHeaders() http.Header {
+	return http.Header{"Location": []string{e.TargetURL}}
+}
+
+// ResponseCookies returns nil.
+func (e RedirectError) ResponseCookies() []*http.Cookie {
+	return nil
+}
+
+// ErrRedirect creates a RedirectError pointing to targetURL.
+//
+// # Example
+//
+//	app.Get("/avatar", func(ctx context.Context, req *GetAvatarReq) (*AvatarDTO, error) {
+//	    if req.External {
+//	        return nil, sein.ErrRedirect("https://gravatar.com/avatar/...", http.StatusTemporaryRedirect)
+//	    }
+//	    return &AvatarDTO{ID: req.ID}, nil
+//	})
+func ErrRedirect(targetURL string, status ...int) RedirectError {
+	code := http.StatusFound
+	if len(status) > 0 {
+		code = status[0]
+	}
+
+	return RedirectError{
+		TargetURL: targetURL,
+		Status:    code,
+	}
 }
