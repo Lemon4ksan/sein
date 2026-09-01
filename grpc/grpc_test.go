@@ -131,7 +131,7 @@ func TestGRPC_UnarySuccess(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Equal(t, "application/grpc", res.Header.Get("Content-Type"))
-	assert.Equal(t, "0", res.Header.Get("Grpc-Status"))
+	assert.Equal(t, "0", res.Trailer.Get("Grpc-Status"))
 
 	var reply HelloReply
 	decodeGRPCFrame(t, res.Body, &reply)
@@ -193,7 +193,7 @@ func TestGRPC_UnaryInterceptorAndMetadata(t *testing.T) {
 
 	assert.True(t, intercepted)
 	assert.Equal(t, "12345", res.Header.Get("X-Server-Time"))
-	assert.Equal(t, "0", res.Header.Get("Grpc-Status"))
+	assert.Equal(t, "0", res.Trailer.Get("Grpc-Status"))
 }
 
 func TestGRPC_StreamingRPC(t *testing.T) {
@@ -213,13 +213,16 @@ func TestGRPC_StreamingRPC(t *testing.T) {
 		},
 	})
 
-	var reqBody bytes.Buffer
-	for i := 0; i < 3; i++ {
-		data, _ := json.Marshal(&HelloRequest{Name: "Msg" + strconv.Itoa(i)})
-		_ = grpc.WriteMsg(&reqBody, data, false)
-	}
+	pipeReader, pipeWriter := io.Pipe()
+	go func() {
+		for i := 0; i < 3; i++ {
+			body := encodeGRPCFrame(t, &HelloRequest{Name: "Msg" + strconv.Itoa(i)})
+			_, _ = pipeWriter.Write(body)
+		}
+		_ = pipeWriter.Close()
+	}()
 
-	req := httptest.NewRequest(http.MethodPost, "/helloworld.Greeter/StreamHello", &reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/helloworld.Greeter/StreamHello", pipeReader)
 	req.Header.Set("Content-Type", "application/grpc")
 
 	rec := httptest.NewRecorder()
@@ -236,7 +239,7 @@ func TestGRPC_StreamingRPC(t *testing.T) {
 		assert.Equal(t, "Echo Msg"+strconv.Itoa(i), reply.Message)
 	}
 
-	assert.Equal(t, "0", res.Header.Get("Grpc-Status"))
+	assert.Equal(t, "0", res.Trailer.Get("Grpc-Status"))
 }
 
 func TestGRPC_MountOnSein(t *testing.T) {

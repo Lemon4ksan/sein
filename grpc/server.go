@@ -269,8 +269,6 @@ func (s *Server) handleUnary(
 	// 1. Set outgoing headers
 	h := w.Header()
 	h.Set("Content-Type", "application/grpc")
-	h.Set("Grpc-Status", strconv.Itoa(int(codes.OK)))
-	h.Set("Grpc-Message", "")
 	sm.Header.CopyToHTTP(h)
 
 	// 2. Set trailers before writing body (Go net/http trailer mechanism)
@@ -286,7 +284,9 @@ func (s *Server) handleUnary(
 		return
 	}
 
-	// 4. Set final trailers
+	// 4. Set final trailers (after WriteHeader)
+	h.Set("Grpc-Status", strconv.Itoa(int(codes.OK)))
+	h.Set("Grpc-Message", "")
 	sm.Trailer.CopyToHTTP(h)
 }
 

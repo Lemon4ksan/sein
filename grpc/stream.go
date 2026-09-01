@@ -100,8 +100,7 @@ func (s *serverStream) writeHeaderLocked() {
 
 	h := s.w.Header()
 	h.Set("Content-Type", "application/grpc")
-	h.Set("Grpc-Status", "0")
-	h.Set("Grpc-Message", "")
+	h.Set("Trailer", "Grpc-Status, Grpc-Message")
 	s.headerMD.CopyToHTTP(h)
 
 	s.w.WriteHeader(http.StatusOK)
