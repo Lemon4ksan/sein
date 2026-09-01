@@ -336,3 +336,45 @@ func TestGRPC_Chains_And_Options(t *testing.T) {
 	srv.ServeHTTP(recBad, reqBad)
 	assert.Equal(t, http.StatusUnsupportedMediaType, recBad.Code)
 }
+
+func TestGRPC_Serve_H2C(t *testing.T) {
+	srv := grpc.NewServer()
+	srv.RegisterService(&greeterServiceDesc, &greeterImpl{})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	go func() {
+		_ = srv.Serve(ln)
+	}()
+
+	// Connect using HTTP/2 cleartext client
+	client := &http.Client{
+		Transport: &http.Transport{
+			ForceAttemptHTTP2: true,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	body := encodeGRPCFrame(t, &HelloRequest{Name: "H2CTest"})
+	req, err := http.NewRequest(http.MethodPost, "http://"+ln.Addr().String()+"/helloworld.Greeter/SayHello", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/grpc")
+
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "application/grpc", resp.Header.Get("Content-Type"))
+
+	var reply HelloReply
+	decodeGRPCFrame(t, resp.Body, &reply)
+	assert.Equal(t, "Hello H2CTest", reply.Message)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, srv.GracefulStop(ctx))
+}
+

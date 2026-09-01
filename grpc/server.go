@@ -10,7 +10,6 @@ package grpc
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/http2"
 
 	"github.com/lemon4ksan/sein/grpc/codes"
 	"github.com/lemon4ksan/sein/grpc/metadata"
@@ -94,7 +92,6 @@ type Server struct {
 	maxRecvMsgSize int
 	maxSendMsgSize int
 	httpServer     *http.Server
-	h2Server       *http2.Server
 	closed         bool
 }
 
@@ -105,7 +102,6 @@ func NewServer(opts ...ServerOption) *Server {
 		codec:          ProtoCodec{},
 		maxRecvMsgSize: DefaultMaxReceiveMsgSize,
 		maxSendMsgSize: DefaultMaxSendMsgSize,
-		h2Server:       &http2.Server{},
 	}
 
 	for _, opt := range opts {
@@ -145,17 +141,18 @@ func (s *Server) RegisterService(desc *ServiceDesc, impl any) {
 
 // Serve accepts incoming connections on the listener ln, creating a new service goroutine for each.
 func (s *Server) Serve(ln net.Listener) error {
+	var p http.Protocols
+	p.SetHTTP1(true)
+	p.SetUnencryptedHTTP2(true)
+	p.SetHTTP2(true)
+
 	s.mu.Lock()
 	s.httpServer = &http.Server{
 		Handler:           s,
+		Protocols:         &p,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	s.mu.Unlock()
-
-	// Configure HTTP/2
-	if err := http2.ConfigureServer(s.httpServer, s.h2Server); err != nil {
-		return fmt.Errorf("failed to configure HTTP/2: %w", err)
-	}
 
 	return s.httpServer.Serve(ln)
 }
