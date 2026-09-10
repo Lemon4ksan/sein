@@ -370,8 +370,5 @@ func splitPathBuf(path string, buf *[16]string) []string {
 		count++
 	}
 
-	res := make([]string, count)
-	copy(res, buf[:count])
-
-	return res
+	return buf[:count]
 }

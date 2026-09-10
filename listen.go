@@ -5,6 +5,7 @@
 package sein
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -333,6 +334,13 @@ func (sw *statusWriter) WriteHeader(code int) {
 	sw.ResponseWriter.WriteHeader(code)
 }
 
+func (sw *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := sw.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("sein: ResponseWriter does not implement http.Hijacker")
+}
+
 // ServeHTTP satisfies the standard http.Handler interface, enabling seamless interoperability with Go stdlib test recorders.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var params Params
@@ -345,6 +353,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	swWriter := &statusWriter{ResponseWriter: w, statusCode: http.StatusOK}
 	req := NewRequest(r, &params)
+	req.SetResponseWriter(swWriter)
 	req.routePattern = pattern
 	req.cookieSecret = s.cookieSecret
 	req.earlyHintsFn = func(h http.Header) error {

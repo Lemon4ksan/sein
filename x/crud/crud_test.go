@@ -28,9 +28,9 @@ type Product struct {
 }
 
 type mockProductRepository struct {
-	mu       sync.RWMutex
-	items    map[int64]*Product
-	nextID   int64
+	mu     sync.RWMutex
+	items  map[int64]*Product
+	nextID int64
 }
 
 func newMockProductRepo() *mockProductRepository {

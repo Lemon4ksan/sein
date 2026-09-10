@@ -380,4 +380,3 @@ func TestGRPC_Serve_H2C(t *testing.T) {
 	defer cancel()
 	require.NoError(t, srv.GracefulStop(ctx))
 }
-

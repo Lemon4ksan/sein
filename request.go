@@ -58,6 +58,7 @@ type Request struct {
 	h1Headers     *h1engine.Headers
 	h1Req         *h1engine.Request
 	raw           *http.Request
+	rw            http.ResponseWriter
 	multipartForm *multipart.Form
 	params        Params
 	scope         *borrow.Scope
@@ -102,6 +103,7 @@ func (r *Request) reset() {
 	r.h1Headers = nil
 	r.h1Req = nil
 	r.raw = nil
+	r.rw = nil
 	r.multipartForm = nil
 	r.params.Reset()
 	r.slotCount = 0
@@ -384,11 +386,22 @@ func NewH3Request(
 	return req
 }
 
+// SetResponseWriter associates a standard http.ResponseWriter with the Request.
+func (r *Request) SetResponseWriter(rw http.ResponseWriter) {
+	r.rw = rw
+}
+
 // Hijack takes over the raw underlying TCP connection from the server.
 // Once hijacked, the server will not write any HTTP response and will not close the connection.
 func (r *Request) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if r.h1Req != nil {
 		return r.h1Req.Hijack()
+	}
+
+	if r.rw != nil {
+		if hj, ok := r.rw.(http.Hijacker); ok {
+			return hj.Hijack()
+		}
 	}
 
 	if r.raw != nil {
