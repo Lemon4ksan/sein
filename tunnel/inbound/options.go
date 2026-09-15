@@ -5,7 +5,9 @@
 package inbound
 
 import (
+	"context"
 	"crypto/tls"
+	"net"
 
 	"github.com/lemon4ksan/sein/tunnel/ssh/ca"
 )
@@ -54,9 +56,17 @@ func WithRootCACertificate(cert tls.Certificate) Option {
 }
 
 // WithAuthenticator sets a credential verification callback for SOCKS5/HTTP Proxy-Authorization.
-func WithAuthenticator(auth func(username, password string) bool) Option {
+func WithAuthenticator(auth func(ctx context.Context, clientIP, username, password string) (context.Context, bool)) Option {
 	return func(s *Server) error {
 		s.Auth = auth
+		return nil
+	}
+}
+
+// WithDialContext sets a custom dialer for outbound connections.
+func WithDialContext(dial func(ctx context.Context, network, addr string) (net.Conn, error)) Option {
+	return func(s *Server) error {
+		s.DialContext = dial
 		return nil
 	}
 }

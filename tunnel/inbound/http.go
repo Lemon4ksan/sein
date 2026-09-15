@@ -41,8 +41,14 @@ func handleHTTPProxyConn(ctx context.Context, srv *Server, conn net.Conn, br *bu
 		}
 	}()
 
-	if srv.Auth != nil && !checkHTTPProxyAuth(srv, req) {
-		return sendHTTPProxyUnauthorized(conn)
+	clientIP := conn.RemoteAddr().(*net.TCPAddr).IP.String()
+
+	if srv.Auth != nil {
+		var ok bool
+		ctx, ok = checkHTTPProxyAuth(ctx, srv, req, clientIP)
+		if !ok {
+			return sendHTTPProxyUnauthorized(conn)
+		}
 	}
 
 	if req.Method == http.MethodConnect {
@@ -52,23 +58,24 @@ func handleHTTPProxyConn(ctx context.Context, srv *Server, conn net.Conn, br *bu
 	return handlePlainHTTPProxy(ctx, srv, conn, req)
 }
 
-func checkHTTPProxyAuth(srv *Server, req *http.Request) bool {
+func checkHTTPProxyAuth(ctx context.Context, srv *Server, req *http.Request, clientIP string) (context.Context, bool) {
 	authHeader := req.Header.Get("Proxy-Authorization")
 	if !strings.HasPrefix(authHeader, "Basic ") {
-		return false
+		// Try no-auth (IP based)
+		return srv.Auth(ctx, clientIP, "", "")
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(authHeader, "Basic "))
 	if err != nil {
-		return false
+		return ctx, false
 	}
 
 	user, pass, ok := strings.Cut(bytesconv.B2S(decoded), ":")
 	if !ok {
-		return false
+		return ctx, false
 	}
 
-	return srv.Auth(user, pass)
+	return srv.Auth(ctx, clientIP, user, pass)
 }
 
 func sendHTTPProxyUnauthorized(conn net.Conn) error {
@@ -100,9 +107,13 @@ func handleHTTPConnect(ctx context.Context, srv *Server, conn net.Conn, req *htt
 		return handleHTTP2TLSInterception(ctx, srv, conn, br, host, port)
 	}
 
-	var d net.Dialer
-
-	outboundConn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, portStr))
+	var outboundConn net.Conn
+	if srv.DialContext != nil {
+		outboundConn, err = srv.DialContext(ctx, "tcp", net.JoinHostPort(host, portStr))
+	} else {
+		var d net.Dialer
+		outboundConn, err = d.DialContext(ctx, "tcp", net.JoinHostPort(host, portStr))
+	}
 	if err != nil {
 		_, _ = conn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 		return err

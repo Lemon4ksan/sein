@@ -31,7 +31,8 @@ const (
 )
 
 func handleSOCKS5Conn(ctx context.Context, srv *Server, conn net.Conn, br *bufio.Reader) error {
-	if err := handshakeSOCKS5Auth(srv, conn, br); err != nil {
+	ctx, err := handshakeSOCKS5Auth(ctx, srv, conn, br)
+	if err != nil {
 		return err
 	}
 
@@ -51,9 +52,13 @@ func handleSOCKS5Conn(ctx context.Context, srv *Server, conn net.Conn, br *bufio
 
 	targetAddr := net.JoinHostPort(targetHost, strconv.Itoa(targetPort))
 
-	var d net.Dialer
-
-	outboundConn, err := d.DialContext(ctx, "tcp", targetAddr)
+	var outboundConn net.Conn
+	if srv.DialContext != nil {
+		outboundConn, err = srv.DialContext(ctx, "tcp", targetAddr)
+	} else {
+		var d net.Dialer
+		outboundConn, err = d.DialContext(ctx, "tcp", targetAddr)
+	}
 	if err != nil {
 		_ = sendSOCKS5Reply(conn, socksRespCmdFail, nil, 0)
 		return err
@@ -69,74 +74,85 @@ func handleSOCKS5Conn(ctx context.Context, srv *Server, conn net.Conn, br *bufio
 	return nil
 }
 
-func handshakeSOCKS5Auth(srv *Server, conn net.Conn, br *bufio.Reader) error {
+func handshakeSOCKS5Auth(ctx context.Context, srv *Server, conn net.Conn, br *bufio.Reader) (context.Context, error) {
 	var hdr [2]byte
 	if _, err := io.ReadFull(br, hdr[:]); err != nil {
-		return err
+		return ctx, err
 	}
 
 	if hdr[0] != socks5Version {
-		return ErrInvalidSocks5Header
+		return ctx, ErrInvalidSocks5Header
 	}
 
 	numMethods := int(hdr[1])
 
 	methods := make([]byte, numMethods)
 	if _, err := io.ReadFull(br, methods); err != nil {
-		return err
+		return ctx, err
 	}
+
+	clientIP := conn.RemoteAddr().(*net.TCPAddr).IP.String()
 
 	if srv.Auth == nil {
 		_, err := conn.Write([]byte{socks5Version, socksAuthNone})
-		return err
+		return ctx, err
+	}
+
+	// Try No Auth (IP whitelist) first if client supports it
+	if slices.Contains(methods, socksAuthNone) {
+		newCtx, ok := srv.Auth(ctx, clientIP, "", "")
+		if ok {
+			_, err := conn.Write([]byte{socks5Version, socksAuthNone})
+			return newCtx, err
+		}
 	}
 
 	if !slices.Contains(methods, socksAuthUserPass) {
 		_, _ = conn.Write([]byte{socks5Version, socksAuthNoAccept})
-		return ErrAuthFailed
+		return ctx, ErrAuthFailed
 	}
 
 	if _, err := conn.Write([]byte{socks5Version, socksAuthUserPass}); err != nil {
-		return err
+		return ctx, err
 	}
 
-	return authenticateUserPass(srv, conn, br)
+	return authenticateUserPass(ctx, srv, conn, br, clientIP)
 }
 
-func authenticateUserPass(srv *Server, conn net.Conn, br *bufio.Reader) error {
+func authenticateUserPass(ctx context.Context, srv *Server, conn net.Conn, br *bufio.Reader, clientIP string) (context.Context, error) {
 	var verByte [1]byte
 	if _, err := io.ReadFull(br, verByte[:]); err != nil || verByte[0] != 0x01 {
-		return ErrAuthFailed
+		return ctx, ErrAuthFailed
 	}
 
 	userLenByte, err := br.ReadByte()
 	if err != nil {
-		return err
+		return ctx, err
 	}
 
 	userBuf := make([]byte, int(userLenByte))
 	if _, err := io.ReadFull(br, userBuf); err != nil {
-		return err
+		return ctx, err
 	}
 
 	passLenByte, err := br.ReadByte()
 	if err != nil {
-		return err
+		return ctx, err
 	}
 
 	passBuf := make([]byte, int(passLenByte))
 	if _, err := io.ReadFull(br, passBuf); err != nil {
-		return err
+		return ctx, err
 	}
 
-	if !srv.Auth(string(userBuf), string(passBuf)) {
+	newCtx, ok := srv.Auth(ctx, clientIP, string(userBuf), string(passBuf))
+	if !ok {
 		_, _ = conn.Write([]byte{0x01, 0x01})
-		return ErrAuthFailed
+		return ctx, ErrAuthFailed
 	}
 
 	_, err = conn.Write([]byte{0x01, 0x00})
-
-	return err
+	return newCtx, err
 }
 
 func parseSOCKS5Request(br *bufio.Reader) (string, int, error) {

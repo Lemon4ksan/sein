@@ -32,9 +32,10 @@ type RequestDoer interface {
 type Server struct {
 	Addr          string
 	Engine        RequestDoer
+	DialContext   func(ctx context.Context, network, addr string) (net.Conn, error)
 	CA            *ca.CA
 	RootCACert    *tls.Certificate
-	Auth          func(username, password string) bool
+	Auth          func(ctx context.Context, clientIP, username, password string) (context.Context, bool)
 	EnableMITM    bool
 	certCache     sync.Map
 	sharedLeafKey crypto.PrivateKey
