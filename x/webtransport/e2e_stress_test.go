@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/sein/internal/quic"
+	"github.com/lemon4ksan/mach/quic"
 )
 
 // duplexTransport connects client and server WebTransport sessions in-memory with full QUIC framing

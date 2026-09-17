@@ -10,8 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/lemon4ksan/sein/internal/quic"
-	"github.com/lemon4ksan/sein/internal/quic/quicvarint"
+	"github.com/lemon4ksan/mach/quic"
+	"github.com/lemon4ksan/mach/quic/quicvarint"
 )
 
 // Transport defines the underlying connection capabilities required for WebTransport over HTTP/3.

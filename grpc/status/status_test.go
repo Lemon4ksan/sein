@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lemon4ksan/foundation/testkit/assert"
+	"github.com/lemon4ksan/foundation/testing/assert"
 
 	"github.com/lemon4ksan/sein/grpc/codes"
 	"github.com/lemon4ksan/sein/grpc/status"

@@ -14,7 +14,7 @@ import (
 
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/internal/compress"
-	"github.com/lemon4ksan/sein/internal/fast/h1engine"
+	"github.com/lemon4ksan/mach/server/h1"
 )
 
 func BenchmarkH1_SIMDRequestParsing(b *testing.B) {
@@ -24,8 +24,8 @@ func BenchmarkH1_SIMDRequestParsing(b *testing.B) {
 
 	rdr := bytes.NewReader(rawHTTP)
 	br := bufio.NewReaderSize(rdr, 4096)
-	req := &h1engine.Request{
-		Headers: h1engine.NewHeadersWithCapacity(16),
+	req := &h1.Request{
+		Headers: h1.NewHeadersWithCapacity(16),
 	}
 
 	b.ReportAllocs()
@@ -40,10 +40,10 @@ func BenchmarkH1_SIMDRequestParsing(b *testing.B) {
 }
 
 func BenchmarkH1_NativeResponseWriteTo(b *testing.B) {
-	res := &h1engine.Response{
+	res := &h1.Response{
 		StatusCode: 200,
 		Body:       []byte("Hello, World!"),
-		Headers:    h1engine.NewHeadersWithCapacity(4),
+		Headers:    h1.NewHeadersWithCapacity(4),
 	}
 
 	var buf bytes.Buffer

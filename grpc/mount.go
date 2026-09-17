@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/lemon4ksan/sein"
-	"github.com/lemon4ksan/sein/internal/fast/h1engine"
+	"github.com/lemon4ksan/mach/server/h1"
 )
 
 type grpcResponder struct {
@@ -19,7 +19,7 @@ type grpcResponder struct {
 	req *sein.Request
 }
 
-func (g grpcResponder) WriteToH1(res *h1engine.Response) error {
+func (g grpcResponder) WriteToH1(res *h1.Response) error {
 	rec := httptest.NewRecorder()
 	var httpReq *http.Request
 	if g.req.Raw() != nil {

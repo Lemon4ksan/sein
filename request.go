@@ -31,7 +31,7 @@ import (
 
 	"github.com/lemon4ksan/sein/internal/binder"
 	"github.com/lemon4ksan/sein/internal/compress"
-	"github.com/lemon4ksan/sein/internal/fast/h1engine"
+	"github.com/lemon4ksan/mach/server/h1"
 )
 
 // Validatable is an interface for request DTOs that validate their own invariants.
@@ -55,8 +55,8 @@ type Request struct {
 	host          string
 	remoteAddr    string
 	bodyBuf       []byte
-	h1Headers     *h1engine.Headers
-	h1Req         *h1engine.Request
+	h1Headers     *h1.Headers
+	h1Req         *h1.Request
 	raw           *http.Request
 	rw            http.ResponseWriter
 	multipartForm *multipart.Form
@@ -306,7 +306,7 @@ func NewRequest(r *http.Request, params ...*Params) *Request {
 }
 
 // NewH1Request creates a Request wrapping a native zero-net/http h1.Request.
-func NewH1Request(h1Req *h1engine.Request, params ...*Params) *Request {
+func NewH1Request(h1Req *h1.Request, params ...*Params) *Request {
 	req := acquireRequest()
 	req.method = h1Req.Method
 	req.path = h1Req.Path
@@ -342,7 +342,7 @@ func NewH2Request(
 		req.params = *params[0]
 	}
 	if rawHeaders != nil {
-		h := h1engine.NewHeadersWithCapacity(len(rawHeaders))
+		h := h1.NewHeadersWithCapacity(len(rawHeaders))
 		for k, vv := range rawHeaders {
 			for _, v := range vv {
 				h.Set(k, v)
@@ -373,7 +373,7 @@ func NewH3Request(
 		req.params = *params[0]
 	}
 	if rawHeaders != nil {
-		h := h1engine.NewHeadersWithCapacity(len(rawHeaders))
+		h := h1.NewHeadersWithCapacity(len(rawHeaders))
 		for k, vv := range rawHeaders {
 			for _, v := range vv {
 				h.Set(k, v)

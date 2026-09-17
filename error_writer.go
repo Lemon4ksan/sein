@@ -11,9 +11,9 @@ import (
 	"github.com/lemon4ksan/foundation/codec/json"
 	"github.com/lemon4ksan/foundation/net/http/header"
 
-	"github.com/lemon4ksan/sein/internal/fast/h1engine"
-	"github.com/lemon4ksan/sein/internal/fast/h2engine"
-	"github.com/lemon4ksan/sein/internal/fast/h3engine"
+	"github.com/lemon4ksan/mach/server/h1"
+	"github.com/lemon4ksan/mach/server/h2"
+	"github.com/lemon4ksan/mach/server/h3"
 )
 
 type errorResponse struct {
@@ -70,7 +70,7 @@ func buildErrorResponse(err error, mappers []ErrorMapper) errorResponse {
 	}
 }
 
-func (s *Server) writeH1Error(res *h1engine.Response, err error) {
+func (s *Server) writeH1Error(res *h1.Response, err error) {
 	if redir, ok := errors.AsType[RedirectError](err); ok {
 		res.StatusCode = redir.Status
 		res.Headers.Set(header.Location, redir.TargetURL)
@@ -87,7 +87,7 @@ func (s *Server) writeH1Error(res *h1engine.Response, err error) {
 	res.Body = data
 }
 
-func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
+func (s *Server) writeH2Error(res *h2.ServerResponse, err error) {
 	if res.Headers == nil {
 		res.Headers = make(http.Header)
 	}
@@ -108,7 +108,7 @@ func (s *Server) writeH2Error(res *h2engine.ServerResponse, err error) {
 	res.Body = data
 }
 
-func (s *Server) writeH3Error(res *h3engine.ServerResponse, err error) {
+func (s *Server) writeH3Error(res *h3.ServerResponse, err error) {
 	if res.Headers == nil {
 		res.Headers = make(http.Header)
 	}

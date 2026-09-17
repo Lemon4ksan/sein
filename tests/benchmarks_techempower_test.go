@@ -17,7 +17,7 @@ import (
 	"github.com/lemon4ksan/foundation/net/http/header"
 
 	"github.com/lemon4ksan/sein"
-	"github.com/lemon4ksan/sein/internal/fast/h1engine"
+	"github.com/lemon4ksan/mach/server/h1"
 )
 
 type JSONMessage struct {
@@ -50,11 +50,11 @@ func BenchmarkTechEmpower_Plaintext_SeinDispatchH1(b *testing.B) {
 		return "Hello, World!", nil
 	})
 
-	h1Req := &h1engine.Request{
+	h1Req := &h1.Request{
 		Method: "GET",
 		Path:   "/plaintext",
 	}
-	h1Res := &h1engine.Response{
+	h1Res := &h1.Response{
 		Body: make([]byte, 0, 512),
 	}
 
@@ -113,11 +113,11 @@ func BenchmarkTechEmpower_JSON_SeinDispatchH1(b *testing.B) {
 		return JSONMessage{Message: "Hello, World!"}, nil
 	})
 
-	h1Req := &h1engine.Request{
+	h1Req := &h1.Request{
 		Method: "GET",
 		Path:   "/json",
 	}
-	h1Res := &h1engine.Response{
+	h1Res := &h1.Response{
 		Body: make([]byte, 0, 512),
 	}
 
@@ -173,8 +173,8 @@ func BenchmarkTechEmpower_DynamicRoute_Sein(b *testing.B) {
 func BenchmarkTechEmpower_FastH1Engine_PipelinedThroughput(b *testing.B) {
 	rawHTTP := []byte("GET /plaintext HTTP/1.1\r\nHost: localhost\r\n\r\n")
 
-	ch := &h1engine.ConnHandler{
-		Handler: func(req *h1engine.Request, res *h1engine.Response) error {
+	ch := &h1.ConnHandler{
+		Handler: func(req *h1.Request, res *h1.Response) error {
 			res.StatusCode = http.StatusOK
 			res.Headers.Set(header.ContentType, header.MIMETextPlainCharsetUTF8)
 			res.Body = append(res.Body[:0], "Hello, World!"...)
@@ -188,10 +188,10 @@ func BenchmarkTechEmpower_FastH1Engine_PipelinedThroughput(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		rdr := bytes.NewReader(rawHTTP)
 		br := bufio.NewReaderSize(rdr, 4096)
-		req := &h1engine.Request{
-			Headers: h1engine.NewHeadersWithCapacity(8),
+		req := &h1.Request{
+			Headers: h1.NewHeadersWithCapacity(8),
 		}
-		res := &h1engine.Response{
+		res := &h1.Response{
 			Body: make([]byte, 0, 512),
 		}
 
@@ -218,11 +218,11 @@ func BenchmarkTechEmpower_Parallel_SeinDispatchH1(b *testing.B) {
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
-		h1Req := &h1engine.Request{
+		h1Req := &h1.Request{
 			Method: "GET",
 			Path:   "/plaintext",
 		}
-		h1Res := &h1engine.Response{
+		h1Res := &h1.Response{
 			Body: make([]byte, 0, 512),
 		}
 

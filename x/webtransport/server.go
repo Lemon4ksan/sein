@@ -14,10 +14,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/lemon4ksan/sein/internal/fast/h3engine"
-	"github.com/lemon4ksan/sein/internal/qpack"
-	"github.com/lemon4ksan/sein/internal/quic"
-	"github.com/lemon4ksan/sein/internal/quic/quicvarint"
+	clienth3 "github.com/lemon4ksan/mach/client/h3"
+	"github.com/lemon4ksan/mach/qpack"
+	"github.com/lemon4ksan/mach/quic"
+	"github.com/lemon4ksan/mach/quic/quicvarint"
 )
 
 // SessionHandler handles an active incoming WebTransport session.
@@ -105,7 +105,7 @@ func (s *Server) HandleSession(
 
 	var frameHdr [16]byte
 
-	b := quicvarint.Append(frameHdr[:0], h3engine.FrameTypeHeaders)
+	b := quicvarint.Append(frameHdr[:0], clienth3.FrameTypeHeaders)
 	b = quicvarint.Append(b, uint64(len(encodedHeaders)))
 
 	if _, err := stream.Write(b); err != nil {

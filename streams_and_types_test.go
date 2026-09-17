@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/foundation/testkit/assert"
-	"github.com/lemon4ksan/foundation/testkit/require"
+	"github.com/lemon4ksan/foundation/testing/assert"
+	"github.com/lemon4ksan/foundation/testing/require"
 	"github.com/lemon4ksan/sein"
-	"github.com/lemon4ksan/sein/internal/fast/h1engine"
+	"github.com/lemon4ksan/mach/server/h1"
 )
 
 func TestSecret_MaskingAndExposure(t *testing.T) {
@@ -105,8 +105,8 @@ func TestStreamWriterResponse(t *testing.T) {
 	}).WithHeader("X-Stream-ID", "12345").WithContentType("text/plain")
 
 	// 1. WriteToH1
-	h1Res := &h1engine.Response{
-		Headers: h1engine.NewHeadersWithCapacity(4),
+	h1Res := &h1.Response{
+		Headers: h1.NewHeadersWithCapacity(4),
 	}
 	err := sw.WriteToH1(h1Res)
 	require.NoError(t, err)

@@ -18,16 +18,16 @@ import (
 	"github.com/lemon4ksan/foundation/timekit"
 	"golang.org/x/crypto/acme/autocert"
 
-	"github.com/lemon4ksan/sein/internal/fast/h1engine"
-	"github.com/lemon4ksan/sein/internal/fast/h2engine"
-	"github.com/lemon4ksan/sein/internal/fast/h3engine"
-	"github.com/lemon4ksan/sein/internal/quic"
+	"github.com/lemon4ksan/mach/server/h1"
+	"github.com/lemon4ksan/mach/server/h2"
+	"github.com/lemon4ksan/mach/server/h3"
+	"github.com/lemon4ksan/mach/quic"
 )
 
 // Serve starts the native H1 zero-net/http server on the provided net.Listener.
 func (s *Server) Serve(ln net.Listener) error {
 	s.mu.Lock()
-	s.h1Server = h1engine.NewServer(s.dispatchH1)
+	s.h1Server = h1.NewServer(s.dispatchH1)
 	s.mu.Unlock()
 
 	return s.h1Server.Serve(ln)
@@ -52,7 +52,7 @@ func (s *Server) ListenAndServe() error {
 // ListenAndServeTLS starts listening on s.addr with TLS using native H1 engine.
 func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
 	s.mu.Lock()
-	s.h1Server = h1engine.NewServer(s.dispatchH1)
+	s.h1Server = h1.NewServer(s.dispatchH1)
 	s.h1Server.Addr = s.addr
 	s.mu.Unlock()
 
@@ -77,11 +77,7 @@ func (s *Server) ListenAndServeQUIC(addr, certFile, keyFile string) error {
 		NextProtos:   []string{"h3"},
 	}
 
-	quicConf := &quic.Config{
-		EnableDatagrams: true,
-	}
-
-	ln, err := quic.ListenAddr(addr, tlsConf, quicConf)
+	ln, err := quic.ListenAddr(addr, tlsConf, quic.WithDatagrams(true))
 	if err != nil {
 		return err
 	}
@@ -93,7 +89,7 @@ func (s *Server) ListenAndServeQUIC(addr, certFile, keyFile string) error {
 			return err
 		}
 
-		sc := h3engine.NewServerConn(conn, s.DispatchH3)
+		sc := h3.NewServerConn(conn, s.DispatchH3)
 		go func() {
 			_ = sc.Serve()
 		}()
@@ -140,11 +136,7 @@ func (s *Server) ListenAndServeUniversal(addr, certFile, keyFile string) error {
 		NextProtos:   []string{"h3"},
 	}
 
-	quicConf := &quic.Config{
-		EnableDatagrams: true,
-	}
-
-	quicLn, err := quic.ListenAddr(addr, quicTLS, quicConf)
+	quicLn, err := quic.ListenAddr(addr, quicTLS, quic.WithDatagrams(true))
 	if err != nil {
 		_ = tcpLn.Close()
 		return err
@@ -165,7 +157,7 @@ func (s *Server) ListenAndServeUniversal(addr, certFile, keyFile string) error {
 				return
 			}
 
-			sc := h3engine.NewServerConn(conn, s.DispatchH3)
+			sc := h3.NewServerConn(conn, s.DispatchH3)
 			go func() {
 				_ = sc.Serve()
 			}()
@@ -196,10 +188,10 @@ func (s *Server) ListenAndServeUniversal(addr, certFile, keyFile string) error {
 
 				proto := tlsConn.ConnectionState().NegotiatedProtocol
 				if proto == "h2" {
-					sc := h2engine.NewServerConn(tlsConn, s.DispatchH2)
+					sc := h2.NewServerConn(tlsConn, s.DispatchH2)
 					_ = sc.Serve()
 				} else {
-					connHandler := &h1engine.ConnHandler{
+					connHandler := &h1.ConnHandler{
 						Handler: s.dispatchH1,
 					}
 					_ = connHandler.ServeConn(tlsConn)
@@ -278,10 +270,10 @@ func (s *Server) ListenAndServeAutoTLS(addr string, domains ...string) error {
 
 			proto := tlsConn.ConnectionState().NegotiatedProtocol
 			if proto == "h2" {
-				sc := h2engine.NewServerConn(tlsConn, s.DispatchH2)
+				sc := h2.NewServerConn(tlsConn, s.DispatchH2)
 				_ = sc.Serve()
 			} else {
-				connHandler := &h1engine.ConnHandler{
+				connHandler := &h1.ConnHandler{
 					Handler: s.dispatchH1,
 				}
 				_ = connHandler.ServeConn(tlsConn)

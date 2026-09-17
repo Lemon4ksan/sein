@@ -18,10 +18,10 @@ import (
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/timekit"
 
-	"github.com/lemon4ksan/sein/internal/fast/h1engine"
-	"github.com/lemon4ksan/sein/internal/fast/h2engine"
-	"github.com/lemon4ksan/sein/internal/fast/h3engine"
-	"github.com/lemon4ksan/sein/internal/quic"
+	"github.com/lemon4ksan/mach/server/h1"
+	"github.com/lemon4ksan/mach/server/h2"
+	"github.com/lemon4ksan/mach/server/h3"
+	"github.com/lemon4ksan/mach/quic"
 )
 
 // Option configures a sein Server instance.
@@ -78,7 +78,7 @@ type Server struct {
 	afterResponseHooks     []AfterResponseHook
 	traceHooks             []TraceHook
 	resolvers              sync.Map
-	h1Server               *h1engine.Server
+	h1Server               *h1.Server
 	tcpLn                  net.Listener
 	quicLn                 *quic.Listener
 	altSvcHeader           string
@@ -412,12 +412,12 @@ func (s *Server) resolveRouteSlow(
 }
 
 // DispatchH1 dispatches an incoming native H1 request directly through the server's routing and middleware pipeline.
-func (s *Server) DispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) error {
+func (s *Server) DispatchH1(h1Req *h1.Request, h1Res *h1.Response) error {
 	return s.dispatchH1(h1Req, h1Res)
 }
 
 // dispatchH1 is the native zero-net/http request pipeline dispatcher.
-func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) error {
+func (s *Server) dispatchH1(h1Req *h1.Request, h1Res *h1.Response) error {
 	var params Params
 	handler, pattern, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h1Req.Method, h1Req.Path, &params)
 	if redirectURL != "" {
@@ -462,7 +462,7 @@ func (s *Server) dispatchH1(h1Req *h1engine.Request, h1Res *h1engine.Response) e
 }
 
 // DispatchH2 is the native zero-net/http HTTP/2 stream request dispatcher.
-func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.ServerResponse) error {
+func (s *Server) DispatchH2(h2Req *h2.ServerRequest, h2Res *h2.ServerResponse) error {
 	var params Params
 	handler, pattern, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h2Req.Method, h2Req.Path, &params)
 	if redirectURL != "" {
@@ -502,7 +502,7 @@ func (s *Server) DispatchH2(h2Req *h2engine.ServerRequest, h2Res *h2engine.Serve
 }
 
 // DispatchH3 is the native zero-net/http HTTP/3 stream request dispatcher.
-func (s *Server) DispatchH3(h3Req *h3engine.ServerRequest, h3Res *h3engine.ServerResponse) error {
+func (s *Server) DispatchH3(h3Req *h3.ServerRequest, h3Res *h3.ServerResponse) error {
 	var params Params
 	handler, pattern, allowHeader, redirectURL, redirectCode, status := s.resolveRoute(h3Req.Method, h3Req.Path, &params)
 	if redirectURL != "" {
@@ -555,7 +555,7 @@ func (s *Server) executePipeline(req *Request, handler RawHandler) (any, error) 
 }
 
 //go:noinline
-func (s *Server) handleUnmatchedH1(req *Request, origMethod, origPath string, h1Res *h1engine.Response, status int, allowHeader string) error {
+func (s *Server) handleUnmatchedH1(req *Request, origMethod, origPath string, h1Res *h1.Response, status int, allowHeader string) error {
 	if !s.SkipUnmatchedRoutes && len(s.middlewares) > 0 {
 		h := func(r *Request) (any, error) {
 			return s.resolveUnmatched(r, origMethod, origPath, h1Res, status, allowHeader)
@@ -584,7 +584,7 @@ func (s *Server) handleUnmatchedH1(req *Request, origMethod, origPath string, h1
 }
 
 //go:noinline
-func (s *Server) handleUnmatchedH2(h2Res *h2engine.ServerResponse, status int, allowHeader string) error {
+func (s *Server) handleUnmatchedH2(h2Res *h2.ServerResponse, status int, allowHeader string) error {
 	if status == http.StatusMethodNotAllowed {
 		if h2Res.Headers == nil {
 			h2Res.Headers = make(http.Header)
@@ -601,7 +601,7 @@ func (s *Server) handleUnmatchedH2(h2Res *h2engine.ServerResponse, status int, a
 }
 
 //go:noinline
-func (s *Server) handleUnmatchedH3(h3Res *h3engine.ServerResponse, status int, allowHeader string) error {
+func (s *Server) handleUnmatchedH3(h3Res *h3.ServerResponse, status int, allowHeader string) error {
 	if status == http.StatusMethodNotAllowed {
 		if h3Res.Headers == nil {
 			h3Res.Headers = make(http.Header)
@@ -617,7 +617,7 @@ func (s *Server) handleUnmatchedH3(h3Res *h3engine.ServerResponse, status int, a
 	return nil
 }
 
-func (s *Server) resolveUnmatched(r *Request, origMethod, origPath string, h1Res *h1engine.Response, status int, allowHeader string) (any, error) {
+func (s *Server) resolveUnmatched(r *Request, origMethod, origPath string, h1Res *h1.Response, status int, allowHeader string) (any, error) {
 	if r.Path() != origPath || r.Method() != origMethod {
 		r.params.Reset()
 		newHandler, newPattern, newAllow, newRedir, newRedirCode, newStatus := s.resolveRoute(r.Method(), r.Path(), &r.params)

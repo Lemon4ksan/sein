@@ -92,7 +92,7 @@ func main() {
 }
 ```
 
-## Universal Routing & Zero-Glue Architecture
+## 🧩 Universal Routing & Zero-Glue Architecture
 
 `sein` features a universal handler compiler: standard HTTP verbs (`Get`, `Post`, `Patch`, `Delete`, `Put`) accept any pure Go function signature without requiring framework-specific glue wrappers.
 
@@ -129,7 +129,7 @@ func (c *BotController) Mount(g *sein.Group) {
 	// Direct service method binding with ZERO forwarding shims
 	g.Post("", c.Create)
 	g.Get("/:id", c.Get)
-	g.Patch("/:id", c.Update)       // Takes (ctx, id Snowflake, payload UpdatePayload)
+	g.Patch("/:id", c.Update)               // Takes (ctx, id Snowflake, payload UpdatePayload)
 	g.Patch("/:id/type", c.SetType)
 	g.Delete("/:id", c.Delete)
 	g.Post("/:id/disconnect", c.Disconnect) // Takes (ctx, id Snowflake) error
@@ -152,32 +152,32 @@ users.MapErrors(sein.Errors{
 })
 ```
 
-## DTO Structs & Declarative Validation
+## 📦 DTO Structs & Declarative Validation
 
 Declare all request inputs (path, query, headers, cookies, JSON payload) in a unified DTO struct with automatic validation and sanitization:
 
 ```go
 type UpdateProfileDTO struct {
 	// Protocol Data Sources
-	UserID      uuid.UUID           `path:"user_id" validate:"uuid"`       // URL Path: /users/:user_id
+	UserID      uuid.UUID           `path:"user_id" validate:"uuid"`              // URL Path: /users/:user_id
 	Search      string              `query:"q,default=all" sanitize:"trim,lower"` // Query string: ?q=...
-	Page        int                 `query:"page,default=1" validate:"positive"` // Query with integer parsing
-	Limit       int                 `query:"limit,default=20" validate:"multiple_of=5,le=100"` // Step bounds
-	Tags        []string            `query:"tags,sep=|"`                   // Slice with custom separator
-	TraceID     string              `header:"X-Trace-ID" validate:"required"` // HTTP Header
-	SessionID   string              `cookie:"session_id" validate:"required"` // HTTP Cookie
-	AuthToken   string              `auth:"bearer,required"`               // Authorization: Bearer <token>
-	ClientIP    net.IP              `net:"ip"`                             // Resolved Client IP
-	Avatar      *sein.File          `file:"avatar,required"`               // Uploaded File
-	Gallery     []*sein.File        `files:"gallery"`                      // Multiple Uploaded Files
-	Password    sein.Secret[string] `json:"password" validate:"min=8"`     // Masked in logs & stack traces
-	UserSession *Session            `ctx:""`                               // Typed context session
-	Bio         string              `json:"bio" validate:"max=500" sanitize:"squish"` // Collapsed whitespace
+	Page        int                 `query:"page,default=1" validate:"positive"`  // Query with integer parsing
+	Limit       int                 `query:"limit,default=20" validate:"multiple_of=5,le=100"` 
+	Tags        []string            `query:"tags,sep=|"`                          // Slice with custom separator
+	TraceID     string              `header:"X-Trace-ID" validate:"required"`     // HTTP Header
+	SessionID   string              `cookie:"session_id" validate:"required"`     // HTTP Cookie
+	AuthToken   string              `auth:"bearer,required"`                      // Authorization: Bearer <token>
+	ClientIP    net.IP              `net:"ip"`                                    // Resolved Client IP
+	Avatar      *sein.File          `file:"avatar,required"`                      // Uploaded File
+	Gallery     []*sein.File        `files:"gallery"`                             // Multiple Uploaded Files
+	Password    sein.Secret[string] `json:"password" validate:"min=8"`            // Masked in logs & stack traces
+	UserSession *Session            `ctx:""`                                      // Typed context session
+	Bio         string              `json:"bio" validate:"max=500" sanitize:"squish"`
 }
 ```
 
 <details>
-<summary><b>📋 Tag Directives Reference</b></summary>
+<summary><b>📋 Tag Directives Reference (Click to Expand)</b></summary>
 
 | Category | Directive | Description | Example |
 | :--- | :--- | :--- | :--- |
@@ -192,21 +192,22 @@ type UpdateProfileDTO struct {
 | | `json:"key"` | JSON request body payload field | `json:"name"` |
 | | `net:"ip"` | Resolved remote client IP address | `net:"ip"` |
 | | `ctx:""` | Typed inline context injection | `ctx:""` |
-| **Sanitizers (`sanitize:"..."`)** | `trim` | Strips leading and trailing whitespace | `sanitize:"trim"` |
-| | `lower` | Converts ASCII characters to lowercase | `sanitize:"lower"` |
-| | `upper` | Converts ASCII characters to uppercase | `sanitize:"upper"` |
-| | `squish` | Collapses multiple consecutive whitespaces | `sanitize:"squish"` |
-| | `digits_only` | Extracts digits only from string | `sanitize:"digits_only"` |
-| **Validation (`validate:"..."`)** | `required` | Field must be present and non-zero | `validate:"required"` |
-| | `min=N` / `max=N` | String length bounds or numeric ranges | `validate:"min=8,max=64"` |
-| | `enum=a\|b\|c` | Allowed value set validation | `validate:"enum=asc\|desc"` |
-| | `email` | Validates standard email address format | `validate:"email"` |
-| | `uuid` | Validates UUID format (RFC 4122 / RFC 9562) | `validate:"uuid"` |
-| | `pattern=regex` | Matches precompiled regular expression | `validate:"pattern=^[A-Z0-9]+$"` |
+| **Sanitizers** | `sanitize:"trim"` | Strips leading and trailing whitespace | `sanitize:"trim"` |
+| | `sanitize:"lower"` | Converts ASCII characters to lowercase | `sanitize:"lower"` |
+| | `sanitize:"upper"` | Converts ASCII characters to uppercase | `sanitize:"upper"` |
+| | `sanitize:"squish"` | Collapses multiple consecutive whitespaces | `sanitize:"squish"` |
+| | `sanitize:"digits_only"`| Extracts digits only from string | `sanitize:"digits_only"` |
+| **Validation** | `validate:"required"` | Field must be present and non-zero | `validate:"required"` |
+| | `validate:"min=N"` | Minimum string length or numeric value | `validate:"min=8"` |
+| | `validate:"max=N"` | Maximum string length or numeric value | `validate:"max=64"` |
+| | `validate:"enum=a\|b"` | Allowed value set validation | `validate:"enum=asc\|desc"` |
+| | `validate:"email"` | Standard email address format validation | `validate:"email"` |
+| | `validate:"uuid"` | UUID format validation (RFC 9562) | `validate:"uuid"` |
+| | `validate:"pattern=..."`| Precompiled regular expression match | `validate:"pattern=^[A-Z]+$"` |
 
 </details>
 
-## Configuration Presets
+## 🛠 Configuration Presets
 
 Quick initialization of middleware stacks for production:
 
@@ -239,7 +240,7 @@ app := preset.Production(
 | **Sein (Native H1 Net)** | **Go** | **Native H1 Engine** | **`~3,200,000+`**\* reqs/s | **4.73x** |
 | **Sein (In-Memory Core)** | **Go** | **SIMD Fast H1 Core** | **`21,291,486`**\* reqs/s | **31.50x** |
 
-> \* Local results. Not tested on an actual server.
+> \* _Local results. Not tested on an actual server._
 
 ### 2. OS TCP Socket Comparison (Loopback)
 

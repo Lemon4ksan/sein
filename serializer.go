@@ -12,9 +12,9 @@ import (
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 
-	"github.com/lemon4ksan/sein/internal/fast/h1engine"
-	"github.com/lemon4ksan/sein/internal/fast/h2engine"
-	"github.com/lemon4ksan/sein/internal/fast/h3engine"
+	"github.com/lemon4ksan/mach/server/h1"
+	"github.com/lemon4ksan/mach/server/h2"
+	"github.com/lemon4ksan/mach/server/h3"
 )
 
 // copyHTTPHeaders copies all key-value pairs from src into dst.
@@ -82,7 +82,7 @@ func serializePayload(result any) (statusCode int, headers http.Header, body []b
 	}
 }
 
-func (s *Server) serializeH1Result(res *h1engine.Response, result any) error {
+func (s *Server) serializeH1Result(res *h1.Response, result any) error {
 	res.StatusCode = http.StatusOK
 
 	if holder, ok := result.(ResponseHolder); ok {
@@ -137,7 +137,7 @@ func (s *Server) serializeH1Result(res *h1engine.Response, result any) error {
 	}
 }
 
-func (s *Server) serializeH2Result(res *h2engine.ServerResponse, result any) error {
+func (s *Server) serializeH2Result(res *h2.ServerResponse, result any) error {
 	status, headers, body, _, err := serializePayload(result)
 	if err != nil {
 		return err
@@ -153,7 +153,7 @@ func (s *Server) serializeH2Result(res *h2engine.ServerResponse, result any) err
 	return nil
 }
 
-func (s *Server) serializeH3Result(res *h3engine.ServerResponse, result any) error {
+func (s *Server) serializeH3Result(res *h3.ServerResponse, result any) error {
 	status, headers, body, _, err := serializePayload(result)
 	if err != nil {
 		return err
