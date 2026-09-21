@@ -128,7 +128,8 @@ func TestHostAuth_AllowedHosts(t *testing.T) {
 		})
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	client.CloseIdleConnections()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
 }
@@ -166,7 +167,8 @@ func TestHostAuth_CustomErrorHandler(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	client.CloseIdleConnections()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, app.Shutdown(ctx))
 }

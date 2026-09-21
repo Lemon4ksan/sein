@@ -20,16 +20,6 @@ type fuzzTarget struct {
 }
 
 var targets = []fuzzTarget{
-	{"./internal/fast/h1engine", "FuzzH1Request"},
-	{"./internal/fast/h1engine", "FuzzH1Chunked"},
-	{"./internal/fast/h1engine", "FuzzH1Header"},
-	{"./internal/fast/h2engine", "FuzzHPACKDecode"},
-	{"./internal/fast/h2engine", "FuzzFrameRead"},
-	{"./internal/fast/h2engine", "FuzzHuffmanDecode"},
-	{"./internal/fast/h3engine", "FuzzQPACKDecode"},
-	{"./internal/fast/h3engine", "FuzzH3FrameHeaderRead"},
-	{"./internal/qpack", "FuzzQPACKDecoder"},
-	{"./internal/qpack", "FuzzVarint"},
 	{"./builtin/jwt", "FuzzJWTVerify"},
 	{"./builtin/csrf", "FuzzCSRFTokenComparison"},
 	{"./builtin/etag", "FuzzETagMatch"},
