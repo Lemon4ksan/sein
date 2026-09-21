@@ -12,7 +12,7 @@ import (
 	"net"
 	"sync/atomic"
 
-	"github.com/lemon4ksan/mach/quic"
+	"github.com/lemon4ksan/foundation/net/quic"
 )
 
 var netErrClosed = net.ErrClosed

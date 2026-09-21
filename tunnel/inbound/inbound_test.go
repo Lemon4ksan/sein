@@ -133,8 +133,8 @@ func TestInboundServer_SOCKS5_WithAuth(t *testing.T) {
 	t.Cleanup(targetServer.Close)
 
 	srv, err := inbound.NewServer("127.0.0.1:0",
-		inbound.WithAuthenticator(func(username, password string) bool {
-			return username == "proxyuser" && password == "proxypass"
+		inbound.WithAuthenticator(func(ctx context.Context, clientIP string, username string, password string) (context.Context, bool) {
+			return ctx, username == "proxyuser" && password == "proxypass"
 		}),
 	)
 	require.NoError(t, err)
@@ -294,8 +294,8 @@ func TestInboundServer_HTTPProxy_Auth(t *testing.T) {
 	t.Cleanup(targetServer.Close)
 
 	srv, err := inbound.NewServer("127.0.0.1:0",
-		inbound.WithAuthenticator(func(username, password string) bool {
-			return username == "httpuser" && password == "httppass"
+		inbound.WithAuthenticator(func(ctx context.Context, clientIP string, username string, password string) (context.Context, bool) {
+			return ctx, username == "httpuser" && password == "httppass"
 		}),
 	)
 	require.NoError(t, err)
@@ -443,9 +443,9 @@ func TestInboundServer_Options(t *testing.T) {
 	srv, err := inbound.NewServer("127.0.0.1:1080",
 		inbound.WithListenAddr("127.0.0.1:8080"),
 		inbound.WithMITM(true),
-		inbound.WithAuthenticator(func(_, _ string) bool {
+		inbound.WithAuthenticator(func(ctx context.Context, clientIP string, username string, password string) (context.Context, bool) {
 			authCalled = true
-			return true
+			return ctx, true
 		}),
 	)
 	require.NoError(t, err)
@@ -454,6 +454,6 @@ func TestInboundServer_Options(t *testing.T) {
 	assert.True(t, srv.EnableMITM)
 	assert.NotNil(t, srv.Auth)
 
-	srv.Auth("u", "p")
+	srv.Auth(context.Background(), "127.0.0.1", "test", "test")
 	assert.True(t, authCalled)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/lemon4ksan/foundation/codec/json"
 	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/foundation/net/http/zerocopy"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 
 	"github.com/lemon4ksan/mach/server/h1"
@@ -66,10 +67,41 @@ func (r Response[T]) ResponseCookies() []*http.Cookie {
 	return r.Cookies
 }
 
+func appendHTTPCookiesToH1(res *h1.Response, cookies []*http.Cookie) {
+	for _, c := range cookies {
+		if c == nil {
+			continue
+		}
+		zc := &zerocopy.Cookie{}
+		zc.SetKey(c.Name)
+		zc.SetValue(c.Value)
+		zc.SetPath(c.Path)
+		zc.SetDomain(c.Domain)
+		zc.SetExpire(c.Expires)
+		zc.SetMaxAge(c.MaxAge)
+		zc.SetSecure(c.Secure)
+		zc.SetHTTPOnly(c.HttpOnly)
+		switch c.SameSite {
+		case http.SameSiteDefaultMode:
+			zc.SetSameSite(zerocopy.CookieSameSiteDefaultMode)
+		case http.SameSiteLaxMode:
+			zc.SetSameSite(zerocopy.CookieSameSiteLaxMode)
+		case http.SameSiteStrictMode:
+			zc.SetSameSite(zerocopy.CookieSameSiteStrictMode)
+		case http.SameSiteNoneMode:
+			zc.SetSameSite(zerocopy.CookieSameSiteNoneMode)
+		}
+		if c.Partitioned {
+			zc.SetPartitioned(true)
+		}
+		res.Cookies = append(res.Cookies, zc)
+	}
+}
+
 // WriteToH1 serializes the response directly into an h1.Response with zero net/http allocations.
 func (r Response[T]) WriteToH1(res *h1.Response) error {
 	res.Headers.AddFromHTTP(r.Headers)
-	res.Cookies = append(res.Cookies, r.Cookies...)
+	appendHTTPCookiesToH1(res, r.Cookies)
 
 	status := generic.Coalesce(r.Status, http.StatusOK)
 	res.StatusCode = status

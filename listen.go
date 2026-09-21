@@ -18,19 +18,60 @@ import (
 	"github.com/lemon4ksan/foundation/timekit"
 	"golang.org/x/crypto/acme/autocert"
 
+	"github.com/lemon4ksan/foundation/net/quic"
 	"github.com/lemon4ksan/mach/server/h1"
 	"github.com/lemon4ksan/mach/server/h2"
 	"github.com/lemon4ksan/mach/server/h3"
-	"github.com/lemon4ksan/mach/quic"
 )
 
 // Serve starts the native H1 zero-net/http server on the provided net.Listener.
 func (s *Server) Serve(ln net.Listener) error {
 	s.mu.Lock()
-	s.h1Server = h1.NewServer(s.dispatchH1)
+	if s.serverClosed.Load() {
+		s.mu.Unlock()
+		return http.ErrServerClosed
+	}
+	s.tcpLn = ln
 	s.mu.Unlock()
 
-	return s.h1Server.Serve(ln)
+	connHandler := &h1.ConnHandler{
+		Handler: s.dispatchH1,
+	}
+
+	var tempDelay time.Duration
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			if s.serverClosed.Load() {
+				return http.ErrServerClosed
+			}
+
+			if _, ok := err.(net.Error); ok {
+				if tempDelay == 0 {
+					tempDelay = 5 * time.Millisecond
+				} else {
+					tempDelay *= 2
+				}
+				if max := 1 * time.Second; tempDelay > max {
+					tempDelay = max
+				}
+				time.Sleep(tempDelay)
+				continue
+			}
+			return err
+		}
+
+		tempDelay = 0
+		s.activeConnsWG.Add(1)
+		s.trackConn(conn, true)
+
+		go func(c net.Conn) {
+			defer s.activeConnsWG.Done()
+			defer s.trackConn(c, false)
+			_ = connHandler.ServeConn(c)
+		}(conn)
+	}
 }
 
 // ListenAndServe starts the native H1 zero-net/http server listening on the configured address.
@@ -51,12 +92,27 @@ func (s *Server) ListenAndServe() error {
 
 // ListenAndServeTLS starts listening on s.addr with TLS using native H1 engine.
 func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
-	s.mu.Lock()
-	s.h1Server = h1.NewServer(s.dispatchH1)
-	s.h1Server.Addr = s.addr
-	s.mu.Unlock()
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return err
+	}
 
-	return s.h1Server.ListenAndServeTLS(certFile, keyFile)
+	config := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"http/1.1"},
+	}
+
+	var lc net.ListenConfig
+	addr := s.addr
+	if addr == "" {
+		addr = ":8443"
+	}
+	ln, err := lc.Listen(context.Background(), "tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	return s.Serve(tls.NewListener(ln, config))
 }
 
 // Listen starts listening on the specified address.
@@ -284,16 +340,12 @@ func (s *Server) ListenAndServeAutoTLS(addr string, domains ...string) error {
 
 // Shutdown gracefully shuts down all server listeners (TCP H1/H2 and UDP QUIC H3).
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var firstErr error
-	if s.h1Server != nil {
-		if err := s.h1Server.Shutdown(ctx); err != nil {
-			firstErr = err
-		}
+	if !s.serverClosed.CompareAndSwap(false, true) {
+		return nil
 	}
 
+	s.mu.Lock()
+	var firstErr error
 	if s.tcpLn != nil {
 		if err := s.tcpLn.Close(); err != nil && firstErr == nil {
 			firstErr = err
@@ -308,7 +360,23 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.quicLn = nil
 	}
 
-	return firstErr
+	for c := range s.activeConns {
+		_ = c.SetDeadline(time.Now())
+	}
+	s.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		s.activeConnsWG.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return firstErr
+	}
 }
 
 // Close gracefully closes the server.

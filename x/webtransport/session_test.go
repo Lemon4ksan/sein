@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/mach/quic"
-	"github.com/lemon4ksan/mach/quic/quicvarint"
+	"github.com/lemon4ksan/foundation/net/quic"
+	quicvarint "github.com/lemon4ksan/foundation/encoding/varint"
 )
 
 type mockTransport struct {

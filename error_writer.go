@@ -88,9 +88,7 @@ func (s *Server) writeH1Error(res *h1.Response, err error) {
 }
 
 func (s *Server) writeH2Error(res *h2.ServerResponse, err error) {
-	if res.Headers == nil {
-		res.Headers = make(http.Header)
-	}
+	
 
 	if redir, ok := errors.AsType[RedirectError](err); ok {
 		res.StatusCode = redir.Status
@@ -109,9 +107,7 @@ func (s *Server) writeH2Error(res *h2.ServerResponse, err error) {
 }
 
 func (s *Server) writeH3Error(res *h3.ServerResponse, err error) {
-	if res.Headers == nil {
-		res.Headers = make(http.Header)
-	}
+	
 
 	if redir, ok := errors.AsType[RedirectError](err); ok {
 		res.StatusCode = redir.Status

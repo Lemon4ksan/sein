@@ -5,6 +5,8 @@
 package sein
 
 import (
+	coreheaders "github.com/lemon4ksan/foundation/net/headkit"
+
 	"net/http"
 
 	"github.com/lemon4ksan/foundation/codec/json"
@@ -18,6 +20,17 @@ import (
 )
 
 // copyHTTPHeaders copies all key-value pairs from src into dst.
+
+func copyToMachHeaders(dst *coreheaders.Headers, src http.Header) {
+	dst.AddFromHTTP(src)
+}
+
+func copyFromMachHeaders(dst http.Header, src *coreheaders.Headers) {
+	for k, v := range src.All() {
+		dst.Add(k, v)
+	}
+}
+
 func copyHTTPHeaders(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
@@ -90,7 +103,7 @@ func (s *Server) serializeH1Result(res *h1.Response, result any) error {
 		if hdrs := holder.ResponseHeaders(); hdrs != nil {
 			res.Headers.AddFromHTTP(hdrs)
 		}
-		res.Cookies = append(res.Cookies, holder.ResponseCookies()...)
+		appendHTTPCookiesToH1(res, holder.ResponseCookies())
 
 		rawBody := holder.ResponseBody()
 		switch b := rawBody.(type) {
@@ -160,10 +173,8 @@ func (s *Server) serializeH3Result(res *h3.ServerResponse, result any) error {
 	}
 
 	res.StatusCode = status
-	if res.Headers == nil {
-		res.Headers = make(http.Header, len(headers))
-	}
-	copyHTTPHeaders(res.Headers, headers)
+
+	copyToMachHeaders(&res.Headers, headers)
 	res.Body = body
 
 	return nil

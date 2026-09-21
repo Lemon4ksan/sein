@@ -5,7 +5,6 @@
 package webtransport
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,10 +13,10 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/lemon4ksan/foundation/encoding/varint"
+	"github.com/lemon4ksan/foundation/net/qpack"
+	"github.com/lemon4ksan/foundation/net/quic"
 	clienth3 "github.com/lemon4ksan/mach/client/h3"
-	"github.com/lemon4ksan/mach/qpack"
-	"github.com/lemon4ksan/mach/quic"
-	"github.com/lemon4ksan/mach/quic/quicvarint"
 )
 
 // SessionHandler handles an active incoming WebTransport session.
@@ -92,21 +91,13 @@ func (s *Server) HandleSession(
 		{Name: ":status", Value: "200"},
 	}
 
-	var headerBuf bytes.Buffer
-
-	qpackEnc := qpack.NewEncoder(&headerBuf)
-	for _, h := range headers {
-		if err := qpackEnc.WriteField(h); err != nil {
-			return fmt.Errorf("sein/webtransport: encode response header: %w", err)
-		}
-	}
-
-	encodedHeaders := headerBuf.Bytes()
+	enc := qpack.NewEncoderWithDefaults(nil)
+	encodedHeaders := enc.EncodeHeaderList(sessionID, headers, nil)
 
 	var frameHdr [16]byte
 
-	b := quicvarint.Append(frameHdr[:0], clienth3.FrameTypeHeaders)
-	b = quicvarint.Append(b, uint64(len(encodedHeaders)))
+	b := varint.Append(frameHdr[:0], clienth3.FrameTypeHeaders)
+	b = varint.Append(b, uint64(len(encodedHeaders)))
 
 	if _, err := stream.Write(b); err != nil {
 		return fmt.Errorf("sein/webtransport: write 200 response header: %w", err)

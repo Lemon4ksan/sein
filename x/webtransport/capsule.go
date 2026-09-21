@@ -8,7 +8,7 @@ import (
 	"encoding/binary"
 	"unicode/utf8"
 
-	"github.com/lemon4ksan/mach/quic/quicvarint"
+	quicvarint "github.com/lemon4ksan/foundation/encoding/varint"
 )
 
 // MaxStreamsLimit defines the maximum permitted value for WT_MAX_STREAMS (2^60, draft-16 §5.6.2).

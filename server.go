@@ -12,16 +12,17 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lemon4ksan/foundation/generic"
 	"github.com/lemon4ksan/foundation/net/http/header"
 	"github.com/lemon4ksan/foundation/timekit"
 
+	"github.com/lemon4ksan/foundation/net/quic"
 	"github.com/lemon4ksan/mach/server/h1"
 	"github.com/lemon4ksan/mach/server/h2"
 	"github.com/lemon4ksan/mach/server/h3"
-	"github.com/lemon4ksan/mach/quic"
 )
 
 // Option configures a sein Server instance.
@@ -78,7 +79,9 @@ type Server struct {
 	afterResponseHooks     []AfterResponseHook
 	traceHooks             []TraceHook
 	resolvers              sync.Map
-	h1Server               *h1.Server
+	activeConns            map[net.Conn]struct{}
+	activeConnsWG          sync.WaitGroup
+	serverClosed           atomic.Bool
 	tcpLn                  net.Listener
 	quicLn                 *quic.Listener
 	altSvcHeader           string
@@ -509,7 +512,9 @@ func (s *Server) DispatchH3(h3Req *h3.ServerRequest, h3Res *h3.ServerResponse) e
 		return s.serializeH3Result(h3Res, Redirect(redirectURL, redirectCode))
 	}
 
-	req := NewH3Request(h3Req.Method, h3Req.Path, h3Req.Authority, h3Req.RemoteAddr, h3Req.Headers, h3Req.Body, &params)
+	hdr := make(http.Header)
+	copyFromMachHeaders(hdr, &h3Req.Headers)
+	req := NewH3Request(h3Req.Method, h3Req.Path, h3Req.Authority, h3Req.RemoteAddr, hdr, h3Req.Body, &params)
 	req.routePattern = pattern
 	req.cookieSecret = s.cookieSecret
 	defer req.Release()
@@ -532,9 +537,7 @@ func (s *Server) DispatchH3(h3Req *h3.ServerRequest, h3Res *h3.ServerResponse) e
 	}
 
 	if st := req.ServerTimingHeader(); st != "" {
-		if h3Res.Headers == nil {
-			h3Res.Headers = make(http.Header)
-		}
+
 		h3Res.Headers.Set("Server-Timing", st)
 	}
 
@@ -603,9 +606,7 @@ func (s *Server) handleUnmatchedH2(h2Res *h2.ServerResponse, status int, allowHe
 //go:noinline
 func (s *Server) handleUnmatchedH3(h3Res *h3.ServerResponse, status int, allowHeader string) error {
 	if status == http.StatusMethodNotAllowed {
-		if h3Res.Headers == nil {
-			h3Res.Headers = make(http.Header)
-		}
+
 		if allowHeader != "" {
 			h3Res.Headers.Set(header.Allow, allowHeader)
 		}

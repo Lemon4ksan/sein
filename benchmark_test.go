@@ -14,7 +14,7 @@ import (
 
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/internal/compress"
-	"github.com/lemon4ksan/mach/server/h1"
+	machhttp "github.com/lemon4ksan/mach/proto/http"
 )
 
 func BenchmarkH1_SIMDRequestParsing(b *testing.B) {
@@ -24,9 +24,9 @@ func BenchmarkH1_SIMDRequestParsing(b *testing.B) {
 
 	rdr := bytes.NewReader(rawHTTP)
 	br := bufio.NewReaderSize(rdr, 4096)
-	req := &h1.Request{
-		Headers: h1.NewHeadersWithCapacity(16),
-	}
+	req := machhttp.AcquireRequest()
+	req.Header.SetMethod("GET")
+	req.Header.SetRequestURI("/")
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -35,16 +35,14 @@ func BenchmarkH1_SIMDRequestParsing(b *testing.B) {
 		req.Reset()
 		rdr.Reset(rawHTTP)
 		br.Reset(rdr)
-		_ = req.ReadRequest(br, nil, 1024*1024)
+		_ = req.ReadLimitBody(br, 1024*1024)
 	}
 }
 
 func BenchmarkH1_NativeResponseWriteTo(b *testing.B) {
-	res := &h1.Response{
-		StatusCode: 200,
-		Body:       []byte("Hello, World!"),
-		Headers:    h1.NewHeadersWithCapacity(4),
-	}
+	res := machhttp.AcquireResponse()
+	res.SetStatusCode(200)
+	res.SetBody([]byte("Hello, World!"))
 
 	var buf bytes.Buffer
 	buf.Grow(512)
@@ -56,7 +54,7 @@ func BenchmarkH1_NativeResponseWriteTo(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		buf.Reset()
 		bw.Reset(&buf)
-		_ = res.WriteTo(bw, true, false)
+		_, _ = res.WriteTo(bw)
 	}
 }
 
