@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/mach/proto/http/header"
 	"github.com/lemon4ksan/sein"
 )
 

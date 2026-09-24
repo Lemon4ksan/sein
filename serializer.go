@@ -5,13 +5,13 @@
 package sein
 
 import (
-	coreheaders "github.com/lemon4ksan/foundation/net/headkit"
+	coreheaders "github.com/lemon4ksan/mach/proto/headkit"
 
 	"net/http"
 
 	"github.com/lemon4ksan/foundation/codec/json"
 	"github.com/lemon4ksan/foundation/generic"
-	"github.com/lemon4ksan/foundation/net/http/header"
+	"github.com/lemon4ksan/mach/proto/http/header"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 
 	"github.com/lemon4ksan/mach/server/h1"

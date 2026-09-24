@@ -23,12 +23,6 @@ server_example
 # Example output
 *.json
 
-# Environment & secrets
-.env
-.env.local
-.vortex/cache/secrets.json
-.vortex/cache/linter.json
-
 # Vortex generated mocks & harnesses
 *_mock.gen.go
 *_harness.gen.go

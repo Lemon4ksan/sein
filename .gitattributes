@@ -1,10 +1,5 @@
 * text=auto eol=lf
 
-# Go & Protocol Buffers LF Normalization
-* text=auto eol=lf
-*.go text eol=lf
-*.proto text eol=lf
-
 # Compressed archives & binary blobs
 *.har.gz binary linguist-generated=true
 

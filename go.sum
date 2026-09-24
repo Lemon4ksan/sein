@@ -1,7 +1,5 @@
-github.com/lemon4ksan/foundation v0.0.0-20260920191713-7709c688b2d7 h1:gGzm8Rz3R9SqMvDf9TQsNcbpHuTQxRbkhhik2T17eyU=
-github.com/lemon4ksan/foundation v0.0.0-20260920191713-7709c688b2d7/go.mod h1:mKZ+py0Jq9/teeK0cvjFUajx/DqJ3UiCvez0mwjhw8Y=
-github.com/lemon4ksan/mach v0.0.0-20260920192632-d937e04c0749 h1:aoCV/hqOOoAEM0ogtG5NYI30m384Rml38FFMHOrBtBQ=
-github.com/lemon4ksan/mach v0.0.0-20260920192632-d937e04c0749/go.mod h1:igV/o2BgaROAqXeYK5GQPYL2noZ3Q1BFX9AeYRhINMs=
+github.com/lemon4ksan/foundation v0.0.0-20260923050528-dc5d9a8c9c6b h1:Kfnzk+nDCztX03T1mU9CIpVRxylF6m7prs8RC4VGfCg=
+github.com/lemon4ksan/mach v0.0.0-20260923050623-74d65af4cf4a h1:VvDOlTSa+FB427vVvEBSZHF0zokDoT6OfOaE/Fbh7GU=
 golang.org/x/crypto v0.57.0 h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=
 golang.org/x/crypto v0.57.0/go.mod h1:Fdz0i5U6CoizGwLda9DttjSk6qlZo25zYNtR+ycvuZA=
 golang.org/x/net v0.59.0 h1:5zfYln+w5XCxwrnMMJPufRgNoXEaGxl0wo5GqPXyues=

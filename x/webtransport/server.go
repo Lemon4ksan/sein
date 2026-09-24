@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 
 	"github.com/lemon4ksan/foundation/encoding/varint"
-	"github.com/lemon4ksan/foundation/net/qpack"
+	"github.com/lemon4ksan/mach/qpack"
 	"github.com/lemon4ksan/foundation/net/quic"
 	clienth3 "github.com/lemon4ksan/mach/client/h3"
 )
