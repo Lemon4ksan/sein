@@ -13,11 +13,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/lemon4ksan/foundation/codec/json"
-	"github.com/lemon4ksan/mach/proto/http/header"
+	"github.com/lemon4ksan/foundation/encoding/json"
+	header "github.com/lemon4ksan/mach/proto/headkit"
 
-	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/mach/server/h1"
+	"github.com/lemon4ksan/sein"
 )
 
 type JSONMessage struct {

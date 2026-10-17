@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/sein/sync/limiter"
 	"github.com/lemon4ksan/foundation/testing/assert"
+	"github.com/lemon4ksan/sein/sync/limiter"
 )
 
 func TestVegasEngine(t *testing.T) {

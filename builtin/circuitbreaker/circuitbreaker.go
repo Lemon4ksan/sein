@@ -119,7 +119,7 @@ func New(opts ...Option) sein.Middleware {
 				return next(req)
 			})
 			if err != nil {
-				if errors.Is(err, breaker.ErrCircuitOpen) {
+				if errors.Is(err, breaker.ErrOpen) {
 					return cfg.ErrorHandler(req)
 				}
 

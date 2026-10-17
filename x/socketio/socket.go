@@ -32,7 +32,7 @@ type Socket struct {
 	disconnectHandlers []func(reason string)
 	errorHandlers      []func(err error)
 
-	ackMgr *task.Manager[int64, []json.RawMessage]
+	ackMgr *task.Tracker[int64, []json.RawMessage]
 	closed atomic.Bool
 }
 
@@ -48,7 +48,7 @@ func newSocket(nsp *Namespace, session *engineSession, authPayload json.RawMessa
 		session:   session,
 		handshake: hs,
 		events:    make(map[string][]func(ack AckFunc, args []json.RawMessage)),
-		ackMgr:    task.NewManager[int64, []json.RawMessage](0),
+		ackMgr:    task.NewTracker[int64, []json.RawMessage](0),
 	}
 
 	// Automatically join default self room
@@ -404,7 +404,7 @@ func (s *Socket) resolveAck(id int64, data json.RawMessage) {
 	if err := json.Unmarshal(data, &args); err != nil {
 		return
 	}
-	s.ackMgr.Resolve(id, args, nil)
+	s.ackMgr.Resolve(context.Background(), id, args, nil)
 }
 
 func (s *Socket) cleanup(reason string) {

@@ -5,14 +5,12 @@
 package sein
 
 import (
-	coreheaders "github.com/lemon4ksan/mach/proto/headkit"
-
 	"net/http"
 
-	"github.com/lemon4ksan/foundation/codec/json"
+	"github.com/lemon4ksan/foundation/encoding/json"
 	"github.com/lemon4ksan/foundation/generic"
-	"github.com/lemon4ksan/mach/proto/http/header"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
+	header "github.com/lemon4ksan/mach/proto/headkit"
 
 	"github.com/lemon4ksan/mach/server/h1"
 	"github.com/lemon4ksan/mach/server/h2"
@@ -21,11 +19,11 @@ import (
 
 // copyHTTPHeaders copies all key-value pairs from src into dst.
 
-func copyToMachHeaders(dst *coreheaders.Headers, src http.Header) {
+func copyToMachHeaders(dst *header.Headers, src http.Header) {
 	dst.AddFromHTTP(src)
 }
 
-func copyFromMachHeaders(dst http.Header, src *coreheaders.Headers) {
+func copyFromMachHeaders(dst http.Header, src *header.Headers) {
 	for k, v := range src.All() {
 		dst.Add(k, v)
 	}

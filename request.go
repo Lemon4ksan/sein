@@ -25,13 +25,13 @@ import (
 
 	"github.com/lemon4ksan/foundation/borrow"
 	"github.com/lemon4ksan/foundation/generic"
-	"github.com/lemon4ksan/mach/proto/http/header"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
 	"github.com/lemon4ksan/foundation/silicon/pool"
+	header "github.com/lemon4ksan/mach/proto/headkit"
 
+	"github.com/lemon4ksan/mach/server/h1"
 	"github.com/lemon4ksan/sein/internal/binder"
 	"github.com/lemon4ksan/sein/internal/compress"
-	"github.com/lemon4ksan/mach/server/h1"
 )
 
 // Validatable is an interface for request DTOs that validate their own invariants.
@@ -80,7 +80,7 @@ type ServerTimingEntry struct {
 	Description string
 }
 
-var requestStorage = pool.NewPerPStorage(func() *Request {
+var requestStorage = pool.NewPerCorePool(func() *Request {
 	return &Request{}
 })
 
@@ -314,6 +314,11 @@ func NewH1Request(h1Req *h1.Request, params ...*Params) *Request {
 	req.proto = h1Req.Proto
 	req.host = h1Req.Host
 	req.remoteAddr = h1Req.RemoteAddr
+	if req.remoteAddr == "" && h1Req.Conn != nil {
+		if ra := h1Req.Conn.RemoteAddr(); ra != nil {
+			req.remoteAddr = ra.String()
+		}
+	}
 	req.bodyBuf = h1Req.Body
 	req.h1Headers = &h1Req.Headers
 	req.h1Req = h1Req

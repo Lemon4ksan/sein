@@ -9,7 +9,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/lemon4ksan/foundation/net/quic"
+	"github.com/lemon4ksan/mach/net/quic"
 )
 
 type noopTransport struct{}

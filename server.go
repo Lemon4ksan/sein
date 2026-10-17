@@ -16,10 +16,10 @@ import (
 	"time"
 
 	"github.com/lemon4ksan/foundation/generic"
-	"github.com/lemon4ksan/mach/proto/http/header"
 	"github.com/lemon4ksan/foundation/timekit"
+	header "github.com/lemon4ksan/mach/proto/headkit"
 
-	"github.com/lemon4ksan/foundation/net/quic"
+	"github.com/lemon4ksan/mach/net/quic"
 	"github.com/lemon4ksan/mach/server/h1"
 	"github.com/lemon4ksan/mach/server/h2"
 	"github.com/lemon4ksan/mach/server/h3"

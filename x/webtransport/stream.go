@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lemon4ksan/foundation/net/quic"
 	quicvarint "github.com/lemon4ksan/foundation/encoding/varint"
+	"github.com/lemon4ksan/mach/net/quic"
 )
 
 // RawStream defines the interface for underlying QUIC bidirectional streams.

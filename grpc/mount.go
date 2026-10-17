@@ -10,8 +10,8 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/mach/server/h1"
+	"github.com/lemon4ksan/sein"
 )
 
 type grpcResponder struct {

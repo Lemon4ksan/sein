@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -154,7 +155,7 @@ func populateValidationRules(tag refkit.Tag, b *FieldBinding) {
 		b.Signed = true
 	}
 
-	if v, ok := tag.GetFloat("min"); ok {
+	if v, ok := tag.Float("min"); ok {
 		b.HasMin = true
 		b.MinVal = v
 	} else if strings.HasPrefix(tag.Name, "min=") {
@@ -164,7 +165,7 @@ func populateValidationRules(tag refkit.Tag, b *FieldBinding) {
 		}
 	}
 
-	if v, ok := tag.GetFloat("max"); ok {
+	if v, ok := tag.Float("max"); ok {
 		b.HasMax = true
 		b.MaxVal = v
 	} else if strings.HasPrefix(tag.Name, "max=") {
@@ -174,7 +175,7 @@ func populateValidationRules(tag refkit.Tag, b *FieldBinding) {
 		}
 	}
 
-	if v, ok := tag.GetInt("len"); ok {
+	if v, ok := tag.Int("len"); ok {
 		b.HasLen = true
 		b.LenVal = v
 	} else if strings.HasPrefix(tag.Name, "len=") {
@@ -184,25 +185,25 @@ func populateValidationRules(tag refkit.Tag, b *FieldBinding) {
 		}
 	}
 
-	if enums := tag.SplitOption("enum", "|"); len(enums) > 0 {
+	if enums := slices.Collect(tag.SplitOption("enum", "|")); len(enums) > 0 {
 		b.EnumVals = enums
 	} else if strings.HasPrefix(tag.Name, "enum=") {
 		b.EnumVals = strings.Split(strings.TrimPrefix(tag.Name, "enum="), "|")
 	}
 
-	if v, ok := tag.GetFloat("gt"); ok {
+	if v, ok := tag.Float("gt"); ok {
 		b.HasGT = true
 		b.GTVal = v
 	}
-	if v, ok := tag.GetFloat("ge"); ok {
+	if v, ok := tag.Float("ge"); ok {
 		b.HasGE = true
 		b.GEVal = v
 	}
-	if v, ok := tag.GetFloat("lt"); ok {
+	if v, ok := tag.Float("lt"); ok {
 		b.HasLT = true
 		b.LTVal = v
 	}
-	if v, ok := tag.GetFloat("le"); ok {
+	if v, ok := tag.Float("le"); ok {
 		b.HasLE = true
 		b.LEVal = v
 	}
@@ -218,16 +219,16 @@ func populateValidationRules(tag refkit.Tag, b *FieldBinding) {
 		b.HasGE = true
 		b.GEVal = 0
 	}
-	if v, ok := tag.GetFloat("multiple_of"); ok {
+	if v, ok := tag.Float("multiple_of"); ok {
 		b.HasMultipleOf = true
 		b.MultipleOfVal = v
 	}
-	if pat := tag.Get("pattern"); pat != "" {
+	if pat := tag.Value("pattern"); pat != "" {
 		b.Pattern = pat
 	} else if strings.HasPrefix(tag.Name, "pattern=") {
 		b.Pattern = strings.TrimPrefix(tag.Name, "pattern=")
 	}
-	if fmtVal := tag.Get("format"); fmtVal != "" {
+	if fmtVal := tag.Value("format"); fmtVal != "" {
 		b.Format = fmtVal
 	}
 }
@@ -254,10 +255,10 @@ func populateFieldBinding(tag refkit.Tag, b *FieldBinding) {
 	if b.Key == "" && tag.Name != "" {
 		b.Key = tag.Name
 	}
-	if def := tag.Get("default"); def != "" {
+	if def := tag.Value("default"); def != "" {
 		b.DefaultValue = def
 	}
-	if sep := tag.Get("sep"); sep != "" {
+	if sep := tag.Value("sep"); sep != "" {
 		b.Separator = sep
 	} else if b.Separator == "" {
 		b.Separator = ","

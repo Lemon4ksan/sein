@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lemon4ksan/mach/proto/http/header"
+	header "github.com/lemon4ksan/mach/proto/headkit"
 
 	"github.com/lemon4ksan/sein"
 )

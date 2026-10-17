@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lemon4ksan/mach/proto/http/header"
 	"github.com/lemon4ksan/foundation/testing/assert"
 	"github.com/lemon4ksan/foundation/testing/require"
+	header "github.com/lemon4ksan/mach/proto/headkit"
 
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/builtin/helmet"

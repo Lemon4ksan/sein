@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lemon4ksan/foundation/codec/json"
-	"github.com/lemon4ksan/mach/proto/http/header"
+	"github.com/lemon4ksan/foundation/encoding/json"
+	header "github.com/lemon4ksan/mach/proto/headkit"
 
 	"github.com/lemon4ksan/sein"
 )

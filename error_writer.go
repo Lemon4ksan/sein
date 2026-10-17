@@ -8,8 +8,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/lemon4ksan/foundation/codec/json"
-	"github.com/lemon4ksan/mach/proto/http/header"
+	"github.com/lemon4ksan/foundation/encoding/json"
+	header "github.com/lemon4ksan/mach/proto/headkit"
 
 	"github.com/lemon4ksan/mach/server/h1"
 	"github.com/lemon4ksan/mach/server/h2"
@@ -88,7 +88,6 @@ func (s *Server) writeH1Error(res *h1.Response, err error) {
 }
 
 func (s *Server) writeH2Error(res *h2.ServerResponse, err error) {
-	
 
 	if redir, ok := errors.AsType[RedirectError](err); ok {
 		res.StatusCode = redir.Status
@@ -107,7 +106,6 @@ func (s *Server) writeH2Error(res *h2.ServerResponse, err error) {
 }
 
 func (s *Server) writeH3Error(res *h3.ServerResponse, err error) {
-	
 
 	if redir, ok := errors.AsType[RedirectError](err); ok {
 		res.StatusCode = redir.Status

@@ -37,42 +37,42 @@ const (
 )
 
 var (
-	brotliWriterStorage = pool.NewPerPStorage(func() *brotli.Writer {
+	brotliWriterStorage = pool.NewPerCorePool(func() *brotli.Writer {
 		return brotli.NewWriterLevel(io.Discard, BrotliDefaultCompression)
 	})
-	brotliFastWriterStorage = pool.NewPerPStorage(func() *brotli.Writer {
+	brotliFastWriterStorage = pool.NewPerCorePool(func() *brotli.Writer {
 		return brotli.NewWriterLevel(io.Discard, BrotliBestSpeed)
 	})
-	brotliReaderStorage = pool.NewPerPStorage(func() *brotli.Reader {
+	brotliReaderStorage = pool.NewPerCorePool(func() *brotli.Reader {
 		return brotli.NewReader(bytes.NewReader(nil))
 	})
 
-	gzipWriterStorage = pool.NewPerPStorage(func() *gzip.Writer {
+	gzipWriterStorage = pool.NewPerCorePool(func() *gzip.Writer {
 		w, _ := gzip.NewWriterLevel(io.Discard, gzip.DefaultCompression)
 		return w
 	})
-	gzipFastWriterStorage = pool.NewPerPStorage(func() *gzip.Writer {
+	gzipFastWriterStorage = pool.NewPerCorePool(func() *gzip.Writer {
 		w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
 		return w
 	})
-	gzipReaderStorage = pool.NewPerPStorage(func() *gzip.Reader {
+	gzipReaderStorage = pool.NewPerCorePool(func() *gzip.Reader {
 		return new(gzip.Reader)
 	})
 
-	flateWriterStorage = pool.NewPerPStorage(func() *flate.Writer {
+	flateWriterStorage = pool.NewPerCorePool(func() *flate.Writer {
 		w, _ := flate.NewWriter(io.Discard, flate.DefaultCompression)
 		return w
 	})
 
-	zstdDefaultEncoderStorage = pool.NewPerPStorage(func() *zstd.Encoder {
+	zstdDefaultEncoderStorage = pool.NewPerCorePool(func() *zstd.Encoder {
 		enc, _ := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault), zstd.WithEncoderConcurrency(1))
 		return enc
 	})
-	zstdFastEncoderStorage = pool.NewPerPStorage(func() *zstd.Encoder {
+	zstdFastEncoderStorage = pool.NewPerCorePool(func() *zstd.Encoder {
 		enc, _ := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest), zstd.WithEncoderConcurrency(1))
 		return enc
 	})
-	zstdDecoderStorage = pool.NewPerPStorage(func() *zstd.Decoder {
+	zstdDecoderStorage = pool.NewPerCorePool(func() *zstd.Decoder {
 		dec, _ := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
 		return dec
 	})

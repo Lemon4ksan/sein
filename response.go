@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lemon4ksan/foundation/codec/json"
+	"github.com/lemon4ksan/foundation/encoding/json"
 	"github.com/lemon4ksan/foundation/generic"
-	"github.com/lemon4ksan/mach/proto/http/header"
-	"github.com/lemon4ksan/mach/proto/http/zerocopy"
 	"github.com/lemon4ksan/foundation/silicon/bytesconv"
+	header "github.com/lemon4ksan/mach/proto/headkit"
+	"github.com/lemon4ksan/mach/proto/semantic/cookie"
 
 	"github.com/lemon4ksan/mach/server/h1"
 )
@@ -72,7 +72,7 @@ func appendHTTPCookiesToH1(res *h1.Response, cookies []*http.Cookie) {
 		if c == nil {
 			continue
 		}
-		zc := &zerocopy.Cookie{}
+		zc := &cookie.Cookie{}
 		zc.SetKey(c.Name)
 		zc.SetValue(c.Value)
 		zc.SetPath(c.Path)
@@ -83,13 +83,13 @@ func appendHTTPCookiesToH1(res *h1.Response, cookies []*http.Cookie) {
 		zc.SetHTTPOnly(c.HttpOnly)
 		switch c.SameSite {
 		case http.SameSiteDefaultMode:
-			zc.SetSameSite(zerocopy.CookieSameSiteDefaultMode)
+			zc.SetSameSite(cookie.CookieSameSiteDefaultMode)
 		case http.SameSiteLaxMode:
-			zc.SetSameSite(zerocopy.CookieSameSiteLaxMode)
+			zc.SetSameSite(cookie.CookieSameSiteLaxMode)
 		case http.SameSiteStrictMode:
-			zc.SetSameSite(zerocopy.CookieSameSiteStrictMode)
+			zc.SetSameSite(cookie.CookieSameSiteStrictMode)
 		case http.SameSiteNoneMode:
-			zc.SetSameSite(zerocopy.CookieSameSiteNoneMode)
+			zc.SetSameSite(cookie.CookieSameSiteNoneMode)
 		}
 		if c.Partitioned {
 			zc.SetPartitioned(true)

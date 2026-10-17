@@ -12,9 +12,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	machhttp "github.com/lemon4ksan/mach/proto/http"
 	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/sein/internal/compress"
-	machhttp "github.com/lemon4ksan/mach/proto/http"
 )
 
 func BenchmarkH1_SIMDRequestParsing(b *testing.B) {

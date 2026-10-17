@@ -21,8 +21,8 @@ import (
 
 	"github.com/lemon4ksan/foundation/testing/assert"
 	"github.com/lemon4ksan/foundation/testing/require"
-	"github.com/lemon4ksan/sein"
 	"github.com/lemon4ksan/mach/server/h1"
+	"github.com/lemon4ksan/sein"
 )
 
 func TestSecret_MaskingAndExposure(t *testing.T) {

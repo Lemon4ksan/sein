@@ -13,7 +13,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/lemon4ksan/foundation/codec/json"
+	"github.com/lemon4ksan/foundation/encoding/json"
 )
 
 // HTTPDoer abstracts any HTTP client (such as *http.Client or *aoni.Client).
